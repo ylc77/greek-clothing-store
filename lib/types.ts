@@ -10,26 +10,21 @@ export type ProductCategory =
 
 export type Category = {
   slug: ProductCategory;
-  label: string;
 };
 
 export const categories: Category[] = [
-  { slug: "men", label: "Men" },
-  { slug: "women", label: "Women" },
-  { slug: "shoes", label: "Shoes" },
-  { slug: "bags", label: "Bags" },
-  { slug: "luggage", label: "Luggage" },
-  { slug: "hats", label: "Hats" },
-  { slug: "jewelry", label: "Jewelry" },
-  { slug: "other", label: "Other" }
+  { slug: "men" },
+  { slug: "women" },
+  { slug: "shoes" },
+  { slug: "bags" },
+  { slug: "luggage" },
+  { slug: "hats" },
+  { slug: "jewelry" },
+  { slug: "other" }
 ];
 
 export function isProductCategory(value: string): value is ProductCategory {
   return categories.some((category) => category.slug === value);
-}
-
-export function getCategoryLabel(slug: ProductCategory) {
-  return categories.find((category) => category.slug === slug)?.label || slug;
 }
 
 export type Product = {
