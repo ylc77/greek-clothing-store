@@ -1,0 +1,113 @@
+import Link from "next/link";
+import { getLatestProducts } from "@/lib/products";
+import { categories } from "@/lib/types";
+
+const whatsappUrl = "https://wa.me/306900000000";
+const instagramUrl = "https://instagram.com/";
+
+export default async function HomePage() {
+  const { products, error } = await getLatestProducts(8);
+
+  return (
+    <main className="min-h-screen bg-paper">
+      <section className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
+        <header className="flex flex-col gap-5 border-b border-stone-200 pb-8 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-wide text-olive">
+              Greek clothing store
+            </p>
+            <h1 className="mt-2 text-4xl font-bold text-ink sm:text-5xl">Helios Wear</h1>
+            <p className="mt-3 max-w-2xl text-base leading-7 text-stone-600">
+              Simple MVP storefront for clothing, shoes, bags and accessories.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <a
+              className="rounded-md bg-ink px-4 py-3 text-sm font-bold text-white"
+              href={whatsappUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              WhatsApp
+            </a>
+            <a
+              className="rounded-md border border-stone-300 px-4 py-3 text-sm font-bold text-ink"
+              href={instagramUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Instagram
+            </a>
+          </div>
+        </header>
+
+        <nav className="flex flex-wrap gap-3">
+          {categories.map((category) => (
+            <Link
+              className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold"
+              href={`/${category.slug}`}
+              key={category.slug}
+            >
+              {category.label}
+            </Link>
+          ))}
+        </nav>
+
+        <section>
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-ink">Latest products</h2>
+              <p className="mt-1 text-sm text-stone-600">Newest products from local demo data.</p>
+            </div>
+          </div>
+
+          {error ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+              <strong>Products cannot load yet.</strong>
+              <p className="mt-2">{error}</p>
+            </div>
+          ) : products.length === 0 ? (
+            <div className="rounded-md border border-dashed border-stone-300 bg-white p-8 text-stone-600">
+              No products in Supabase yet.
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {products.map((product) => (
+                <Link
+                  className="overflow-hidden rounded-md border border-stone-200 bg-white shadow-sm"
+                  href={`/${product.category}`}
+                  key={product.sku}
+                >
+                  <img
+                    alt={product.name_en}
+                    className="aspect-[4/5] w-full object-cover"
+                    src={product.image_url}
+                  />
+                  <div className="p-3">
+                    <p className="line-clamp-2 min-h-10 text-sm font-bold text-ink">
+                      {product.name_gr}
+                    </p>
+                    <p className="mt-2 text-base font-extrabold text-terracotta">
+                      EUR {Number(product.price).toFixed(2)}
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <footer className="border-t border-stone-200 py-6 text-sm text-stone-600">
+          Contact:{" "}
+          <a className="font-bold text-ink" href={whatsappUrl} target="_blank" rel="noreferrer">
+            WhatsApp
+          </a>{" "}
+          /{" "}
+          <a className="font-bold text-ink" href={instagramUrl} target="_blank" rel="noreferrer">
+            Instagram
+          </a>
+        </footer>
+      </section>
+    </main>
+  );
+}
