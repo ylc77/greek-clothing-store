@@ -94,7 +94,7 @@ export async function CategoryPage({
                 <div className="p-3">
                   <h2 className="line-clamp-2 min-h-10 text-sm font-bold text-ink">{productName(product, language)}</h2>
                   <p className="mt-2 text-base font-extrabold text-terracotta">
-                    EUR {Number(product.price).toFixed(2)}
+                    €{Number(product.price).toFixed(2)}
                   </p>
                   <p className="mt-1 text-xs font-semibold text-stone-500">
                     {product.stock > 0 ? t.inStock : t.outOfStock}

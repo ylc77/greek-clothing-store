@@ -597,7 +597,7 @@ export function AdminDashboard() {
                     <td className="py-3 pr-4">{product.name_cn || product.name_gr || product.name_en}</td>
                     <td className="py-3 pr-4">{product.category}</td>
                     <td className="py-3 pr-4">{product.subcategory}</td>
-                    <td className="py-3 pr-4">EUR {Number(product.price).toFixed(2)}</td>
+                    <td className="py-3 pr-4">€{Number(product.price).toFixed(2)}</td>
                     <td className="py-3 pr-4">{product.stock}</td>
                     <td className="max-w-xs truncate py-3 pr-4">{product.image_url}</td>
                     <td className="py-3 pr-4">

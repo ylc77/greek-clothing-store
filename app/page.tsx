@@ -109,7 +109,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                       {productName(product, language)}
                     </p>
                     <p className="mt-2 text-base font-extrabold text-terracotta">
-                      EUR {Number(product.price).toFixed(2)}
+                      €{Number(product.price).toFixed(2)}
                     </p>
                   </div>
                 </Link>
