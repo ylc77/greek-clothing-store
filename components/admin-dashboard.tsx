@@ -116,6 +116,38 @@ function parseCsv(text: string) {
   });
 }
 
+function csvCell(value: string) {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function downloadCsvTemplate() {
+  const sampleRow = [
+    "DEMO-WOMEN-DRESSES-001",
+    "女士连衣裙",
+    "示例中文描述",
+    "Women Dress",
+    "Sample English description",
+    "Γυναικείο φόρεμα",
+    "Παράδειγμα περιγραφής",
+    "women",
+    "dresses",
+    "29.90",
+    "10",
+    "S/M/L",
+    ""
+  ];
+  const csv = `${csvFields.join(",")}\n${sampleRow.map(csvCell).join(",")}\n`;
+  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "products-template.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function validatePreviewRow(row: CsvRow) {
   const errors: string[] = [];
   const sku = String(row.sku || "").trim();
@@ -512,14 +544,23 @@ export function AdminDashboard() {
         <section className="rounded-md border border-stone-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-xl font-bold text-ink">CSV 批量导入</h2>
-            <button
-              className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold"
-              disabled={csvRows.length === 0 || loading}
-              onClick={importCsv}
-              type="button"
-            >
-              导入 CSV
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold"
+                onClick={downloadCsvTemplate}
+                type="button"
+              >
+                下载 CSV 模板
+              </button>
+              <button
+                className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold"
+                disabled={csvRows.length === 0 || loading}
+                onClick={importCsv}
+                type="button"
+              >
+                导入 CSV
+              </button>
+            </div>
           </div>
           <input
             accept=".csv,text/csv"
