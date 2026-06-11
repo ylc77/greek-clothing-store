@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { productName, text, withLanguage } from "@/lib/i18n";
+import { ProductCard } from "@/components/product-card";
+import { SiteHeader } from "@/components/site-header";
+import { text, withLanguage } from "@/lib/i18n";
 import { getProductsByCategory } from "@/lib/products";
 import { isProductSubcategory, subcategoriesByCategory, type ProductCategory } from "@/lib/types";
 import type { Language } from "@/lib/i18n";
@@ -38,21 +40,27 @@ export async function CategoryPage({
   const { products, error } = await getProductsByCategory(category, activeSubcategory);
 
   return (
-    <main className="min-h-screen bg-paper px-4 py-8 sm:px-6 lg:px-8">
-      <section className="mx-auto max-w-6xl">
-        <div className="mb-6 flex items-center justify-between gap-4">
+    <main className="min-h-screen bg-paper">
+      <SiteHeader language={language} />
+
+      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mb-7 flex flex-col gap-4 border-b border-stone-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <Link className="text-sm font-bold text-stone-500" href={withLanguage("/", language)}>
+            <Link className="text-sm font-black text-stone-500 hover:text-ink" href={withLanguage("/", language)}>
               {t.backHome}
             </Link>
-            <h1 className="mt-2 text-4xl font-bold text-ink">{title}</h1>
+            <p className="mt-4 text-sm font-black uppercase tracking-[0.18em] text-olive">{t.categories}</p>
+            <h1 className="mt-2 text-4xl font-black tracking-tight text-ink sm:text-5xl">{title}</h1>
           </div>
+          <p className="text-sm font-bold text-stone-500">
+            {products.length} {language === "en" ? "items" : "προϊόντα"}
+          </p>
         </div>
 
-        <nav className="mb-6 flex flex-wrap gap-2">
+        <nav className="mb-7 flex gap-2 overflow-x-auto pb-1">
           <Link
-            className={`rounded-md border px-3 py-2 text-sm font-bold ${
-              !activeSubcategory ? "border-ink bg-ink text-white" : "border-stone-300 bg-white text-ink"
+            className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black transition ${
+              !activeSubcategory ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink"
             }`}
             href={categoryHref(category, language)}
           >
@@ -60,10 +68,10 @@ export async function CategoryPage({
           </Link>
           {subcategoriesByCategory[category].map((subcategory) => (
             <Link
-              className={`rounded-md border px-3 py-2 text-sm font-bold ${
+              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black transition ${
                 activeSubcategory === subcategory
                   ? "border-ink bg-ink text-white"
-                  : "border-stone-300 bg-white text-ink"
+                  : "border-stone-200 bg-white text-ink"
               }`}
               href={categoryHref(category, language, subcategory)}
               key={subcategory}
@@ -85,26 +93,7 @@ export async function CategoryPage({
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {products.map((product) => (
-              <Link
-                className="overflow-hidden rounded-md border border-stone-200 bg-white"
-                href={withLanguage(`/product/${encodeURIComponent(product.sku)}`, language)}
-                key={product.sku}
-              >
-                <img
-                  alt={productName(product, language)}
-                  className="aspect-[4/5] w-full object-cover"
-                  src={product.image_url}
-                />
-                <div className="p-3">
-                  <h2 className="line-clamp-2 min-h-10 text-sm font-bold text-ink">{productName(product, language)}</h2>
-                  <p className="mt-2 text-base font-extrabold text-terracotta">
-                    €{Number(product.price).toFixed(2)}
-                  </p>
-                  <p className="mt-1 text-xs font-semibold text-stone-500">
-                    {product.stock > 0 ? t.inStock : t.outOfStock}
-                  </p>
-                </div>
-              </Link>
+              <ProductCard key={product.sku} product={product} language={language} />
             ))}
           </div>
         )}

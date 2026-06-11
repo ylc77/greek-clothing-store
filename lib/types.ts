@@ -83,4 +83,9 @@ export type ProductFormData = {
   sizes: string;
   image_url: string;
   image_urls: string;
+  brand: string;
+  barcode: string;
+  vat: number;
+  color: string;
+  additional_image_urls: string;
 };

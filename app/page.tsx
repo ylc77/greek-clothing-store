@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { categoryLabels, getLanguage, productName, text, withLanguage } from "@/lib/i18n";
+import { ProductCard } from "@/components/product-card";
+import { SiteHeader } from "@/components/site-header";
+import { categoryLabels, getLanguage, text, withLanguage } from "@/lib/i18n";
 import { getLatestProducts } from "@/lib/products";
+import { instagramUrl, siteName, whatsappUrl } from "@/lib/site";
 import { categories } from "@/lib/types";
-
-const whatsappUrl = "https://wa.me/306900000000";
-const instagramUrl = "https://instagram.com/";
 
 type HomePageProps = {
   searchParams: Promise<{
@@ -19,53 +19,49 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   return (
     <main className="min-h-screen bg-paper">
-      <section className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-5 border-b border-stone-200 pb-8 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-olive">
-              {t.eyebrow}
-            </p>
-            <h1 className="mt-2 text-4xl font-bold text-ink sm:text-5xl">Helios Wear</h1>
-            <p className="mt-3 max-w-2xl text-base leading-7 text-stone-600">
-              {t.intro}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
+      <SiteHeader language={language} />
+
+      <section className="relative min-h-[560px] overflow-hidden bg-ink text-white">
+        <img
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+          src="/images/home-hero.png"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/62 via-black/28 to-black/5" />
+        <div className="relative mx-auto flex min-h-[560px] max-w-7xl flex-col justify-end px-4 pb-10 pt-24 sm:px-6 lg:px-8">
+          <p className="text-sm font-bold uppercase tracking-[0.22em] text-white/80">{t.eyebrow}</p>
+          <h1 className="mt-3 max-w-3xl text-5xl font-black tracking-tight sm:text-7xl">{siteName}</h1>
+          <p className="mt-5 max-w-xl text-base leading-7 text-white/88 sm:text-lg">{t.intro}</p>
+          <div className="mt-7 flex flex-wrap gap-3">
             <Link
-              className={`rounded-md border px-4 py-3 text-sm font-bold ${language === "el" ? "border-ink bg-ink text-white" : "border-stone-300 text-ink"}`}
-              href="/"
+              className="rounded-full bg-white px-5 py-3 text-sm font-black text-ink transition hover:bg-stone-100"
+              href="#latest"
             >
-              EL
-            </Link>
-            <Link
-              className={`rounded-md border px-4 py-3 text-sm font-bold ${language === "en" ? "border-ink bg-ink text-white" : "border-stone-300 text-ink"}`}
-              href="/?lang=en"
-            >
-              EN
+              {t.shopLatest}
             </Link>
             <a
-              className="rounded-md bg-ink px-4 py-3 text-sm font-bold text-white"
+              className="rounded-full border border-white/50 px-5 py-3 text-sm font-black text-white transition hover:bg-white/10"
               href={whatsappUrl}
-              target="_blank"
               rel="noreferrer"
+              target="_blank"
             >
               WhatsApp
             </a>
-            <a
-              className="rounded-md border border-stone-300 px-4 py-3 text-sm font-bold text-ink"
-              href={instagramUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Instagram
-            </a>
           </div>
-        </header>
+        </div>
+      </section>
 
-        <nav className="flex flex-wrap gap-3">
+      <section className="mx-auto max-w-7xl px-4 py-9 sm:px-6 lg:px-8">
+        <div className="mb-4 flex items-end justify-between gap-4">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-olive">{t.categories}</p>
+            <h2 className="mt-2 text-2xl font-black text-ink sm:text-3xl">{t.categories}</h2>
+          </div>
+        </div>
+        <nav className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
           {categories.map((category) => (
             <Link
-              className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold"
+              className="rounded-md border border-stone-200 bg-white px-4 py-4 text-sm font-black text-ink shadow-sm transition hover:-translate-y-0.5 hover:border-ink"
               href={withLanguage(`/${category.slug}`, language)}
               key={category.slug}
             >
@@ -73,65 +69,50 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </Link>
           ))}
         </nav>
-
-        <section>
-          <div className="mb-5 flex items-end justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-bold text-ink">{t.latest}</h2>
-              <p className="mt-1 text-sm text-stone-600">{t.latestText}</p>
-            </div>
-          </div>
-
-          {error ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-              <strong>{t.cannotLoad}</strong>
-              <p className="mt-2">{error}</p>
-            </div>
-          ) : products.length === 0 ? (
-            <div className="rounded-md border border-dashed border-stone-300 bg-white p-8 text-stone-600">
-              {t.noProducts}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {products.map((product) => (
-                <Link
-                  className="overflow-hidden rounded-md border border-stone-200 bg-white shadow-sm"
-                  href={withLanguage(`/product/${encodeURIComponent(product.sku)}`, language)}
-                  key={product.sku}
-                >
-                  <img
-                    alt={productName(product, language)}
-                    className="aspect-[4/5] w-full object-cover"
-                    src={product.image_url}
-                  />
-                  <div className="p-3">
-                    <p className="line-clamp-2 min-h-10 text-sm font-bold text-ink">
-                      {productName(product, language)}
-                    </p>
-                    <p className="mt-2 text-base font-extrabold text-terracotta">
-                      €{Number(product.price).toFixed(2)}
-                    </p>
-                    <span className="mt-3 inline-flex rounded-md border border-stone-300 px-3 py-2 text-xs font-bold text-ink">
-                      {language === "en" ? "View details" : "Λεπτομέρειες"}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <footer className="border-t border-stone-200 py-6 text-sm text-stone-600">
-          {t.contact}:{" "}
-          <a className="font-bold text-ink" href={whatsappUrl} target="_blank" rel="noreferrer">
-            WhatsApp
-          </a>{" "}
-          /{" "}
-          <a className="font-bold text-ink" href={instagramUrl} target="_blank" rel="noreferrer">
-            Instagram
-          </a>
-        </footer>
       </section>
+
+      <section className="mx-auto max-w-7xl px-4 pb-10 sm:px-6 lg:px-8" id="latest">
+        <div className="mb-5 flex items-end justify-between gap-4">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-olive">{t.latest}</p>
+            <h2 className="mt-2 text-3xl font-black text-ink">{t.latest}</h2>
+            <p className="mt-2 text-sm text-stone-600">{t.latestText}</p>
+          </div>
+        </div>
+
+        {error ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+            <strong>{t.cannotLoad}</strong>
+            <p className="mt-2">{error}</p>
+          </div>
+        ) : products.length === 0 ? (
+          <div className="rounded-md border border-dashed border-stone-300 bg-white p-8 text-stone-600">
+            {t.noProducts}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {products.map((product) => (
+              <ProductCard key={product.sku} product={product} language={language} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <footer className="border-t border-stone-200 bg-white/60">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-7 text-sm text-stone-600 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <p className="font-bold text-ink">{siteName}</p>
+          <p>
+            {t.contact}:{" "}
+            <a className="font-bold text-ink" href={whatsappUrl} target="_blank" rel="noreferrer">
+              WhatsApp
+            </a>{" "}
+            /{" "}
+            <a className="font-bold text-ink" href={instagramUrl} target="_blank" rel="noreferrer">
+              Instagram
+            </a>
+          </p>
+        </div>
+      </footer>
     </main>
   );
 }

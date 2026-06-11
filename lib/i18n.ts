@@ -7,7 +7,12 @@ export function getLanguage(value: string | string[] | undefined): Language {
 }
 
 export function withLanguage(path: string, language: Language) {
-  return language === "en" ? `${path}?lang=en` : path;
+  if (language === "el") {
+    return path;
+  }
+
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}lang=en`;
 }
 
 export function productName(product: Product, language: Language) {
@@ -27,10 +32,10 @@ export const categoryLabels: Record<ProductCategory, Record<Language, string>> =
 
 export const text = {
   el: {
-    eyebrow: "Ελληνικό κατάστημα",
-    intro: "Απλό ηλεκτρονικό κατάστημα για ρούχα, παπούτσια, τσάντες και αξεσουάρ.",
+    eyebrow: "Ελληνικό κατάστημα μόδας",
+    intro: "Επιλεγμένα ρούχα, παπούτσια, τσάντες και αξεσουάρ με καθαρή μεσογειακή αισθητική.",
     latest: "Νέα προϊόντα",
-    latestText: "Τα πιο πρόσφατα προϊόντα από το κατάστημα.",
+    latestText: "Οι πιο πρόσφατες επιλογές από τη συλλογή μας.",
     cannotLoad: "Τα προϊόντα δεν μπορούν να φορτωθούν ακόμα.",
     noProducts: "Δεν υπάρχουν προϊόντα ακόμα.",
     noCategoryProducts: "Δεν υπάρχουν προϊόντα σε αυτή την κατηγορία ακόμα.",
@@ -39,13 +44,21 @@ export const text = {
     outOfStock: "Εξαντλημένο",
     contact: "Επικοινωνία",
     greek: "Ελληνικά",
-    english: "English"
+    english: "English",
+    viewDetails: "Λεπτομέρειες",
+    shopLatest: "Δείτε τη συλλογή",
+    categories: "Κατηγορίες",
+    whatsapp: "Ρωτήστε στο WhatsApp",
+    description: "Περιγραφή",
+    category: "Κατηγορία",
+    subcategory: "Υποκατηγορία",
+    sizes: "Μεγέθη"
   },
   en: {
     eyebrow: "Greek clothing store",
-    intro: "Simple storefront for clothing, shoes, bags and accessories.",
+    intro: "Curated clothing, shoes, bags and accessories with a clean Mediterranean feel.",
     latest: "Latest products",
-    latestText: "Newest products from the store.",
+    latestText: "Newest pieces from our collection.",
     cannotLoad: "Products cannot load yet.",
     noProducts: "No products yet.",
     noCategoryProducts: "No products in this category yet.",
@@ -54,6 +67,14 @@ export const text = {
     outOfStock: "Out of stock",
     contact: "Contact",
     greek: "Ελληνικά",
-    english: "English"
+    english: "English",
+    viewDetails: "View details",
+    shopLatest: "Shop latest",
+    categories: "Categories",
+    whatsapp: "Ask on WhatsApp",
+    description: "Description",
+    category: "Category",
+    subcategory: "Subcategory",
+    sizes: "Sizes"
   }
 };

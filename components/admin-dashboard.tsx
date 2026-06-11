@@ -39,7 +39,12 @@ const emptyProduct: ProductFormData = {
   stock: 0,
   sizes: "",
   image_url: "",
-  image_urls: ""
+  image_urls: "",
+  brand: "",
+  barcode: "",
+  vat: 24,
+  color: "",
+  additional_image_urls: ""
 };
 
 const csvFields = [
@@ -55,7 +60,12 @@ const csvFields = [
   "price",
   "stock",
   "sizes",
-  "image_url"
+  "image_url",
+  "brand",
+  "barcode",
+  "vat",
+  "color",
+  "additional_image_urls"
 ];
 
 function parseCsv(text: string) {
@@ -135,6 +145,11 @@ function downloadCsvTemplate() {
     "29.90",
     "10",
     "S/M/L",
+    "",
+    "Helios Wear",
+    "",
+    "24",
+    "black",
     ""
   ];
   const csv = `${csvFields.join(",")}\n${sampleRow.map(csvCell).join(",")}\n`;
@@ -156,6 +171,7 @@ function validatePreviewRow(row: CsvRow) {
   const subcategory = String(row.subcategory || "").trim();
   const price = Number(String(row.price || "").replace(",", "."));
   const stock = Number(String(row.stock || "").replace(",", "."));
+  const vat = row.vat === undefined || row.vat === "" ? 24 : Number(String(row.vat).replace(",", "."));
 
   if (!sku) errors.push("sku 必填");
   if (!isProductCategory(category)) errors.push("分类无效");
@@ -164,6 +180,7 @@ function validatePreviewRow(row: CsvRow) {
   }
   if (!Number.isFinite(price)) errors.push("价格必须是数字");
   if (!Number.isFinite(stock)) errors.push("库存必须是数字");
+  if (!Number.isFinite(vat)) errors.push("VAT must be a number");
 
   return errors;
 }
@@ -184,6 +201,15 @@ function normalizeProduct(product: ProductFormData): ProductFormData {
     sizes: product.sizes.trim(),
     image_url: product.image_url.trim(),
     image_urls: product.image_urls
+      .split(/\r?\n/)
+      .map((url) => url.trim())
+      .filter(Boolean)
+      .join("\n"),
+    brand: product.brand.trim(),
+    barcode: product.barcode.trim(),
+    vat: Number(product.vat),
+    color: product.color.trim(),
+    additional_image_urls: product.additional_image_urls
       .split(/\r?\n/)
       .map((url) => url.trim())
       .filter(Boolean)
@@ -277,7 +303,12 @@ export function AdminDashboard() {
       stock: product.stock,
       sizes: product.sizes,
       image_url: product.image_url,
-      image_urls: product.image_urls
+      image_urls: product.image_urls,
+      brand: product.brand,
+      barcode: product.barcode,
+      vat: product.vat,
+      color: product.color,
+      additional_image_urls: product.additional_image_urls
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -529,15 +560,42 @@ export function AdminDashboard() {
             <Field label="图片 URL">
               <input className="input" value={form.image_url} onChange={(event) => updateField("image_url", event.target.value)} />
             </Field>
+            <Field label="品牌">
+              <input className="input" value={form.brand} onChange={(event) => updateField("brand", event.target.value)} />
+            </Field>
+            <Field label="条码 / EAN">
+              <input className="input" value={form.barcode} onChange={(event) => updateField("barcode", event.target.value)} />
+            </Field>
+            <Field label="VAT">
+              <input
+                className="input"
+                min="0"
+                step="0.01"
+                type="number"
+                value={form.vat}
+                onChange={(event) => updateField("vat", Number(event.target.value))}
+              />
+            </Field>
+            <Field label="颜色">
+              <input className="input" value={form.color} onChange={(event) => updateField("color", event.target.value)} />
+            </Field>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
             <Field label="多图 URL（一行一个）">
               <textarea
                 className="input min-h-28"
                 value={form.image_urls}
                 onChange={(event) => updateField("image_urls", event.target.value)}
                 placeholder="https://example.com/front.jpg&#10;https://example.com/back.jpg&#10;https://example.com/detail.jpg"
+              />
+            </Field>
+            <Field label="Skroutz 额外图片 URL（一行一个）">
+              <textarea
+                className="input min-h-28"
+                value={form.additional_image_urls}
+                onChange={(event) => updateField("additional_image_urls", event.target.value)}
+                placeholder="https://example.com/extra-1.jpg&#10;https://example.com/extra-2.jpg"
               />
             </Field>
           </div>
@@ -636,7 +694,7 @@ export function AdminDashboard() {
             </button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-stone-200 text-stone-600">
                   <th className="py-3 pr-4">SKU</th>
@@ -644,6 +702,9 @@ export function AdminDashboard() {
                   <th className="py-3 pr-4">分类</th>
                   <th className="py-3 pr-4">二级分类</th>
                   <th className="py-3 pr-4">价格</th>
+                  <th className="py-3 pr-4">品牌</th>
+                  <th className="py-3 pr-4">颜色</th>
+                  <th className="py-3 pr-4">VAT</th>
                   <th className="py-3 pr-4">库存</th>
                   <th className="py-3 pr-4">图片地址</th>
                   <th className="py-3 pr-4">操作</th>
@@ -657,6 +718,9 @@ export function AdminDashboard() {
                     <td className="py-3 pr-4">{product.category}</td>
                     <td className="py-3 pr-4">{product.subcategory}</td>
                     <td className="py-3 pr-4">€{Number(product.price).toFixed(2)}</td>
+                    <td className="py-3 pr-4">{product.brand}</td>
+                    <td className="py-3 pr-4">{product.color}</td>
+                    <td className="py-3 pr-4">{Number(product.vat || 24).toFixed(2)}</td>
                     <td className="py-3 pr-4">{product.stock}</td>
                     <td className="max-w-xs truncate py-3 pr-4">{product.image_url}</td>
                     <td className="py-3 pr-4">

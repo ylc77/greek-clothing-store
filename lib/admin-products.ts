@@ -21,6 +21,11 @@ export type AdminProductPayload = {
   sizes?: unknown;
   image_url?: unknown;
   image_urls?: unknown;
+  brand?: unknown;
+  barcode?: unknown;
+  vat?: unknown;
+  color?: unknown;
+  additional_image_urls?: unknown;
 };
 
 export type ProductMutation = Omit<ProductFormData, "category" | "image_urls"> & {
@@ -73,6 +78,7 @@ export function validateProductPayload(payload: AdminProductPayload) {
   const subcategory = stringValue(payload.subcategory);
   const price = numberValue(payload.price);
   const stock = numberValue(payload.stock);
+  const vat = payload.vat === undefined || payload.vat === "" ? 24 : numberValue(payload.vat);
   const errors: string[] = [];
 
   if (!sku) {
@@ -95,6 +101,10 @@ export function validateProductPayload(payload: AdminProductPayload) {
     errors.push("stock must be a valid number");
   }
 
+  if (!Number.isFinite(vat) || vat < 0) {
+    errors.push("vat must be a valid number");
+  }
+
   const mutation: ProductMutation | null =
     errors.length === 0 && isProductCategory(category)
       ? {
@@ -111,7 +121,12 @@ export function validateProductPayload(payload: AdminProductPayload) {
           stock: Math.trunc(stock),
           sizes: stringValue(payload.sizes),
           image_url: stringValue(payload.image_url),
-          image_urls: imageUrlsValue(payload.image_urls)
+          image_urls: imageUrlsValue(payload.image_urls),
+          brand: stringValue(payload.brand),
+          barcode: stringValue(payload.barcode),
+          vat,
+          color: stringValue(payload.color),
+          additional_image_urls: stringValue(payload.additional_image_urls)
         }
       : null;
 
@@ -134,6 +149,11 @@ export function productForForm(product: Product): ProductFormData & { id: string
     stock: Number(product.stock),
     sizes: product.sizes || "",
     image_url: product.image_url || "",
-    image_urls: Array.isArray(product.image_urls) ? product.image_urls.join("\n") : ""
+    image_urls: Array.isArray(product.image_urls) ? product.image_urls.join("\n") : "",
+    brand: product.brand || "",
+    barcode: product.barcode || "",
+    vat: Number(product.vat ?? 24),
+    color: product.color || "",
+    additional_image_urls: product.additional_image_urls || ""
   };
 }
