@@ -1,20 +1,41 @@
 import Link from "next/link";
 import { productName, text, withLanguage } from "@/lib/i18n";
 import { getProductsByCategory } from "@/lib/products";
-import type { ProductCategory } from "@/lib/types";
+import { isProductSubcategory, subcategoriesByCategory, type ProductCategory } from "@/lib/types";
 import type { Language } from "@/lib/i18n";
+
+function categoryHref(category: ProductCategory, language: Language, subcategory?: string) {
+  const params = new URLSearchParams();
+
+  if (language === "en") {
+    params.set("lang", "en");
+  }
+
+  if (subcategory) {
+    params.set("subcategory", subcategory);
+  }
+
+  const query = params.toString();
+  return `/${category}${query ? `?${query}` : ""}`;
+}
 
 export async function CategoryPage({
   category,
   language,
+  selectedSubcategory,
   title
 }: {
   category: ProductCategory;
   language: Language;
+  selectedSubcategory?: string;
   title: string;
 }) {
   const t = text[language];
-  const { products, error } = await getProductsByCategory(category);
+  const activeSubcategory =
+    selectedSubcategory && isProductSubcategory(category, selectedSubcategory)
+      ? selectedSubcategory
+      : undefined;
+  const { products, error } = await getProductsByCategory(category, activeSubcategory);
 
   return (
     <main className="min-h-screen bg-paper px-4 py-8 sm:px-6 lg:px-8">
@@ -27,6 +48,30 @@ export async function CategoryPage({
             <h1 className="mt-2 text-4xl font-bold text-ink">{title}</h1>
           </div>
         </div>
+
+        <nav className="mb-6 flex flex-wrap gap-2">
+          <Link
+            className={`rounded-md border px-3 py-2 text-sm font-bold ${
+              !activeSubcategory ? "border-ink bg-ink text-white" : "border-stone-300 bg-white text-ink"
+            }`}
+            href={categoryHref(category, language)}
+          >
+            All
+          </Link>
+          {subcategoriesByCategory[category].map((subcategory) => (
+            <Link
+              className={`rounded-md border px-3 py-2 text-sm font-bold ${
+                activeSubcategory === subcategory
+                  ? "border-ink bg-ink text-white"
+                  : "border-stone-300 bg-white text-ink"
+              }`}
+              href={categoryHref(category, language, subcategory)}
+              key={subcategory}
+            >
+              {subcategory}
+            </Link>
+          ))}
+        </nav>
 
         {error ? (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">

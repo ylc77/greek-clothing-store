@@ -9,16 +9,25 @@ type CategoryRouteProps = {
   }>;
   searchParams: Promise<{
     lang?: string;
+    subcategory?: string;
   }>;
 };
 
 export default async function DynamicCategoryPage({ params, searchParams }: CategoryRouteProps) {
   const { category } = await params;
-  const language = getLanguage((await searchParams).lang);
+  const resolvedSearchParams = await searchParams;
+  const language = getLanguage(resolvedSearchParams.lang);
 
   if (!isProductCategory(category)) {
     notFound();
   }
 
-  return <CategoryPage category={category} language={language} title={categoryLabels[category][language]} />;
+  return (
+    <CategoryPage
+      category={category}
+      language={language}
+      selectedSubcategory={resolvedSearchParams.subcategory}
+      title={categoryLabels[category][language]}
+    />
+  );
 }

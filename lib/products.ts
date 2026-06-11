@@ -1,5 +1,5 @@
 import { getSupabaseClient } from "./supabase";
-import type { Product, ProductCategory } from "./types";
+import { isProductSubcategory, type Product, type ProductCategory } from "./types";
 
 export type ProductsResult = {
   products: Product[];
@@ -36,7 +36,10 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
   return { products: (data || []).map(mapProduct), error: null };
 }
 
-export async function getProductsByCategory(category: ProductCategory): Promise<ProductsResult> {
+export async function getProductsByCategory(
+  category: ProductCategory,
+  subcategory?: string
+): Promise<ProductsResult> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     return {
@@ -45,11 +48,17 @@ export async function getProductsByCategory(category: ProductCategory): Promise<
     };
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("products")
     .select("*")
     .eq("category", category)
     .order("created_at", { ascending: false });
+
+  if (subcategory && isProductSubcategory(category, subcategory)) {
+    query = query.eq("subcategory", subcategory);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return { products: [], error: error.message };

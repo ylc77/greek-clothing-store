@@ -23,8 +23,25 @@ export const categories: Category[] = [
   { slug: "other" }
 ];
 
+export const subcategoriesByCategory = {
+  men: ["tshirts", "shirts", "hoodies", "jackets", "trousers", "jeans", "shorts"],
+  women: ["dresses", "tops", "shirts", "hoodies", "jackets", "trousers", "skirts"],
+  shoes: ["sneakers", "boots", "sandals", "heels"],
+  bags: ["handbags", "backpacks", "wallets"],
+  luggage: ["suitcases", "travel_bags"],
+  hats: ["caps", "beanies"],
+  jewelry: ["necklaces", "bracelets", "earrings", "rings"],
+  other: ["accessories"]
+} as const satisfies Record<ProductCategory, readonly string[]>;
+
+export type ProductSubcategory = (typeof subcategoriesByCategory)[ProductCategory][number];
+
 export function isProductCategory(value: string): value is ProductCategory {
   return categories.some((category) => category.slug === value);
+}
+
+export function isProductSubcategory(category: ProductCategory, value: string): value is ProductSubcategory {
+  return (subcategoriesByCategory[category] as readonly string[]).includes(value);
 }
 
 export type Product = {
@@ -37,6 +54,7 @@ export type Product = {
   description_gr: string | null;
   description_en: string | null;
   category: ProductCategory;
+  subcategory: ProductSubcategory | null;
   price: number;
   stock: number;
   sizes: string | null;
@@ -53,6 +71,7 @@ export type ProductFormData = {
   description_gr: string;
   description_en: string;
   category: ProductCategory;
+  subcategory: string;
   price: number;
   stock: number;
   sizes: string;

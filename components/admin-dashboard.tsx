@@ -1,7 +1,14 @@
 "use client";
 
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
-import { categories, isProductCategory, type ProductCategory, type ProductFormData } from "@/lib/types";
+import {
+  categories,
+  isProductCategory,
+  isProductSubcategory,
+  subcategoriesByCategory,
+  type ProductCategory,
+  type ProductFormData
+} from "@/lib/types";
 
 type AdminProduct = ProductFormData & {
   id: string;
@@ -27,6 +34,7 @@ const emptyProduct: ProductFormData = {
   description_gr: "",
   description_en: "",
   category: "men",
+  subcategory: "tshirts",
   price: 0,
   stock: 0,
   sizes: "",
@@ -42,6 +50,7 @@ const csvFields = [
   "name_gr",
   "description_gr",
   "category",
+  "subcategory",
   "price",
   "stock",
   "sizes",
@@ -111,11 +120,15 @@ function validatePreviewRow(row: CsvRow) {
   const errors: string[] = [];
   const sku = String(row.sku || "").trim();
   const category = String(row.category || "").trim();
+  const subcategory = String(row.subcategory || "").trim();
   const price = Number(String(row.price || "").replace(",", "."));
   const stock = Number(String(row.stock || "").replace(",", "."));
 
   if (!sku) errors.push("sku 必填");
   if (!isProductCategory(category)) errors.push("分类无效");
+  if (isProductCategory(category) && subcategory && !isProductSubcategory(category, subcategory)) {
+    errors.push("二级分类无效");
+  }
   if (!Number.isFinite(price)) errors.push("价格必须是数字");
   if (!Number.isFinite(stock)) errors.push("库存必须是数字");
 
@@ -132,6 +145,7 @@ function normalizeProduct(product: ProductFormData): ProductFormData {
     description_cn: product.description_cn.trim(),
     description_gr: product.description_gr.trim(),
     description_en: product.description_en.trim(),
+    subcategory: product.subcategory.trim(),
     price: Number(product.price),
     stock: Number(product.stock),
     sizes: product.sizes.trim(),
@@ -195,7 +209,18 @@ export function AdminDashboard() {
   }, [activePassword]);
 
   function updateField<K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
+    setForm((current) => {
+      if (key === "category") {
+        const category = value as ProductCategory;
+        return {
+          ...current,
+          category,
+          subcategory: subcategoriesByCategory[category][0]
+        };
+      }
+
+      return { ...current, [key]: value };
+    });
   }
 
   function editProduct(product: AdminProduct) {
@@ -209,6 +234,7 @@ export function AdminDashboard() {
       description_gr: product.description_gr,
       description_en: product.description_en,
       category: product.category,
+      subcategory: product.subcategory,
       price: product.price,
       stock: product.stock,
       sizes: product.sizes,
@@ -416,6 +442,19 @@ export function AdminDashboard() {
                 ))}
               </select>
             </Field>
+            <Field label="二级分类">
+              <select
+                className="input"
+                value={form.subcategory}
+                onChange={(event) => updateField("subcategory", event.target.value)}
+              >
+                {subcategoriesByCategory[form.category].map((subcategory) => (
+                  <option key={subcategory} value={subcategory}>
+                    {subcategory}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Field label="价格">
               <input
                 className="input"
@@ -544,6 +583,7 @@ export function AdminDashboard() {
                   <th className="py-3 pr-4">SKU</th>
                   <th className="py-3 pr-4">商品名</th>
                   <th className="py-3 pr-4">分类</th>
+                  <th className="py-3 pr-4">二级分类</th>
                   <th className="py-3 pr-4">价格</th>
                   <th className="py-3 pr-4">库存</th>
                   <th className="py-3 pr-4">图片地址</th>
@@ -556,6 +596,7 @@ export function AdminDashboard() {
                     <td className="py-3 pr-4 font-bold text-ink">{product.sku}</td>
                     <td className="py-3 pr-4">{product.name_cn || product.name_gr || product.name_en}</td>
                     <td className="py-3 pr-4">{product.category}</td>
+                    <td className="py-3 pr-4">{product.subcategory}</td>
                     <td className="py-3 pr-4">EUR {Number(product.price).toFixed(2)}</td>
                     <td className="py-3 pr-4">{product.stock}</td>
                     <td className="max-w-xs truncate py-3 pr-4">{product.image_url}</td>

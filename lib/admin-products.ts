@@ -1,4 +1,10 @@
-import { isProductCategory, type Product, type ProductFormData } from "./types";
+import {
+  isProductCategory,
+  isProductSubcategory,
+  subcategoriesByCategory,
+  type Product,
+  type ProductFormData
+} from "./types";
 
 export type AdminProductPayload = {
   sku?: unknown;
@@ -9,6 +15,7 @@ export type AdminProductPayload = {
   description_gr?: unknown;
   description_en?: unknown;
   category?: unknown;
+  subcategory?: unknown;
   price?: unknown;
   stock?: unknown;
   sizes?: unknown;
@@ -43,6 +50,7 @@ export function adminPasswordIsValid(password: string | null) {
 export function validateProductPayload(payload: AdminProductPayload) {
   const sku = stringValue(payload.sku);
   const category = stringValue(payload.category);
+  const subcategory = stringValue(payload.subcategory);
   const price = numberValue(payload.price);
   const stock = numberValue(payload.stock);
   const errors: string[] = [];
@@ -53,6 +61,10 @@ export function validateProductPayload(payload: AdminProductPayload) {
 
   if (!isProductCategory(category)) {
     errors.push("category must be one of the fixed categories");
+  }
+
+  if (isProductCategory(category) && subcategory && !isProductSubcategory(category, subcategory)) {
+    errors.push("subcategory must match the selected category");
   }
 
   if (!Number.isFinite(price) || price < 0) {
@@ -74,6 +86,7 @@ export function validateProductPayload(payload: AdminProductPayload) {
           description_gr: stringValue(payload.description_gr),
           description_en: stringValue(payload.description_en),
           category,
+          subcategory: subcategory || subcategoriesByCategory[category][0],
           price,
           stock: Math.trunc(stock),
           sizes: stringValue(payload.sizes),
@@ -95,6 +108,7 @@ export function productForForm(product: Product): ProductFormData & { id: string
     description_gr: product.description_gr || "",
     description_en: product.description_en || "",
     category: product.category,
+    subcategory: product.subcategory || subcategoriesByCategory[product.category][0],
     price: Number(product.price),
     stock: Number(product.stock),
     sizes: product.sizes || "",
