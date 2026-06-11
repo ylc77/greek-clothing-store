@@ -60,6 +60,11 @@ export type Product = {
   sizes: string | null;
   image_url: string;
   image_urls: string[] | null;
+  brand?: string | null;
+  barcode?: string | null;
+  vat?: number | null;
+  color?: string | null;
+  additional_image_urls?: string | null;
   created_at: string;
 };
 

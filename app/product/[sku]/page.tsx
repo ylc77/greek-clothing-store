@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ProductImageGallery } from "@/components/product-image-gallery";
 import { categoryLabels, getLanguage, productName, text, withLanguage } from "@/lib/i18n";
 import { getProductBySku } from "@/lib/products";
 
@@ -68,33 +69,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
         </div>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-          <div>
-            {images.length > 0 ? (
-              <div className="grid gap-3">
-                <img
-                  alt={productName(product, language)}
-                  className="aspect-[4/5] w-full rounded-md border border-stone-200 bg-white object-cover"
-                  src={images[0]}
-                />
-                {images.length > 1 ? (
-                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-                    {images.slice(1).map((imageUrl, index) => (
-                      <img
-                        alt={`${productName(product, language)} ${index + 2}`}
-                        className="aspect-square rounded-md border border-stone-200 bg-white object-cover"
-                        key={imageUrl}
-                        src={imageUrl}
-                      />
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <div className="flex aspect-[4/5] items-center justify-center rounded-md border border-dashed border-stone-300 bg-white text-sm text-stone-500">
-                No image
-              </div>
-            )}
-          </div>
+          <ProductImageGallery images={images} alt={productName(product, language)} />
 
           <article className="rounded-md border border-stone-200 bg-white p-5 shadow-sm">
             <p className="text-sm font-bold uppercase tracking-wide text-olive">{product.sku}</p>
