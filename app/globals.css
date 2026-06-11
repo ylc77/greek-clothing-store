@@ -15,3 +15,20 @@ body {
 a {
   text-decoration: none;
 }
+
+.input {
+  width: 100%;
+  border-radius: 0.375rem;
+  border: 1px solid #d6d3d1;
+  background: #fff;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  color: #1e2528;
+}
+
+.input:focus {
+  border-color: #1e2528;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px rgba(30, 37, 40, 0.12);
+}
