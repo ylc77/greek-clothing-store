@@ -1,12 +1,10 @@
 import Link from "next/link";
 import { LanguageSelector } from "@/components/language-selector";
-import { categoryLabels, text, withLanguage, type Language } from "@/lib/i18n";
-import { instagramUrl, siteName, whatsappUrl } from "@/lib/site";
+import { categoryLabels, withLanguage, type Language } from "@/lib/i18n";
+import { instagramUrl, siteName } from "@/lib/site";
 import { categories } from "@/lib/types";
 
 export function SiteHeader({ language }: { language: Language }) {
-  const t = text[language];
-
   return (
     <header className="sticky top-0 z-20 border-b border-stone-200/80 bg-paper/90 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
@@ -27,14 +25,6 @@ export function SiteHeader({ language }: { language: Language }) {
         </nav>
 
         <div className="flex items-center gap-2">
-          <a
-            className="hidden rounded-full bg-ink px-4 py-2 text-sm font-bold text-white transition hover:bg-stone-800 sm:inline-flex"
-            href={whatsappUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            WhatsApp
-          </a>
           <a
             className="hidden rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-bold text-ink transition hover:border-stone-300 md:inline-flex"
             href={instagramUrl}
@@ -57,14 +47,6 @@ export function SiteHeader({ language }: { language: Language }) {
             {categoryLabels[category.slug][language]}
           </Link>
         ))}
-        <a
-          className="shrink-0 rounded-full bg-ink px-3 py-2 text-sm font-bold text-white"
-          href={whatsappUrl}
-          rel="noreferrer"
-          target="_blank"
-        >
-          {t.contact}
-        </a>
       </nav>
     </header>
   );

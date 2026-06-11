@@ -65,6 +65,7 @@ export type Product = {
   vat?: number | null;
   color?: string | null;
   additional_image_urls?: string | null;
+  skroutz_url?: string | null;
   created_at: string;
 };
 
@@ -88,4 +89,5 @@ export type ProductFormData = {
   vat: number;
   color: string;
   additional_image_urls: string;
+  skroutz_url: string;
 };

@@ -44,7 +44,8 @@ const emptyProduct: ProductFormData = {
   barcode: "",
   vat: 24,
   color: "",
-  additional_image_urls: ""
+  additional_image_urls: "",
+  skroutz_url: ""
 };
 
 const csvFields = [
@@ -64,8 +65,7 @@ const csvFields = [
   "brand",
   "barcode",
   "vat",
-  "color",
-  "additional_image_urls"
+  "color"
 ];
 
 function parseCsv(text: string) {
@@ -149,8 +149,7 @@ function downloadCsvTemplate() {
     "Helios Wear",
     "",
     "24",
-    "black",
-    ""
+    "black"
   ];
   const csv = `${csvFields.join(",")}\n${sampleRow.map(csvCell).join(",")}\n`;
   const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
@@ -213,7 +212,8 @@ function normalizeProduct(product: ProductFormData): ProductFormData {
       .split(/\r?\n/)
       .map((url) => url.trim())
       .filter(Boolean)
-      .join("\n")
+      .join("\n"),
+    skroutz_url: product.skroutz_url.trim()
   };
 }
 
@@ -308,7 +308,8 @@ export function AdminDashboard() {
       barcode: product.barcode,
       vat: product.vat,
       color: product.color,
-      additional_image_urls: product.additional_image_urls
+      additional_image_urls: product.additional_image_urls,
+      skroutz_url: product.skroutz_url
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -555,10 +556,23 @@ export function AdminDashboard() {
               <input className="input" value={form.name_en} onChange={(event) => updateField("name_en", event.target.value)} />
             </Field>
             <Field label="尺码">
-              <input className="input" value={form.sizes} onChange={(event) => updateField("sizes", event.target.value)} />
+              <input
+                className="input"
+                placeholder="S,M,L,XL"
+                value={form.sizes}
+                onChange={(event) => updateField("sizes", event.target.value)}
+              />
             </Field>
             <Field label="图片 URL">
               <input className="input" value={form.image_url} onChange={(event) => updateField("image_url", event.target.value)} />
+            </Field>
+            <Field label="Skroutz URL">
+              <input
+                className="input"
+                placeholder="https://www.skroutz.gr/..."
+                value={form.skroutz_url}
+                onChange={(event) => updateField("skroutz_url", event.target.value)}
+              />
             </Field>
             <Field label="品牌">
               <input className="input" value={form.brand} onChange={(event) => updateField("brand", event.target.value)} />
@@ -581,21 +595,13 @@ export function AdminDashboard() {
             </Field>
           </div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="mt-4">
             <Field label="多图 URL（一行一个）">
               <textarea
                 className="input min-h-28"
                 value={form.image_urls}
                 onChange={(event) => updateField("image_urls", event.target.value)}
                 placeholder="https://example.com/front.jpg&#10;https://example.com/back.jpg&#10;https://example.com/detail.jpg"
-              />
-            </Field>
-            <Field label="Skroutz 额外图片 URL（一行一个）">
-              <textarea
-                className="input min-h-28"
-                value={form.additional_image_urls}
-                onChange={(event) => updateField("additional_image_urls", event.target.value)}
-                placeholder="https://example.com/extra-1.jpg&#10;https://example.com/extra-2.jpg"
               />
             </Field>
           </div>

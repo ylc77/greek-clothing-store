@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ProductActions } from "@/components/product-actions";
 import { ProductImageGallery } from "@/components/product-image-gallery";
 import { SiteHeader } from "@/components/site-header";
 import { categoryLabels, getLanguage, productName, text, withLanguage } from "@/lib/i18n";
 import { getProductBySku } from "@/lib/products";
-import { whatsappUrl } from "@/lib/site";
 
 type ProductPageProps = {
   params: Promise<{
@@ -99,22 +99,15 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
                   <span>{product.subcategory}</span>
                 </p>
               ) : null}
-              {product.sizes ? (
-                <p className="flex justify-between gap-4">
-                  <strong className="text-ink">{t.sizes}</strong>
-                  <span>{product.sizes}</span>
-                </p>
-              ) : null}
             </div>
 
-            <a
-              className="mt-6 inline-flex w-full justify-center rounded-full bg-ink px-5 py-3 text-sm font-black text-white transition hover:bg-stone-800"
-              href={`${whatsappUrl}?text=${encodeURIComponent(`${product.sku} - ${productName(product, language)}`)}`}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {t.whatsapp}
-            </a>
+            <ProductActions
+              productName={productName(product, language)}
+              productNameEn={product.name_en || product.name_gr || product.sku}
+              sku={product.sku}
+              sizes={product.sizes}
+              skroutzUrl={product.skroutz_url}
+            />
 
             {description ? (
               <div className="mt-6 border-t border-stone-200 pt-5">

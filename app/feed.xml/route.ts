@@ -89,12 +89,8 @@ function formatDecimal(value: number | string | null | undefined, fallback: numb
 
 function additionalImages(product: Product) {
   const imageUrls = Array.isArray(product.image_urls) ? product.image_urls : [];
-  const extraUrls =
-    typeof product.additional_image_urls === "string"
-      ? product.additional_image_urls.split(/[\n\r,]+/).map((url) => url.trim())
-      : [];
 
-  return Array.from(new Set([...imageUrls, ...extraUrls].filter(Boolean))).filter(
+  return Array.from(new Set(imageUrls.filter(Boolean))).filter(
     (imageUrl) => imageUrl !== product.image_url
   );
 }

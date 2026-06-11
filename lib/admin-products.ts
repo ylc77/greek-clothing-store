@@ -26,6 +26,7 @@ export type AdminProductPayload = {
   vat?: unknown;
   color?: unknown;
   additional_image_urls?: unknown;
+  skroutz_url?: unknown;
 };
 
 export type ProductMutation = Omit<ProductFormData, "category" | "image_urls"> & {
@@ -126,7 +127,8 @@ export function validateProductPayload(payload: AdminProductPayload) {
           barcode: stringValue(payload.barcode),
           vat,
           color: stringValue(payload.color),
-          additional_image_urls: stringValue(payload.additional_image_urls)
+          additional_image_urls: stringValue(payload.additional_image_urls),
+          skroutz_url: stringValue(payload.skroutz_url)
         }
       : null;
 
@@ -154,6 +156,7 @@ export function productForForm(product: Product): ProductFormData & { id: string
     barcode: product.barcode || "",
     vat: Number(product.vat ?? 24),
     color: product.color || "",
-    additional_image_urls: product.additional_image_urls || ""
+    additional_image_urls: product.additional_image_urls || "",
+    skroutz_url: product.skroutz_url || ""
   };
 }
