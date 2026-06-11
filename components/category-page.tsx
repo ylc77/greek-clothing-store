@@ -85,7 +85,11 @@ export async function CategoryPage({
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {products.map((product) => (
-              <article className="overflow-hidden rounded-md border border-stone-200 bg-white" key={product.sku}>
+              <Link
+                className="overflow-hidden rounded-md border border-stone-200 bg-white"
+                href={withLanguage(`/product/${encodeURIComponent(product.sku)}`, language)}
+                key={product.sku}
+              >
                 <img
                   alt={productName(product, language)}
                   className="aspect-[4/5] w-full object-cover"
@@ -100,7 +104,7 @@ export async function CategoryPage({
                     {product.stock > 0 ? t.inStock : t.outOfStock}
                   </p>
                 </div>
-              </article>
+              </Link>
             ))}
           </div>
         )}

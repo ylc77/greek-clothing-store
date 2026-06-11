@@ -38,7 +38,8 @@ const emptyProduct: ProductFormData = {
   price: 0,
   stock: 0,
   sizes: "",
-  image_url: ""
+  image_url: "",
+  image_urls: ""
 };
 
 const csvFields = [
@@ -181,7 +182,12 @@ function normalizeProduct(product: ProductFormData): ProductFormData {
     price: Number(product.price),
     stock: Number(product.stock),
     sizes: product.sizes.trim(),
-    image_url: product.image_url.trim()
+    image_url: product.image_url.trim(),
+    image_urls: product.image_urls
+      .split(/\r?\n/)
+      .map((url) => url.trim())
+      .filter(Boolean)
+      .join("\n")
   };
 }
 
@@ -270,7 +276,8 @@ export function AdminDashboard() {
       price: product.price,
       stock: product.stock,
       sizes: product.sizes,
-      image_url: product.image_url
+      image_url: product.image_url,
+      image_urls: product.image_urls
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -521,6 +528,17 @@ export function AdminDashboard() {
             </Field>
             <Field label="图片 URL">
               <input className="input" value={form.image_url} onChange={(event) => updateField("image_url", event.target.value)} />
+            </Field>
+          </div>
+
+          <div className="mt-4">
+            <Field label="多图 URL（一行一个）">
+              <textarea
+                className="input min-h-28"
+                value={form.image_urls}
+                onChange={(event) => updateField("image_urls", event.target.value)}
+                placeholder="https://example.com/front.jpg&#10;https://example.com/back.jpg&#10;https://example.com/detail.jpg"
+              />
             </Field>
           </div>
 

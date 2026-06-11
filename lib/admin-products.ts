@@ -20,10 +20,12 @@ export type AdminProductPayload = {
   stock?: unknown;
   sizes?: unknown;
   image_url?: unknown;
+  image_urls?: unknown;
 };
 
-export type ProductMutation = Omit<ProductFormData, "category"> & {
+export type ProductMutation = Omit<ProductFormData, "category" | "image_urls"> & {
   category: Product["category"];
+  image_urls: string[];
 };
 
 function stringValue(value: unknown) {
@@ -40,6 +42,24 @@ function numberValue(value: unknown) {
   }
 
   return NaN;
+}
+
+function imageUrlsValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
 }
 
 export function adminPasswordIsValid(password: string | null) {
@@ -90,7 +110,8 @@ export function validateProductPayload(payload: AdminProductPayload) {
           price,
           stock: Math.trunc(stock),
           sizes: stringValue(payload.sizes),
-          image_url: stringValue(payload.image_url)
+          image_url: stringValue(payload.image_url),
+          image_urls: imageUrlsValue(payload.image_urls)
         }
       : null;
 
@@ -112,6 +133,7 @@ export function productForForm(product: Product): ProductFormData & { id: string
     price: Number(product.price),
     stock: Number(product.stock),
     sizes: product.sizes || "",
-    image_url: product.image_url || ""
+    image_url: product.image_url || "",
+    image_urls: Array.isArray(product.image_urls) ? product.image_urls.join("\n") : ""
   };
 }

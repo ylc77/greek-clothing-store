@@ -4,6 +4,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 
 const bucketName = "product-images";
 const imageNamePattern = /^(.+)\.(jpg|png|webp)$/i;
+const galleryImageNamePattern = /^(.+)-([1-9]\d*)\.(jpg|png|webp)$/i;
 
 type ImageResult = {
   fileName: string;
@@ -77,6 +78,7 @@ export async function POST(request: NextRequest) {
 
   for (const file of files) {
     const fileName = file.name.trim();
+    const galleryMatch = fileName.match(galleryImageNamePattern);
     const match = fileName.match(imageNamePattern);
 
     if (!match) {
@@ -84,15 +86,16 @@ export async function POST(request: NextRequest) {
         fileName,
         sku: "",
         ok: false,
-        message: "File name must be sku.jpg, sku.png, or sku.webp"
+        message: "File name must be sku.jpg, sku.png, sku.webp, or SKU-1.jpg"
       });
       continue;
     }
 
-    const sku = match[1];
+    const sku = galleryMatch ? galleryMatch[1] : match[1];
+    const galleryIndex = galleryMatch ? Number(galleryMatch[2]) - 1 : null;
     const { data: product, error: productError } = await supabase
       .from("products")
-      .select("id, sku")
+      .select("id, sku, image_url, image_urls")
       .eq("sku", sku)
       .maybeSingle();
 
@@ -118,10 +121,18 @@ export async function POST(request: NextRequest) {
 
     const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(fileName);
     const imageUrl = publicUrlData.publicUrl;
-    const { error: updateError } = await supabase
-      .from("products")
-      .update({ image_url: imageUrl })
-      .eq("sku", sku);
+    const updatePayload =
+      galleryIndex === null
+        ? { image_url: imageUrl }
+        : {
+            image_url: galleryIndex === 0 ? imageUrl : product.image_url || imageUrl,
+            image_urls: (() => {
+              const imageUrls = Array.isArray(product.image_urls) ? [...product.image_urls] : [];
+              imageUrls[galleryIndex] = imageUrl;
+              return imageUrls.filter(Boolean);
+            })()
+          };
+    const { error: updateError } = await supabase.from("products").update(updatePayload).eq("sku", sku);
 
     if (updateError) {
       results.push({ fileName, sku, ok: false, message: updateError.message });
@@ -132,7 +143,7 @@ export async function POST(request: NextRequest) {
       fileName,
       sku,
       ok: true,
-      message: "Uploaded and linked",
+      message: galleryIndex === null ? "Uploaded and linked as main image" : "Uploaded and linked as gallery image",
       imageUrl
     });
   }

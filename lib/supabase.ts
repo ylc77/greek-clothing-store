@@ -7,14 +7,16 @@ type Database = {
       products: {
         Row: Product;
         Insert: Partial<Pick<Product, "id" | "created_at">> &
-          Omit<ProductFormData, "price" | "stock"> & {
+          Omit<ProductFormData, "price" | "stock" | "image_urls"> & {
             price: number;
             stock: number;
+            image_urls?: string[];
           };
         Update: Partial<
-          Omit<ProductFormData, "price" | "stock"> & {
+          Omit<ProductFormData, "price" | "stock" | "image_urls"> & {
             price: number;
             stock: number;
+            image_urls?: string[];
           }
         >;
         Relationships: [];

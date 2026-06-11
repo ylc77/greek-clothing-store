@@ -59,6 +59,7 @@ export type Product = {
   stock: number;
   sizes: string | null;
   image_url: string;
+  image_urls: string[] | null;
   created_at: string;
 };
 
@@ -76,4 +77,5 @@ export type ProductFormData = {
   stock: number;
   sizes: string;
   image_url: string;
+  image_urls: string;
 };

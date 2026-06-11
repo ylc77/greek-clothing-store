@@ -10,7 +10,8 @@ function mapProduct(product: Product): Product {
   return {
     ...product,
     price: Number(product.price),
-    stock: Number(product.stock)
+    stock: Number(product.stock),
+    image_urls: Array.isArray(product.image_urls) ? product.image_urls : []
   };
 }
 
@@ -65,4 +66,22 @@ export async function getProductsByCategory(
   }
 
   return { products: (data || []).map(mapProduct), error: null };
+}
+
+export async function getProductBySku(sku: string): Promise<{ product: Product | null; error: string | null }> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return {
+      product: null,
+      error: "Supabase is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local."
+    };
+  }
+
+  const { data, error } = await supabase.from("products").select("*").eq("sku", sku).maybeSingle();
+
+  if (error) {
+    return { product: null, error: error.message };
+  }
+
+  return { product: data ? mapProduct(data as Product) : null, error: null };
 }

@@ -96,7 +96,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               {products.map((product) => (
                 <Link
                   className="overflow-hidden rounded-md border border-stone-200 bg-white shadow-sm"
-                  href={withLanguage(`/${product.category}`, language)}
+                  href={withLanguage(`/product/${encodeURIComponent(product.sku)}`, language)}
                   key={product.sku}
                 >
                   <img
@@ -111,6 +111,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                     <p className="mt-2 text-base font-extrabold text-terracotta">
                       €{Number(product.price).toFixed(2)}
                     </p>
+                    <span className="mt-3 inline-flex rounded-md border border-stone-300 px-3 py-2 text-xs font-bold text-ink">
+                      {language === "en" ? "View details" : "Λεπτομέρειες"}
+                    </span>
                   </div>
                 </Link>
               ))}
