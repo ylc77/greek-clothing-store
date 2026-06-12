@@ -54,8 +54,8 @@ async function toOptimizedWebp(file: File) {
       .resize({
         width: outputWidth,
         height: outputHeight,
-        fit: "contain",
-        background: { r: 255, g: 255, b: 255, alpha: 1 }
+        fit: "cover",
+        position: "centre"
       })
       .webp({ quality: 82 })
       .toBuffer();
