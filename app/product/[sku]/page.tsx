@@ -1,10 +1,20 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProductActions } from "@/components/product-actions";
 import { ProductImageGallery } from "@/components/product-image-gallery";
 import { SiteHeader } from "@/components/site-header";
-import { categoryLabels, getLanguage, productName, text, withLanguage } from "@/lib/i18n";
+import {
+  categoryLabels,
+  getLanguage,
+  productDescription,
+  productName,
+  subcategoryLabels,
+  text,
+  withLanguage
+} from "@/lib/i18n";
 import { getProductBySku } from "@/lib/products";
+import { siteName } from "@/lib/site";
 
 type ProductPageProps = {
   params: Promise<{
@@ -15,19 +25,62 @@ type ProductPageProps = {
   }>;
 };
 
-function productDescription(
-  product: NonNullable<Awaited<ReturnType<typeof getProductBySku>>["product"]>,
-  language: "el" | "en"
-) {
-  return language === "en"
-    ? product.description_en || product.description_gr || ""
-    : product.description_gr || product.description_en || "";
-}
+type LoadedProduct = NonNullable<Awaited<ReturnType<typeof getProductBySku>>["product"]>;
 
-function productImages(product: NonNullable<Awaited<ReturnType<typeof getProductBySku>>["product"]>) {
+function productImages(product: LoadedProduct) {
   const urls = Array.isArray(product.image_urls) ? product.image_urls.filter(Boolean) : [];
   const images = product.image_url ? [product.image_url, ...urls] : urls;
   return Array.from(new Set(images));
+}
+
+function siteUrl() {
+  return (process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").replace(/\/$/, "");
+}
+
+function categoryBackHref(product: LoadedProduct, language: "el" | "en") {
+  const params = new URLSearchParams();
+
+  if (product.subcategory) {
+    params.set("subcategory", product.subcategory);
+  }
+
+  if (language === "en") {
+    params.set("lang", "en");
+  }
+
+  const query = params.toString();
+  return `/${product.category}${query ? `?${query}` : ""}`;
+}
+
+export async function generateMetadata({ params, searchParams }: ProductPageProps): Promise<Metadata> {
+  const [{ sku }, resolvedSearchParams] = await Promise.all([params, searchParams]);
+  const language = getLanguage(resolvedSearchParams.lang);
+  const { product } = await getProductBySku(decodeURIComponent(sku));
+
+  if (!product) {
+    return {
+      title: siteName
+    };
+  }
+
+  const title = `${productName(product, language)} | ${siteName}`;
+  const description = productDescription(product, language) || productName(product, language);
+  const url = `${siteUrl()}/product/${encodeURIComponent(product.sku)}`;
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: url
+    },
+    openGraph: {
+      title,
+      description,
+      url,
+      siteName,
+      images: product.image_url ? [{ url: product.image_url, alt: productName(product, language) }] : []
+    }
+  };
 }
 
 export default async function ProductPage({ params, searchParams }: ProductPageProps) {
@@ -59,27 +112,32 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
 
   const images = productImages(product);
   const description = productDescription(product, language);
+  const backHref = categoryBackHref(product, language);
+  const backLabel =
+    product.subcategory && subcategoryLabels[product.subcategory]
+      ? subcategoryLabels[product.subcategory][language]
+      : categoryLabels[product.category][language];
 
   return (
     <main className="min-h-screen bg-paper">
       <SiteHeader language={language} />
-      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-6 flex flex-wrap items-center gap-3 text-sm font-bold text-stone-500">
+      <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        <div className="mb-5 flex flex-wrap items-center gap-3 text-sm font-bold text-stone-500 sm:mb-6">
           <Link className="hover:text-ink" href={withLanguage("/", language)}>
             {t.backHome}
           </Link>
           <span>/</span>
-          <Link className="hover:text-ink" href={withLanguage(`/${product.category}`, language)}>
-            {categoryLabels[product.category][language]}
+          <Link className="hover:text-ink" href={backHref}>
+            {backLabel}
           </Link>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
+        <div className="grid gap-5 sm:gap-8 lg:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
           <ProductImageGallery images={images} alt={productName(product, language)} />
 
-          <article className="rounded-md border border-stone-200 bg-white p-5 shadow-sm sm:p-7">
+          <article className="rounded-md border border-stone-200 bg-white p-4 shadow-sm sm:p-7">
             <p className="text-sm font-black uppercase tracking-[0.18em] text-olive">{product.sku}</p>
-            <h1 className="mt-3 text-3xl font-black tracking-tight text-ink sm:text-4xl">
+            <h1 className="mt-3 text-2xl font-black tracking-tight text-ink sm:text-4xl">
               {productName(product, language)}
             </h1>
             <p className="mt-5 text-3xl font-black text-terracotta">€{Number(product.price).toFixed(2)}</p>
@@ -96,7 +154,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
               {product.subcategory ? (
                 <p className="flex justify-between gap-4">
                   <strong className="text-ink">{t.subcategory}</strong>
-                  <span>{product.subcategory}</span>
+                  <span>{subcategoryLabels[product.subcategory]?.[language] || product.subcategory}</span>
                 </p>
               ) : null}
             </div>

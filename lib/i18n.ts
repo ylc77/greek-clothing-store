@@ -1,4 +1,4 @@
-import type { Product, ProductCategory } from "./types";
+import type { Product, ProductCategory, ProductSubcategory } from "./types";
 
 export type Language = "el" | "en";
 
@@ -16,7 +16,15 @@ export function withLanguage(path: string, language: Language) {
 }
 
 export function productName(product: Product, language: Language) {
-  return language === "en" ? product.name_en || product.name_gr : product.name_gr || product.name_en;
+  return language === "en"
+    ? product.name_en || product.name_gr || product.name_cn || product.sku
+    : product.name_gr || product.name_en || product.name_cn || product.sku;
+}
+
+export function productDescription(product: Product, language: Language) {
+  return language === "en"
+    ? product.description_en || product.description_gr || product.description_cn || ""
+    : product.description_gr || product.description_en || product.description_cn || "";
 }
 
 export const categoryLabels: Record<ProductCategory, Record<Language, string>> = {
@@ -30,6 +38,35 @@ export const categoryLabels: Record<ProductCategory, Record<Language, string>> =
   other: { el: "Άλλα", en: "Other" }
 };
 
+export const subcategoryLabels: Record<ProductSubcategory, Record<Language, string>> = {
+  tshirts: { el: "T-shirts", en: "T-shirts" },
+  shirts: { el: "Πουκάμισα", en: "Shirts" },
+  hoodies: { el: "Φούτερ", en: "Hoodies" },
+  jackets: { el: "Μπουφάν", en: "Jackets" },
+  trousers: { el: "Παντελόνια", en: "Trousers" },
+  jeans: { el: "Τζιν", en: "Jeans" },
+  shorts: { el: "Σορτς", en: "Shorts" },
+  dresses: { el: "Φορέματα", en: "Dresses" },
+  tops: { el: "Τοπ", en: "Tops" },
+  skirts: { el: "Φούστες", en: "Skirts" },
+  sneakers: { el: "Sneakers", en: "Sneakers" },
+  boots: { el: "Μπότες", en: "Boots" },
+  sandals: { el: "Σανδάλια", en: "Sandals" },
+  heels: { el: "Γόβες", en: "Heels" },
+  handbags: { el: "Τσάντες χειρός", en: "Handbags" },
+  backpacks: { el: "Σακίδια", en: "Backpacks" },
+  wallets: { el: "Πορτοφόλια", en: "Wallets" },
+  suitcases: { el: "Βαλίτσες", en: "Suitcases" },
+  travel_bags: { el: "Ταξιδιωτικές τσάντες", en: "Travel bags" },
+  caps: { el: "Καπέλα", en: "Caps" },
+  beanies: { el: "Σκούφοι", en: "Beanies" },
+  necklaces: { el: "Κολιέ", en: "Necklaces" },
+  bracelets: { el: "Βραχιόλια", en: "Bracelets" },
+  earrings: { el: "Σκουλαρίκια", en: "Earrings" },
+  rings: { el: "Δαχτυλίδια", en: "Rings" },
+  accessories: { el: "Αξεσουάρ", en: "Accessories" }
+};
+
 export const text = {
   el: {
     eyebrow: "Ελληνικό κατάστημα μόδας",
@@ -40,19 +77,21 @@ export const text = {
     noProducts: "Δεν υπάρχουν προϊόντα ακόμα.",
     noCategoryProducts: "Δεν υπάρχουν προϊόντα σε αυτή την κατηγορία ακόμα.",
     backHome: "Πίσω στην αρχική",
+    backToCategory: "Πίσω στην κατηγορία",
     inStock: "Σε απόθεμα",
     outOfStock: "Εξαντλημένο",
     contact: "Επικοινωνία",
     greek: "Ελληνικά",
     english: "English",
-    viewDetails: "Λεπτομέρειες",
     shopLatest: "Δείτε τη συλλογή",
     categories: "Κατηγορίες",
     whatsapp: "Ρωτήστε στο WhatsApp",
     description: "Περιγραφή",
     category: "Κατηγορία",
     subcategory: "Υποκατηγορία",
-    sizes: "Μεγέθη"
+    sizes: "Μεγέθη",
+    all: "Όλα",
+    items: "προϊόντα"
   },
   en: {
     eyebrow: "Greek clothing store",
@@ -63,18 +102,20 @@ export const text = {
     noProducts: "No products yet.",
     noCategoryProducts: "No products in this category yet.",
     backHome: "Back home",
+    backToCategory: "Back to category",
     inStock: "In stock",
     outOfStock: "Out of stock",
     contact: "Contact",
     greek: "Ελληνικά",
     english: "English",
-    viewDetails: "View details",
     shopLatest: "Shop latest",
     categories: "Categories",
     whatsapp: "Ask on WhatsApp",
     description: "Description",
     category: "Category",
     subcategory: "Subcategory",
-    sizes: "Sizes"
+    sizes: "Sizes",
+    all: "All",
+    items: "items"
   }
 };

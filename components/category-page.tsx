@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ProductCard } from "@/components/product-card";
 import { SiteHeader } from "@/components/site-header";
-import { text, withLanguage } from "@/lib/i18n";
+import { subcategoryLabels, text, withLanguage } from "@/lib/i18n";
 import { getProductsByCategory } from "@/lib/products";
 import { isProductSubcategory, subcategoriesByCategory, type ProductCategory } from "@/lib/types";
 import type { Language } from "@/lib/i18n";
@@ -43,28 +43,28 @@ export async function CategoryPage({
     <main className="min-h-screen bg-paper">
       <SiteHeader language={language} />
 
-      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-7 flex flex-col gap-4 border-b border-stone-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+      <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        <div className="mb-6 flex flex-col gap-4 border-b border-stone-200 pb-5 sm:mb-7 sm:flex-row sm:items-end sm:justify-between sm:pb-6">
           <div>
             <Link className="text-sm font-black text-stone-500 hover:text-ink" href={withLanguage("/", language)}>
               {t.backHome}
             </Link>
             <p className="mt-4 text-sm font-black uppercase tracking-[0.18em] text-olive">{t.categories}</p>
-            <h1 className="mt-2 text-4xl font-black tracking-tight text-ink sm:text-5xl">{title}</h1>
+            <h1 className="mt-2 text-3xl font-black tracking-tight text-ink sm:text-5xl">{title}</h1>
           </div>
           <p className="text-sm font-bold text-stone-500">
-            {products.length} {language === "en" ? "items" : "προϊόντα"}
+            {products.length} {t.items}
           </p>
         </div>
 
-        <nav className="mb-7 flex gap-2 overflow-x-auto pb-1">
+        <nav className="mb-6 flex gap-2 overflow-x-auto pb-2 sm:mb-7">
           <Link
             className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black transition ${
               !activeSubcategory ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink"
             }`}
             href={categoryHref(category, language)}
           >
-            All
+            {t.all}
           </Link>
           {subcategoriesByCategory[category].map((subcategory) => (
             <Link
@@ -76,7 +76,7 @@ export async function CategoryPage({
               href={categoryHref(category, language, subcategory)}
               key={subcategory}
             >
-              {subcategory}
+              {subcategoryLabels[subcategory][language]}
             </Link>
           ))}
         </nav>
@@ -91,7 +91,7 @@ export async function CategoryPage({
             {t.noCategoryProducts}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4">
             {products.map((product) => (
               <ProductCard key={product.sku} product={product} language={language} />
             ))}

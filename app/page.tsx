@@ -21,16 +21,16 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     <main className="min-h-screen bg-paper">
       <SiteHeader language={language} />
 
-      <section className="relative min-h-[560px] overflow-hidden bg-ink text-white">
+      <section className="relative min-h-[500px] overflow-hidden bg-ink text-white sm:min-h-[560px]">
         <img
           alt=""
           className="absolute inset-0 h-full w-full object-cover"
           src="/images/home-hero.png"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-black/62 via-black/28 to-black/5" />
-        <div className="relative mx-auto flex min-h-[560px] max-w-7xl flex-col justify-end px-4 pb-10 pt-24 sm:px-6 lg:px-8">
+        <div className="relative mx-auto flex min-h-[500px] max-w-7xl flex-col justify-end px-4 pb-9 pt-24 sm:min-h-[560px] sm:px-6 sm:pb-12 lg:px-8">
           <p className="text-sm font-bold uppercase tracking-[0.22em] text-white/80">{t.eyebrow}</p>
-          <h1 className="mt-3 max-w-3xl text-5xl font-black tracking-tight sm:text-7xl">{siteName}</h1>
+          <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight sm:text-6xl lg:text-7xl">{siteName}</h1>
           <p className="mt-5 max-w-xl text-base leading-7 text-white/88 sm:text-lg">{t.intro}</p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link
@@ -51,7 +51,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-9 sm:px-6 lg:px-8">
+      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
         <div className="mb-4 flex items-end justify-between gap-4">
           <div>
             <p className="text-sm font-black uppercase tracking-[0.18em] text-olive">{t.categories}</p>
@@ -61,7 +61,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <nav className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
           {categories.map((category) => (
             <Link
-              className="rounded-md border border-stone-200 bg-white px-4 py-4 text-sm font-black text-ink shadow-sm transition hover:-translate-y-0.5 hover:border-ink"
+              className="rounded-md border border-stone-200 bg-white px-4 py-4 text-sm font-black text-ink shadow-sm transition hover:-translate-y-0.5 hover:border-ink sm:text-center"
               href={withLanguage(`/${category.slug}`, language)}
               key={category.slug}
             >
@@ -71,8 +71,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </nav>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 pb-10 sm:px-6 lg:px-8" id="latest">
-        <div className="mb-5 flex items-end justify-between gap-4">
+      <section className="mx-auto max-w-7xl px-4 pb-10 sm:px-6 sm:pb-14 lg:px-8" id="latest">
+        <div className="mb-5 flex items-end justify-between gap-4 sm:mb-6">
           <div>
             <p className="text-sm font-black uppercase tracking-[0.18em] text-olive">{t.latest}</p>
             <h2 className="mt-2 text-3xl font-black text-ink">{t.latest}</h2>
@@ -90,7 +90,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             {t.noProducts}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4">
             {products.map((product) => (
               <ProductCard key={product.sku} product={product} language={language} />
             ))}

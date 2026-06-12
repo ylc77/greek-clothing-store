@@ -25,6 +25,13 @@ type ApiResult = {
 
 type CsvRow = Record<string, string | number>;
 
+type TranslationResult = {
+  name_gr: string;
+  description_gr: string;
+  name_en: string;
+  description_en: string;
+};
+
 const emptyProduct: ProductFormData = {
   sku: "",
   name_cn: "",
@@ -62,10 +69,12 @@ const csvFields = [
   "stock",
   "sizes",
   "image_url",
+  "image_urls",
   "brand",
   "barcode",
   "vat",
-  "color"
+  "color",
+  "skroutz_url"
 ];
 
 function parseCsv(text: string) {
@@ -136,7 +145,7 @@ function downloadCsvTemplate() {
     "DEMO-WOMEN-DRESSES-001",
     "女士连衣裙",
     "示例中文描述",
-    "Women Dress",
+    "Women dress",
     "Sample English description",
     "Γυναικείο φόρεμα",
     "Παράδειγμα περιγραφής",
@@ -144,12 +153,14 @@ function downloadCsvTemplate() {
     "dresses",
     "29.90",
     "10",
-    "S/M/L",
+    "S,M,L",
+    "",
     "",
     "Helios Wear",
     "",
     "24",
-    "black"
+    "black",
+    ""
   ];
   const csv = `${csvFields.join(",")}\n${sampleRow.map(csvCell).join(",")}\n`;
   const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
@@ -179,7 +190,7 @@ function validatePreviewRow(row: CsvRow) {
   }
   if (!Number.isFinite(price)) errors.push("价格必须是数字");
   if (!Number.isFinite(stock)) errors.push("库存必须是数字");
-  if (!Number.isFinite(vat)) errors.push("VAT must be a number");
+  if (!Number.isFinite(vat)) errors.push("VAT 必须是数字");
 
   return errors;
 }
@@ -208,11 +219,7 @@ function normalizeProduct(product: ProductFormData): ProductFormData {
     barcode: product.barcode.trim(),
     vat: Number(product.vat),
     color: product.color.trim(),
-    additional_image_urls: product.additional_image_urls
-      .split(/\r?\n/)
-      .map((url) => url.trim())
-      .filter(Boolean)
-      .join("\n"),
+    additional_image_urls: "",
     skroutz_url: product.skroutz_url.trim()
   };
 }
@@ -225,6 +232,7 @@ export function AdminDashboard() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [translating, setTranslating] = useState(false);
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
   const [csvResults, setCsvResults] = useState<ApiResult[]>([]);
   const [imageResults, setImageResults] = useState<ApiResult[]>([]);
@@ -308,10 +316,50 @@ export function AdminDashboard() {
       barcode: product.barcode,
       vat: product.vat,
       color: product.color,
-      additional_image_urls: product.additional_image_urls,
+      additional_image_urls: "",
       skroutz_url: product.skroutz_url
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function translateProduct() {
+    if (!form.name_cn.trim() && !form.description_cn.trim()) {
+      setStatus("请先填写中文名称或中文描述。");
+      return;
+    }
+
+    if (
+      (form.name_gr || form.description_gr || form.name_en || form.description_en) &&
+      !window.confirm("当前已有希腊语或英语内容，是否用自动翻译结果覆盖？")
+    ) {
+      return;
+    }
+
+    setTranslating(true);
+    setStatus("");
+
+    try {
+      const data = (await api("/api/admin/translate", {
+        method: "POST",
+        body: JSON.stringify({
+          name_cn: form.name_cn,
+          description_cn: form.description_cn
+        })
+      })) as TranslationResult;
+
+      setForm((current) => ({
+        ...current,
+        name_gr: data.name_gr,
+        description_gr: data.description_gr,
+        name_en: data.name_en,
+        description_en: data.description_en
+      }));
+      setStatus("翻译已生成，请检查后再保存商品。");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "自动翻译失败");
+    } finally {
+      setTranslating(false);
+    }
   }
 
   async function submitProduct(event: FormEvent<HTMLFormElement>) {
@@ -480,20 +528,30 @@ export function AdminDashboard() {
         ) : null}
 
         <form className="rounded-md border border-stone-200 bg-white p-5 shadow-sm" onSubmit={submitProduct}>
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-bold text-ink">{editingId ? "编辑商品" : "新增商品"}</h2>
-            {editingId ? (
+            <div className="flex flex-wrap gap-2">
               <button
                 className="rounded-md border border-stone-300 px-3 py-2 text-sm font-bold"
-                onClick={() => {
-                  setEditingId(null);
-                  setForm(emptyProduct);
-                }}
+                disabled={translating}
+                onClick={() => void translateProduct()}
                 type="button"
               >
-                取消编辑
+                {translating ? "翻译中..." : "自动翻译"}
               </button>
-            ) : null}
+              {editingId ? (
+                <button
+                  className="rounded-md border border-stone-300 px-3 py-2 text-sm font-bold"
+                  onClick={() => {
+                    setEditingId(null);
+                    setForm(emptyProduct);
+                  }}
+                  type="button"
+                >
+                  取消编辑
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -563,7 +621,7 @@ export function AdminDashboard() {
                 onChange={(event) => updateField("sizes", event.target.value)}
               />
             </Field>
-            <Field label="图片 URL">
+            <Field label="主图 URL">
               <input className="input" value={form.image_url} onChange={(event) => updateField("image_url", event.target.value)} />
             </Field>
             <Field label="Skroutz URL">
@@ -601,7 +659,7 @@ export function AdminDashboard() {
                 className="input min-h-28"
                 value={form.image_urls}
                 onChange={(event) => updateField("image_urls", event.target.value)}
-                placeholder="https://example.com/front.jpg&#10;https://example.com/back.jpg&#10;https://example.com/detail.jpg"
+                placeholder="https://example.com/front.webp&#10;https://example.com/back.webp&#10;https://example.com/detail.webp"
               />
             </Field>
           </div>
@@ -650,9 +708,7 @@ export function AdminDashboard() {
             onChange={(event) => void handleCsv(event.target.files?.[0] || null)}
             type="file"
           />
-          <p className="mt-3 text-sm text-stone-600">
-            字段：{csvFields.join(", ")}
-          </p>
+          <p className="mt-3 text-sm text-stone-600">字段：{csvFields.join(", ")}</p>
           {csvRows.length > 0 ? (
             <div className="mt-4">
               <p className="text-sm font-bold text-ink">
@@ -675,8 +731,10 @@ export function AdminDashboard() {
         </section>
 
         <section className="rounded-md border border-stone-200 bg-white p-5 shadow-sm">
-          <h2 className="text-xl font-bold text-ink">批量上传商品主图</h2>
-          <p className="mt-2 text-sm text-stone-600">文件名必须是 sku.jpg、sku.png 或 sku.webp。</p>
+          <h2 className="text-xl font-bold text-ink">批量上传商品图片</h2>
+          <p className="mt-2 text-sm text-stone-600">
+            主图文件名：SKU.jpg / SKU.png / SKU.webp；多图文件名：SKU-1.jpg、SKU-2.png。上传后会自动压缩并保存为 WebP。
+          </p>
           <input
             accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
             className="mt-4 block w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm"

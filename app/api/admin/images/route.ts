@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import sharp from "sharp";
 import { adminPasswordIsValid } from "@/lib/admin-products";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 const bucketName = "product-images";
 const imageNamePattern = /^(.+)\.(jpg|png|webp)$/i;
 const galleryImageNamePattern = /^(.+)-([1-9]\d*)\.(jpg|png|webp)$/i;
+const webpContentType = "image/webp";
 
 type ImageResult = {
   fileName: string;
@@ -25,16 +27,24 @@ function unavailable() {
   );
 }
 
-function contentTypeFor(fileName: string, fallback: string) {
-  if (fallback) {
-    return fallback;
-  }
+function storageSkuSegment(sku: string) {
+  return sku.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
 
-  const extension = fileName.split(".").pop()?.toLowerCase();
-  if (extension === "jpg") return "image/jpeg";
-  if (extension === "png") return "image/png";
-  if (extension === "webp") return "image/webp";
-  return "application/octet-stream";
+function storagePathFor(sku: string, galleryIndex: number | null) {
+  const safeSku = storageSkuSegment(sku);
+  return galleryIndex === null
+    ? `products/${safeSku}/main.webp`
+    : `products/${safeSku}/gallery/${galleryIndex + 1}.webp`;
+}
+
+async function toOptimizedWebp(file: File) {
+  const input = Buffer.from(await file.arrayBuffer());
+  return sharp(input)
+    .rotate()
+    .resize({ width: 1600, withoutEnlargement: true })
+    .webp({ quality: 82 })
+    .toBuffer();
 }
 
 async function ensurePublicBucket(supabase: NonNullable<ReturnType<typeof getSupabaseAdminClient>>) {
@@ -109,9 +119,18 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    const { error: uploadError } = await supabase.storage.from(bucketName).upload(fileName, file, {
+    let webpBuffer: Buffer;
+    try {
+      webpBuffer = await toOptimizedWebp(file);
+    } catch {
+      results.push({ fileName, sku, ok: false, message: "Image could not be converted to WebP" });
+      continue;
+    }
+
+    const storagePath = storagePathFor(sku, galleryIndex);
+    const { error: uploadError } = await supabase.storage.from(bucketName).upload(storagePath, webpBuffer, {
       upsert: true,
-      contentType: contentTypeFor(fileName, file.type)
+      contentType: webpContentType
     });
 
     if (uploadError) {
@@ -119,7 +138,7 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(fileName);
+    const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(storagePath);
     const imageUrl = publicUrlData.publicUrl;
     const updatePayload =
       galleryIndex === null
@@ -143,7 +162,10 @@ export async function POST(request: NextRequest) {
       fileName,
       sku,
       ok: true,
-      message: galleryIndex === null ? "Uploaded and linked as main image" : "Uploaded and linked as gallery image",
+      message:
+        galleryIndex === null
+          ? "Converted to WebP and linked as main image"
+          : "Converted to WebP and linked as gallery image",
       imageUrl
     });
   }
