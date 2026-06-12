@@ -282,14 +282,16 @@ async function compressImageForUpload(file: File) {
     return file;
   }
 
-  const sourceRatio = bitmap.width / bitmap.height;
-  const targetRatio = uploadImageWidth / uploadImageHeight;
-  const sourceWidth = sourceRatio > targetRatio ? Math.round(bitmap.height * targetRatio) : bitmap.width;
-  const sourceHeight = sourceRatio > targetRatio ? bitmap.height : Math.round(bitmap.width / targetRatio);
-  const sourceX = Math.max(0, Math.round((bitmap.width - sourceWidth) / 2));
-  const sourceY = Math.max(0, Math.round((bitmap.height - sourceHeight) / 2));
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, uploadImageWidth, uploadImageHeight);
 
-  context.drawImage(bitmap, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, uploadImageWidth, uploadImageHeight);
+  const scale = Math.min(uploadImageWidth / bitmap.width, uploadImageHeight / bitmap.height);
+  const drawWidth = Math.max(1, Math.round(bitmap.width * scale));
+  const drawHeight = Math.max(1, Math.round(bitmap.height * scale));
+  const drawX = Math.round((uploadImageWidth - drawWidth) / 2);
+  const drawY = Math.round((uploadImageHeight - drawHeight) / 2);
+
+  context.drawImage(bitmap, drawX, drawY, drawWidth, drawHeight);
   bitmap.close();
 
   const blob = await canvasToWebpBlob(canvas);

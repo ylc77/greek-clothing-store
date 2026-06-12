@@ -54,8 +54,8 @@ async function toOptimizedWebp(file: File) {
       .resize({
         width: outputWidth,
         height: outputHeight,
-        fit: "cover",
-        position: "centre"
+        fit: "contain",
+        background: { r: 255, g: 255, b: 255, alpha: 1 }
       })
       .webp({ quality: 82 })
       .toBuffer();
@@ -100,6 +100,11 @@ function nextGalleryIndex(imageUrls: string[]) {
     .filter((index): index is number => typeof index === "number" && Number.isFinite(index));
 
   return indexes.length === 0 ? imageUrls.length : Math.max(...indexes) + 1;
+}
+
+function withCacheVersion(url: string) {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}v=${Date.now()}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -196,6 +201,7 @@ export async function POST(request: NextRequest) {
     const storagePath = storagePathFor(sku, galleryIndex);
     const { error: uploadError } = await supabase.storage.from(productImagesBucket).upload(storagePath, webpBuffer, {
       upsert: true,
+      cacheControl: "0",
       contentType: webpContentType
     });
 
@@ -205,7 +211,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { data: publicUrlData } = supabase.storage.from(productImagesBucket).getPublicUrl(storagePath);
-    const imageUrl = publicUrlData.publicUrl;
+    const imageUrl = withCacheVersion(publicUrlData.publicUrl);
     const updatePayload =
       galleryIndex === null
         ? { image_url: imageUrl }
