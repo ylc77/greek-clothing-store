@@ -266,6 +266,17 @@ export function AdminDashboard() {
     return data;
   }
 
+  async function readJsonResponse(response: Response, fallbackMessage: string) {
+    const contentType = response.headers.get("Content-Type") || "";
+
+    if (contentType.includes("application/json")) {
+      return response.json();
+    }
+
+    const text = await response.text();
+    throw new Error(text ? `${fallbackMessage}: ${text.slice(0, 160)}` : fallbackMessage);
+  }
+
   async function loadProducts() {
     setLoading(true);
     setStatus("");
@@ -473,7 +484,7 @@ export function AdminDashboard() {
         },
         body
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response, "图片上传接口返回了服务器错误，请检查 Vercel Function 日志");
 
       if (!response.ok) {
         throw new Error(data.error || "图片上传失败");

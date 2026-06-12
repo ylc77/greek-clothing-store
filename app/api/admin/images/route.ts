@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import sharp from "sharp";
 import { adminPasswordIsValid } from "@/lib/admin-products";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+
+export const runtime = "nodejs";
 
 const bucketName = "product-images";
 const imageNamePattern = /^(.+)\.(jpe?g|png|webp)$/i;
@@ -43,6 +44,7 @@ function stringValue(value: FormDataEntryValue | null) {
 }
 
 async function toOptimizedWebp(file: File) {
+  const { default: sharp } = await import("sharp");
   const input = Buffer.from(await file.arrayBuffer());
   return sharp(input)
     .rotate()
