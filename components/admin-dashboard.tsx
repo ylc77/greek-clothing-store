@@ -37,6 +37,9 @@ type ImageUploadOptions = {
   mode?: "main" | "gallery";
 };
 
+const maxUploadImageWidth = 1600;
+const webpUploadQuality = 0.82;
+
 const emptyProduct: ProductFormData = {
   sku: "",
   name_cn: "",
@@ -227,6 +230,55 @@ function normalizeProduct(product: ProductFormData): ProductFormData {
     additional_image_urls: "",
     skroutz_url: product.skroutz_url.trim()
   };
+}
+
+function imageOutputName(file: File) {
+  return file.name.replace(/\.[^.]+$/, ".webp");
+}
+
+async function canvasToWebpBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error("图片压缩失败"));
+        }
+      },
+      "image/webp",
+      webpUploadQuality
+    );
+  });
+}
+
+async function compressImageForUpload(file: File) {
+  if (!file.type.startsWith("image/")) {
+    return file;
+  }
+
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxUploadImageWidth / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    bitmap.close();
+    return file;
+  }
+
+  context.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  const blob = await canvasToWebpBlob(canvas);
+  return new File([blob], imageOutputName(file), {
+    type: "image/webp",
+    lastModified: Date.now()
+  });
 }
 
 export function AdminDashboard() {
@@ -464,19 +516,22 @@ export function AdminDashboard() {
       return;
     }
 
-    setLoading(true);
-    setStatus("");
-
-    const body = new FormData();
-    Array.from(files).forEach((file) => body.append("images", file));
-    if (options.sku) {
-      body.append("sku", options.sku);
-    }
-    if (options.mode) {
-      body.append("mode", options.mode);
-    }
-
     try {
+      setLoading(true);
+      setStatus("正在压缩图片...");
+
+      const body = new FormData();
+      const optimizedFiles = await Promise.all(Array.from(files).map((file) => compressImageForUpload(file)));
+      optimizedFiles.forEach((file) => body.append("images", file));
+      if (options.sku) {
+        body.append("sku", options.sku);
+      }
+      if (options.mode) {
+        body.append("mode", options.mode);
+      }
+
+      setStatus("正在上传图片...");
+
       const response = await fetch("/api/admin/images", {
         method: "POST",
         headers: {
