@@ -37,7 +37,14 @@ type ImageUploadOptions = {
   mode?: "main" | "gallery";
 };
 
-const maxUploadImageWidth = 1600;
+type ImageDeleteOptions = {
+  sku: string;
+  kind: "main" | "gallery";
+  index?: number;
+};
+
+const uploadImageWidth = 1200;
+const uploadImageHeight = 1500;
 const webpUploadQuality = 0.82;
 
 const emptyProduct: ProductFormData = {
@@ -236,6 +243,13 @@ function imageOutputName(file: File) {
   return file.name.replace(/\.[^.]+$/, ".webp");
 }
 
+function imageLines(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 async function canvasToWebpBlob(canvas: HTMLCanvasElement) {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
@@ -258,12 +272,9 @@ async function compressImageForUpload(file: File) {
   }
 
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, maxUploadImageWidth / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = uploadImageWidth;
+  canvas.height = uploadImageHeight;
   const context = canvas.getContext("2d");
 
   if (!context) {
@@ -271,7 +282,14 @@ async function compressImageForUpload(file: File) {
     return file;
   }
 
-  context.drawImage(bitmap, 0, 0, width, height);
+  const sourceRatio = bitmap.width / bitmap.height;
+  const targetRatio = uploadImageWidth / uploadImageHeight;
+  const sourceWidth = sourceRatio > targetRatio ? Math.round(bitmap.height * targetRatio) : bitmap.width;
+  const sourceHeight = sourceRatio > targetRatio ? bitmap.height : Math.round(bitmap.width / targetRatio);
+  const sourceX = Math.max(0, Math.round((bitmap.width - sourceWidth) / 2));
+  const sourceY = Math.max(0, Math.round((bitmap.height - sourceHeight) / 2));
+
+  context.drawImage(bitmap, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, uploadImageWidth, uploadImageHeight);
   bitmap.close();
 
   const blob = await canvasToWebpBlob(canvas);
@@ -555,6 +573,51 @@ export function AdminDashboard() {
     }
   }
 
+  async function deleteImage(options: ImageDeleteOptions) {
+    const label = options.kind === "main" ? "主图" : "这张多图";
+
+    if (!window.confirm(`确定删除${label}吗？Storage 文件也会一起删除。`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setStatus("");
+
+      const response = await fetch("/api/admin/images", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-password": activePassword
+        },
+        body: JSON.stringify(options)
+      });
+      const data = await readJsonResponse(response, "删除图片接口返回了服务器错误，请检查 Vercel Function 日志");
+
+      if (!response.ok) {
+        throw new Error(data.error || "删除图片失败");
+      }
+
+      setStatus(`${label}已删除。`);
+      await loadProducts();
+
+      if (editingId && form.sku === options.sku) {
+        setForm((current) => {
+          if (options.kind === "main") {
+            return { ...current, image_url: "" };
+          }
+
+          const nextUrls = imageLines(current.image_urls).filter((_, index) => index !== options.index);
+          return { ...current, image_urls: nextUrls.join("\n") };
+        });
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "删除图片失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   if (!activePassword) {
     return (
       <main className="min-h-screen bg-paper px-4 py-10">
@@ -746,6 +809,56 @@ export function AdminDashboard() {
               />
             </Field>
           </div>
+
+          {editingId ? (
+            <div className="mt-4 rounded-md border border-stone-200 bg-stone-50 p-4">
+              <div>
+                <h3 className="text-sm font-black text-ink">当前图片</h3>
+                <p className="mt-1 text-xs text-stone-600">
+                  删除后会同步清理 Supabase Storage；外部 URL 只会从商品中移除。
+                </p>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+                <div>
+                  <p className="mb-2 text-xs font-bold text-stone-600">主图</p>
+                  {form.image_url ? (
+                    <ImagePreviewCard
+                      disabled={loading}
+                      imageUrl={form.image_url}
+                      label="主图"
+                      onDelete={() => void deleteImage({ sku: form.sku, kind: "main" })}
+                    />
+                  ) : (
+                    <div className="flex aspect-[4/5] items-center justify-center rounded-md border border-dashed border-stone-300 bg-white text-xs text-stone-400">
+                      无主图
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-bold text-stone-600">多图</p>
+                  {imageLines(form.image_urls).length > 0 ? (
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                      {imageLines(form.image_urls).map((imageUrl, index) => (
+                        <ImagePreviewCard
+                          disabled={loading}
+                          imageUrl={imageUrl}
+                          key={`${imageUrl}-${index}`}
+                          label={`多图 ${index + 1}`}
+                          onDelete={() => void deleteImage({ sku: form.sku, kind: "gallery", index })}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex min-h-24 items-center justify-center rounded-md border border-dashed border-stone-300 bg-white text-xs text-stone-400">
+                      无多图
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-4 grid gap-4 md:grid-cols-3">
             <Field label="中文描述">
@@ -962,6 +1075,37 @@ function Field({ children, label }: { children: ReactNode; label: string }) {
       {label}
       <div className="mt-2">{children}</div>
     </label>
+  );
+}
+
+function ImagePreviewCard({
+  disabled,
+  imageUrl,
+  label,
+  onDelete
+}: {
+  disabled: boolean;
+  imageUrl: string;
+  label: string;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-md border border-stone-200 bg-white">
+      <img alt={label} className="aspect-[4/5] w-full bg-stone-100 object-cover" src={imageUrl} />
+      <div className="grid gap-2 p-2">
+        <p className="truncate text-xs font-bold text-stone-600" title={imageUrl}>
+          {label}
+        </p>
+        <button
+          className="rounded-md border border-red-200 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50"
+          disabled={disabled}
+          onClick={onDelete}
+          type="button"
+        >
+          删除图片
+        </button>
+      </div>
+    </div>
   );
 }
 

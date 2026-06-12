@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid } from "@/lib/admin-products";
+import {
+  productImagesBucket,
+  removeStoragePaths,
+  storagePathFor,
+  storagePathFromPublicUrl
+} from "@/lib/storage-images";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
-const bucketName = "product-images";
 const imageNamePattern = /^(.+)\.(jpe?g|png|webp)$/i;
 const galleryImageNamePattern = /^(.+)-([1-9]\d*)\.(jpe?g|png|webp)$/i;
 const webpContentType = "image/webp";
+const outputWidth = 1200;
+const outputHeight = 1500;
 
 type ImageResult = {
   fileName: string;
@@ -28,54 +35,66 @@ function unavailable() {
   );
 }
 
-function storageSkuSegment(sku: string) {
-  return sku.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
-function storagePathFor(sku: string, galleryIndex: number | null) {
-  const safeSku = storageSkuSegment(sku);
-  return galleryIndex === null
-    ? `products/${safeSku}/main.webp`
-    : `products/${safeSku}/gallery/${galleryIndex + 1}.webp`;
-}
-
 function stringValue(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
 
 async function toOptimizedWebp(file: File) {
   const input = Buffer.from(await file.arrayBuffer());
-
-  if (file.type === webpContentType || file.name.toLowerCase().endsWith(".webp")) {
-    return input;
-  }
-
   const { default: sharp } = await import("sharp");
-  return sharp(input)
-    .rotate()
-    .resize({ width: 1600, withoutEnlargement: true })
-    .webp({ quality: 82 })
-    .toBuffer();
+
+  try {
+    return await sharp(input)
+      .rotate()
+      .resize({
+        width: outputWidth,
+        height: outputHeight,
+        fit: "cover",
+        position: "centre"
+      })
+      .webp({ quality: 82 })
+      .toBuffer();
+  } catch (error) {
+    if (file.type === webpContentType || file.name.toLowerCase().endsWith(".webp")) {
+      return input;
+    }
+
+    throw error;
+  }
 }
 
 async function ensurePublicBucket(supabase: NonNullable<ReturnType<typeof getSupabaseAdminClient>>) {
-  const { data, error } = await supabase.storage.getBucket(bucketName);
+  const { data, error } = await supabase.storage.getBucket(productImagesBucket);
 
   if (!data && error) {
-    const { error: createError } = await supabase.storage.createBucket(bucketName, {
+    const { error: createError } = await supabase.storage.createBucket(productImagesBucket, {
       public: true
     });
     return createError;
   }
 
   if (data && !data.public) {
-    const { error: updateError } = await supabase.storage.updateBucket(bucketName, {
+    const { error: updateError } = await supabase.storage.updateBucket(productImagesBucket, {
       public: true
     });
     return updateError;
   }
 
   return null;
+}
+
+function galleryIndexFromUrl(url: string) {
+  const path = storagePathFromPublicUrl(url);
+  const match = path?.match(/\/gallery\/([1-9]\d*)\.webp$/);
+  return match ? Number(match[1]) - 1 : null;
+}
+
+function nextGalleryIndex(imageUrls: string[]) {
+  const indexes = imageUrls
+    .map(galleryIndexFromUrl)
+    .filter((index): index is number => typeof index === "number" && Number.isFinite(index));
+
+  return indexes.length === 0 ? imageUrls.length : Math.max(...indexes) + 1;
 }
 
 export async function POST(request: NextRequest) {
@@ -155,7 +174,7 @@ export async function POST(request: NextRequest) {
     const currentImageUrls = Array.isArray(product.image_urls) ? product.image_urls.filter(Boolean) : [];
     const galleryIndex = selectedSku
       ? selectedUploadMode === "gallery"
-        ? currentImageUrls.length
+        ? nextGalleryIndex(currentImageUrls)
         : null
       : galleryMatch
         ? Number(galleryMatch[2]) - 1
@@ -170,7 +189,7 @@ export async function POST(request: NextRequest) {
     }
 
     const storagePath = storagePathFor(sku, galleryIndex);
-    const { error: uploadError } = await supabase.storage.from(bucketName).upload(storagePath, webpBuffer, {
+    const { error: uploadError } = await supabase.storage.from(productImagesBucket).upload(storagePath, webpBuffer, {
       upsert: true,
       contentType: webpContentType
     });
@@ -180,7 +199,7 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(storagePath);
+    const { data: publicUrlData } = supabase.storage.from(productImagesBucket).getPublicUrl(storagePath);
     const imageUrl = publicUrlData.publicUrl;
     const updatePayload =
       galleryIndex === null
@@ -217,4 +236,68 @@ export async function POST(request: NextRequest) {
     failureCount: results.filter((result) => !result.ok).length,
     results
   });
+}
+
+export async function DELETE(request: NextRequest) {
+  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) {
+    return unauthorized();
+  }
+
+  const supabase = getSupabaseAdminClient();
+  if (!supabase) {
+    return unavailable();
+  }
+
+  const payload = await request.json();
+  const sku = typeof payload.sku === "string" ? payload.sku.trim() : "";
+  const kind = payload.kind === "gallery" ? "gallery" : "main";
+  const index = Number(payload.index);
+
+  if (!sku) {
+    return NextResponse.json({ error: "sku is required" }, { status: 400 });
+  }
+
+  const { data: product, error: productError } = await supabase
+    .from("products")
+    .select("id, sku, image_url, image_urls")
+    .eq("sku", sku)
+    .maybeSingle();
+
+  if (productError) {
+    return NextResponse.json({ error: productError.message }, { status: 500 });
+  }
+
+  if (!product) {
+    return NextResponse.json({ error: "sku does not exist" }, { status: 404 });
+  }
+
+  if (kind === "main") {
+    const path = storagePathFromPublicUrl(product.image_url) || storagePathFor(sku, null);
+    await removeStoragePaths(supabase, [path]);
+    const { error } = await supabase.from("products").update({ image_url: "" }).eq("sku", sku);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  const imageUrls = Array.isArray(product.image_urls) ? product.image_urls.filter(Boolean) : [];
+
+  if (!Number.isInteger(index) || index < 0 || index >= imageUrls.length) {
+    return NextResponse.json({ error: "gallery image index is invalid" }, { status: 400 });
+  }
+
+  const imageUrl = imageUrls[index];
+  const path = storagePathFromPublicUrl(imageUrl) || storagePathFor(sku, index);
+  await removeStoragePaths(supabase, [path]);
+  const nextImageUrls = imageUrls.filter((_, itemIndex) => itemIndex !== index);
+  const { error } = await supabase.from("products").update({ image_urls: nextImageUrls }).eq("sku", sku);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
 }

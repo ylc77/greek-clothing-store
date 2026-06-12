@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid, productForForm, validateProductPayload } from "@/lib/admin-products";
+import { removeProductStorageImages } from "@/lib/storage-images";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { Product } from "@/lib/types";
 
@@ -67,6 +68,20 @@ export async function DELETE(request: NextRequest, context: ProductRouteContext)
   }
 
   const { id } = await context.params;
+  const { data: product, error: productError } = await supabase
+    .from("products")
+    .select("sku, image_url, image_urls")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (productError) {
+    return NextResponse.json({ error: productError.message }, { status: 500 });
+  }
+
+  if (product) {
+    await removeProductStorageImages(supabase, product as Pick<Product, "sku" | "image_url" | "image_urls">);
+  }
+
   const { error } = await supabase.from("products").delete().eq("id", id);
 
   if (error) {
