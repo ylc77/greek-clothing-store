@@ -216,7 +216,6 @@ export async function POST(request: NextRequest) {
       galleryIndex === null
         ? { image_url: imageUrl }
         : {
-            image_url: galleryIndex === 0 ? imageUrl : product.image_url || imageUrl,
             image_urls: (() => {
               const imageUrls = Array.isArray(product.image_urls) ? [...product.image_urls] : [];
               imageUrls[galleryIndex] = imageUrl;
