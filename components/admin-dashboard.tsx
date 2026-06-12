@@ -32,6 +32,11 @@ type TranslationResult = {
   description_en: string;
 };
 
+type ImageUploadOptions = {
+  sku?: string;
+  mode?: "main" | "gallery";
+};
+
 const emptyProduct: ProductFormData = {
   sku: "",
   name_cn: "",
@@ -236,6 +241,7 @@ export function AdminDashboard() {
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
   const [csvResults, setCsvResults] = useState<ApiResult[]>([]);
   const [imageResults, setImageResults] = useState<ApiResult[]>([]);
+  const [selectedImageSku, setSelectedImageSku] = useState("");
 
   const csvSummary = useMemo(() => {
     const valid = csvRows.filter((row) => validatePreviewRow(row).length === 0).length;
@@ -436,9 +442,14 @@ export function AdminDashboard() {
     }
   }
 
-  async function uploadImages(files: FileList | null) {
+  async function uploadImages(files: FileList | null, options: ImageUploadOptions = {}) {
     setImageResults([]);
     if (!files || files.length === 0) {
+      return;
+    }
+
+    if (options.sku && !options.mode) {
+      setStatus("请选择上传类型。");
       return;
     }
 
@@ -447,6 +458,12 @@ export function AdminDashboard() {
 
     const body = new FormData();
     Array.from(files).forEach((file) => body.append("images", file));
+    if (options.sku) {
+      body.append("sku", options.sku);
+    }
+    if (options.mode) {
+      body.append("mode", options.mode);
+    }
 
     try {
       const response = await fetch("/api/admin/images", {
@@ -732,16 +749,73 @@ export function AdminDashboard() {
 
         <section className="rounded-md border border-stone-200 bg-white p-5 shadow-sm">
           <h2 className="text-xl font-bold text-ink">批量上传商品图片</h2>
-          <p className="mt-2 text-sm text-stone-600">
-            主图文件名：SKU.jpg / SKU.png / SKU.webp；多图文件名：SKU-1.jpg、SKU-2.png。上传后会自动压缩并保存为 WebP。
-          </p>
-          <input
-            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-            className="mt-4 block w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm"
-            multiple
-            onChange={(event) => void uploadImages(event.target.files)}
-            type="file"
-          />
+          <p className="mt-2 text-sm text-stone-600">上传后会自动压缩并保存为 WebP，再写回商品图片字段。</p>
+
+          <div className="mt-4 rounded-md border border-stone-200 bg-stone-50 p-4">
+            <h3 className="text-sm font-black text-ink">选择商品上传（不用改文件名）</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-[minmax(220px,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+              <label className="block text-sm font-bold text-ink">
+                商品
+                <select
+                  className="input mt-2"
+                  value={selectedImageSku}
+                  onChange={(event) => setSelectedImageSku(event.target.value)}
+                >
+                  <option value="">选择商品 SKU</option>
+                  {products.map((product) => (
+                    <option key={product.id} value={product.sku}>
+                      {product.sku} - {product.name_cn || product.name_gr || product.name_en || "未命名商品"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm font-bold text-ink">
+                上传主图
+                <input
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                  className="mt-2 block w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm"
+                  disabled={!selectedImageSku || loading}
+                  onChange={(event) => {
+                    void uploadImages(event.target.files, { sku: selectedImageSku, mode: "main" });
+                    event.currentTarget.value = "";
+                  }}
+                  type="file"
+                />
+              </label>
+              <label className="block text-sm font-bold text-ink">
+                上传多图
+                <input
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                  className="mt-2 block w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm"
+                  disabled={!selectedImageSku || loading}
+                  multiple
+                  onChange={(event) => {
+                    void uploadImages(event.target.files, { sku: selectedImageSku, mode: "gallery" });
+                    event.currentTarget.value = "";
+                  }}
+                  type="file"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-md border border-stone-200 bg-white p-4">
+            <h3 className="text-sm font-black text-ink">按文件名批量上传（保留旧方式）</h3>
+            <p className="mt-2 text-sm text-stone-600">
+              主图文件名：SKU.jpg / SKU.png / SKU.webp；多图文件名：SKU-1.jpg、SKU-2.png。
+            </p>
+            <input
+              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+              className="mt-3 block w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm"
+              disabled={loading}
+              multiple
+              onChange={(event) => {
+                void uploadImages(event.target.files);
+                event.currentTarget.value = "";
+              }}
+              type="file"
+            />
+          </div>
           {imageResults.length > 0 ? <ResultTable results={imageResults} /> : null}
         </section>
 

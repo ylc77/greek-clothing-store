@@ -4,8 +4,8 @@ import { adminPasswordIsValid } from "@/lib/admin-products";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 const bucketName = "product-images";
-const imageNamePattern = /^(.+)\.(jpg|png|webp)$/i;
-const galleryImageNamePattern = /^(.+)-([1-9]\d*)\.(jpg|png|webp)$/i;
+const imageNamePattern = /^(.+)\.(jpe?g|png|webp)$/i;
+const galleryImageNamePattern = /^(.+)-([1-9]\d*)\.(jpe?g|png|webp)$/i;
 const webpContentType = "image/webp";
 
 type ImageResult = {
@@ -36,6 +36,10 @@ function storagePathFor(sku: string, galleryIndex: number | null) {
   return galleryIndex === null
     ? `products/${safeSku}/main.webp`
     : `products/${safeSku}/gallery/${galleryIndex + 1}.webp`;
+}
+
+function stringValue(value: FormDataEntryValue | null) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 async function toOptimizedWebp(file: File) {
@@ -84,9 +88,12 @@ export async function POST(request: NextRequest) {
 
   const formData = await request.formData();
   const files = formData.getAll("images").filter((value): value is File => value instanceof File);
+  const selectedSku = stringValue(formData.get("sku"));
+  const selectedMode = stringValue(formData.get("mode"));
+  const selectedUploadMode = selectedMode === "main" || selectedMode === "gallery" ? selectedMode : "";
   const results: ImageResult[] = [];
 
-  for (const file of files) {
+  for (const [fileIndex, file] of files.entries()) {
     const fileName = file.name.trim();
     const galleryMatch = fileName.match(galleryImageNamePattern);
     const match = fileName.match(imageNamePattern);
@@ -101,8 +108,27 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    const sku = galleryMatch ? galleryMatch[1] : match[1];
-    const galleryIndex = galleryMatch ? Number(galleryMatch[2]) - 1 : null;
+    if (selectedSku && !selectedUploadMode) {
+      results.push({
+        fileName,
+        sku: selectedSku,
+        ok: false,
+        message: "Upload mode must be main or gallery when SKU is selected"
+      });
+      continue;
+    }
+
+    if (selectedSku && selectedUploadMode === "main" && fileIndex > 0) {
+      results.push({
+        fileName,
+        sku: selectedSku,
+        ok: false,
+        message: "Main image upload accepts one file"
+      });
+      continue;
+    }
+
+    const sku = selectedSku || (galleryMatch ? galleryMatch[1] : match[1]);
     const { data: product, error: productError } = await supabase
       .from("products")
       .select("id, sku, image_url, image_urls")
@@ -118,6 +144,15 @@ export async function POST(request: NextRequest) {
       results.push({ fileName, sku, ok: false, message: "sku does not exist" });
       continue;
     }
+
+    const currentImageUrls = Array.isArray(product.image_urls) ? product.image_urls.filter(Boolean) : [];
+    const galleryIndex = selectedSku
+      ? selectedUploadMode === "gallery"
+        ? currentImageUrls.length
+        : null
+      : galleryMatch
+        ? Number(galleryMatch[2]) - 1
+        : null;
 
     let webpBuffer: Buffer;
     try {
