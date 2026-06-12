@@ -44,8 +44,13 @@ function stringValue(value: FormDataEntryValue | null) {
 }
 
 async function toOptimizedWebp(file: File) {
-  const { default: sharp } = await import("sharp");
   const input = Buffer.from(await file.arrayBuffer());
+
+  if (file.type === webpContentType || file.name.toLowerCase().endsWith(".webp")) {
+    return input;
+  }
+
+  const { default: sharp } = await import("sharp");
   return sharp(input)
     .rotate()
     .resize({ width: 1600, withoutEnlargement: true })
