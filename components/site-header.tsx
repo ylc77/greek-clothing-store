@@ -1,8 +1,23 @@
 import Link from "next/link";
 import { LanguageSelector } from "@/components/language-selector";
-import { categoryLabels, withLanguage, type Language } from "@/lib/i18n";
+import { categoryLabels, subcategoryLabels, withLanguage, type Language } from "@/lib/i18n";
 import { instagramUrl, siteName } from "@/lib/site";
-import { categories } from "@/lib/types";
+import { categories, subcategoriesByCategory, type ProductCategory } from "@/lib/types";
+
+function categoryHref(category: ProductCategory, language: Language, subcategory?: string) {
+  const params = new URLSearchParams();
+
+  if (subcategory) {
+    params.set("subcategory", subcategory);
+  }
+
+  if (language === "en") {
+    params.set("lang", "en");
+  }
+
+  const query = params.toString();
+  return `/${category}${query ? `?${query}` : ""}`;
+}
 
 export function SiteHeader({ language }: { language: Language }) {
   return (
@@ -14,13 +29,38 @@ export function SiteHeader({ language }: { language: Language }) {
 
         <nav className="hidden items-center gap-1 lg:flex">
           {categories.map((category) => (
-            <Link
-              className="rounded-full px-3 py-2 text-sm font-bold text-stone-600 transition hover:bg-white hover:text-ink"
-              href={withLanguage(`/${category.slug}`, language)}
+            <div
+              className="group relative"
               key={category.slug}
             >
-              {categoryLabels[category.slug][language]}
-            </Link>
+              <Link
+                className="inline-flex rounded-full px-3 py-2 text-sm font-bold text-stone-600 transition hover:bg-white hover:text-ink group-focus-within:bg-white group-focus-within:text-ink"
+                href={categoryHref(category.slug, language)}
+              >
+                {categoryLabels[category.slug][language]}
+              </Link>
+
+              <div className="invisible absolute left-1/2 top-full z-30 w-56 -translate-x-1/2 pt-3 opacity-0 transition duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                <div className="overflow-hidden rounded-md border border-stone-200 bg-[#fffdf8] p-2 shadow-xl shadow-stone-900/10">
+                  <Link
+                    className="block rounded-md px-3 py-2 text-sm font-black text-ink transition hover:bg-[#f1eadf]"
+                    href={categoryHref(category.slug, language)}
+                  >
+                    {categoryLabels[category.slug][language]} / {language === "en" ? "All" : "螌位伪"}
+                  </Link>
+                  <div className="my-1 border-t border-stone-200" />
+                  {subcategoriesByCategory[category.slug].map((subcategory) => (
+                    <Link
+                      className="block rounded-md px-3 py-2 text-sm font-bold text-stone-600 transition hover:bg-[#f1eadf] hover:text-ink"
+                      href={categoryHref(category.slug, language, subcategory)}
+                      key={subcategory}
+                    >
+                      {subcategoryLabels[subcategory][language]}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </div>
           ))}
         </nav>
 
