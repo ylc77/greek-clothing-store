@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { LanguageSelector } from "@/components/language-selector";
-import { categoryLabels, subcategoryLabels, withLanguage, type Language } from "@/lib/i18n";
+import { categoryLabels, subcategoryLabels, text, withLanguage, type Language } from "@/lib/i18n";
 import { instagramUrl, siteName } from "@/lib/site";
 import { categories, subcategoriesByCategory, type ProductCategory } from "@/lib/types";
 
@@ -46,7 +46,7 @@ export function SiteHeader({ language }: { language: Language }) {
                     className="block rounded-md px-3 py-2 text-sm font-black text-ink transition hover:bg-[#f1eadf]"
                     href={categoryHref(category.slug, language)}
                   >
-                    {categoryLabels[category.slug][language]} / {language === "en" ? "All" : "螌位伪"}
+                    {categoryLabels[category.slug][language]} / {text[language].all}
                   </Link>
                   <div className="my-1 border-t border-stone-200" />
                   {subcategoriesByCategory[category.slug].map((subcategory) => (
