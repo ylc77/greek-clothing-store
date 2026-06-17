@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { text, type Language } from "@/lib/i18n";
 import { whatsappUrl } from "@/lib/site";
 
 type ProductActionsProps = {
@@ -9,6 +10,7 @@ type ProductActionsProps = {
   sku: string;
   sizes: string | null;
   skroutzUrl?: string | null;
+  language?: Language;
 };
 
 function parseSizes(sizes: string | null) {
@@ -39,8 +41,8 @@ function buildWhatsAppUrl({
       `Product: ${productName}`,
       `SKU: ${sku}`,
       `Link: ${window.location.href}`,
-      `Size: ${selectedSize}`
-    ].join("\n")
+      selectedSize ? `Size: ${selectedSize}` : ""
+    ].filter(Boolean).join("\n")
   );
   url.search = params.toString();
   return url.toString();
@@ -58,13 +60,14 @@ function buildSkroutzUrl(skroutzUrl: string | null | undefined, productNameEn: s
   return url.toString();
 }
 
-export function ProductActions({ productName, productNameEn, sku, sizes, skroutzUrl }: ProductActionsProps) {
+export function ProductActions({ productName, productNameEn, sku, sizes, skroutzUrl, language }: ProductActionsProps) {
+  const t = text[language || "el"];
   const sizeOptions = useMemo(() => parseSizes(sizes), [sizes]);
   const [selectedSize, setSelectedSize] = useState(sizeOptions.length === 1 ? sizeOptions[0] : "");
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [message, setMessage] = useState("");
 
-  function checkAvailability() {
+  function askWhatsApp() {
     if (sizeOptions.length > 1 && !selectedSize) {
       setMessage("Please select a size first.");
       return;
@@ -87,12 +90,23 @@ export function ProductActions({ productName, productNameEn, sku, sizes, skroutz
     window.open(buildSkroutzUrl(skroutzUrl, productNameEn, sku), "_blank", "noopener,noreferrer");
   }
 
+  function checkInStore() {
+    const url = new URL(whatsappUrl);
+    const params = new URLSearchParams();
+    params.set(
+      "text",
+      `Is "${productName}" (SKU: ${sku}) available in your store?\n${window.location.href}`
+    );
+    url.search = params.toString();
+    window.open(url.toString(), "_blank", "noopener,noreferrer");
+  }
+
   return (
     <div className="mt-6">
       {sizeOptions.length > 0 ? (
         <div>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm font-black text-ink">Size</p>
+            <p className="text-sm font-black text-ink">{t.sizes}</p>
             <button
               className="text-sm font-bold text-stone-600 underline underline-offset-4 hover:text-ink"
               onClick={() => setSizeGuideOpen((current) => !current)}
@@ -137,10 +151,10 @@ export function ProductActions({ productName, productNameEn, sku, sizes, skroutz
 
       <button
         className="mt-5 inline-flex w-full justify-center rounded-full bg-ink px-5 py-3 text-sm font-black text-white transition hover:bg-stone-800"
-        onClick={checkAvailability}
+        onClick={askWhatsApp}
         type="button"
       >
-        Check availability
+        {t.askWhatsApp}
       </button>
 
       <button
@@ -148,7 +162,15 @@ export function ProductActions({ productName, productNameEn, sku, sizes, skroutz
         onClick={viewOnSkroutz}
         type="button"
       >
-        View on Skroutz
+        {t.viewSkroutz}
+      </button>
+
+      <button
+        className="mt-3 inline-flex w-full justify-center rounded-full border border-stone-300 bg-white px-5 py-3 text-sm font-black text-ink transition hover:border-ink"
+        onClick={checkInStore}
+        type="button"
+      >
+        {t.checkStore}
       </button>
     </div>
   );

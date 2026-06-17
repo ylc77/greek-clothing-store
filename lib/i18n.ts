@@ -17,13 +17,13 @@ export function withLanguage(path: string, language: Language) {
 
 export function productName(product: Product, language: Language) {
   return language === "en"
-    ? product.name_en || product.name_gr || product.name_cn || product.sku
+    ? product.name_en || product.name_cn || product.sku
     : product.name_gr || product.name_en || product.name_cn || product.sku;
 }
 
 export function productDescription(product: Product, language: Language) {
   return language === "en"
-    ? product.description_en || product.description_gr || product.description_cn || ""
+    ? product.description_en || product.description_cn || ""
     : product.description_gr || product.description_en || product.description_cn || "";
 }
 
@@ -91,7 +91,33 @@ export const text = {
     subcategory: "Υποκατηγορία",
     sizes: "Μεγέθη",
     all: "Όλα",
-    items: "προϊόντα"
+    items: "προϊόντα",
+    brandHeading: "Helios Wear",
+    brandIntro: "Ανακαλύψτε τη συλλογή μας με ρούχα, παπούτσια και αξεσουάρ, σχεδιασμένα για το μεσογειακό στυλ. Κάθε κομμάτι συνδυάζει άνεση, ποιότητα και διαχρονική αισθητική.",
+    viewProducts: "Δείτε τα προϊόντα",
+    newArrivals: "Νέες αφίξεις",
+    storeInfo: "Το κατάστημά μας",
+    storeAddress: "Ερμού 45, Αθήνα 10563",
+    storeHours: "Δευτέρα - Παρασκευή: 10:00 - 20:00\nΣάββατο: 10:00 - 18:00\nΚυριακή: Κλειστά",
+    findOnMaps: "Βρείτε μας στο Google Maps",
+    followInstagram: "Ακολουθήστε μας στο Instagram",
+    contactWhatsApp: "Επικοινωνήστε στο WhatsApp",
+    skuLabel: "Κωδικός",
+    color: "Χρώμα",
+    material: "Υλικό",
+    fit: "Εφαρμογή",
+    season: "Σεζόν",
+    checkStore: "Διαθεσιμότητα στο κατάστημα",
+    askWhatsApp: "Ρωτήστε στο WhatsApp",
+    viewSkroutz: "Δείτε στο Skroutz",
+    noImage: "Χωρίς εικόνα",
+    storeDescription: "Helios Wear — ελληνικό κατάστημα μόδας με έδρα την Αθήνα.",
+    hours: "Ωράριο",
+    about: "Σχετικά",
+    siteName: "Helios Wear",
+    copyright: "© 2026 Helios Wear. All rights reserved.",
+    price: "Τιμή",
+    stock: "Απόθεμα"
   },
   en: {
     eyebrow: "Greek clothing store",
@@ -116,6 +142,32 @@ export const text = {
     subcategory: "Subcategory",
     sizes: "Sizes",
     all: "All",
-    items: "items"
+    items: "items",
+    brandHeading: "Helios Wear",
+    brandIntro: "Discover our collection of clothing, shoes and accessories designed for Mediterranean style. Each piece combines comfort, quality and timeless aesthetics.",
+    viewProducts: "View products",
+    newArrivals: "New arrivals",
+    storeInfo: "Our store",
+    storeAddress: "Ermou 45, Athens 10563, Greece",
+    storeHours: "Monday - Friday: 10:00 - 20:00\nSaturday: 10:00 - 18:00\nSunday: Closed",
+    findOnMaps: "Find us on Google Maps",
+    followInstagram: "Follow us on Instagram",
+    contactWhatsApp: "Contact on WhatsApp",
+    skuLabel: "SKU",
+    color: "Color",
+    material: "Material",
+    fit: "Fit",
+    season: "Season",
+    checkStore: "Check in store",
+    askWhatsApp: "Ask on WhatsApp",
+    viewSkroutz: "View on Skroutz",
+    noImage: "No image",
+    storeDescription: "Helios Wear — Greek fashion store based in Athens.",
+    hours: "Hours",
+    about: "About",
+    siteName: "Helios Wear",
+    copyright: "© 2026 Helios Wear. All rights reserved.",
+    price: "Price",
+    stock: "Stock"
   }
 };

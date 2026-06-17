@@ -68,8 +68,8 @@ const emptyProduct: ProductFormData = {
   barcode: "",
   vat: 24,
   color: "",
-  additional_image_urls: "",
-  skroutz_url: ""
+  skroutz_url: "",
+  is_active: true
 };
 
 const csvFields = [
@@ -91,7 +91,8 @@ const csvFields = [
   "barcode",
   "vat",
   "color",
-  "skroutz_url"
+  "skroutz_url",
+  "is_active"
 ];
 
 function parseCsv(text: string) {
@@ -177,7 +178,8 @@ function downloadCsvTemplate() {
     "",
     "24",
     "black",
-    ""
+    "",
+    "true"
   ];
   const csv = `${csvFields.join(",")}\n${sampleRow.map(csvCell).join(",")}\n`;
   const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
@@ -228,7 +230,7 @@ function normalizeProduct(product: ProductFormData): ProductFormData {
     sizes: product.sizes.trim(),
     image_url: product.image_url.trim(),
     image_urls: product.image_urls
-      .split(/\r?\n/)
+      .split(/[\r?\n,]+/)
       .map((url) => url.trim())
       .filter(Boolean)
       .join("\n"),
@@ -236,8 +238,8 @@ function normalizeProduct(product: ProductFormData): ProductFormData {
     barcode: product.barcode.trim(),
     vat: Number(product.vat),
     color: product.color.trim(),
-    additional_image_urls: "",
-    skroutz_url: product.skroutz_url.trim()
+    skroutz_url: product.skroutz_url.trim(),
+    is_active: product.is_active
   };
 }
 
@@ -416,8 +418,8 @@ export function AdminDashboard() {
       barcode: product.barcode,
       vat: product.vat,
       color: product.color,
-      additional_image_urls: "",
-      skroutz_url: product.skroutz_url
+      skroutz_url: product.skroutz_url,
+      is_active: product.is_active
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -817,10 +819,20 @@ export function AdminDashboard() {
             <Field label="颜色">
               <input className="input" value={form.color} onChange={(event) => updateField("color", event.target.value)} />
             </Field>
+            <Field label="上架">
+              <select
+                className="input"
+                value={form.is_active ? "true" : "false"}
+                onChange={(event) => updateField("is_active", event.target.value === "true")}
+              >
+                <option value="true">是</option>
+                <option value="false">否</option>
+              </select>
+            </Field>
           </div>
 
           <div className="mt-4">
-            <Field label="多图 URL（一行一个）">
+            <Field label="多图 URL（一行一个，可用逗号分隔）">
               <textarea
                 className="input min-h-28"
                 value={form.image_urls}

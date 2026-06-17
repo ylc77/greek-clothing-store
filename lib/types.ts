@@ -62,10 +62,20 @@ export type Product = {
   image_urls: string[] | null;
   brand?: string | null;
   barcode?: string | null;
+  ean?: string | null;
   vat?: number | null;
   color?: string | null;
   additional_image_urls?: string | null;
   skroutz_url?: string | null;
+  material?: string | null;
+  fit?: string | null;
+  season?: string | null;
+  mpn?: string | null;
+  availability?: string | null;
+  category_path_en?: string | null;
+  category_path_gr?: string | null;
+  is_active?: boolean | null;
+  updated_at?: string | null;
   created_at: string;
 };
 
@@ -88,6 +98,6 @@ export type ProductFormData = {
   barcode: string;
   vat: number;
   color: string;
-  additional_image_urls: string;
   skroutz_url: string;
+  is_active: boolean;
 };

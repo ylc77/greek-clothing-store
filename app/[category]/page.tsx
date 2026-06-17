@@ -1,6 +1,8 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CategoryPage } from "@/components/category-page";
 import { categoryLabels, getLanguage } from "@/lib/i18n";
+import { siteName, siteUrl } from "@/lib/site";
 import { isProductCategory } from "@/lib/types";
 
 type CategoryRouteProps = {
@@ -13,7 +15,30 @@ type CategoryRouteProps = {
   }>;
 };
 
-export default async function DynamicCategoryPage({ params, searchParams }: CategoryRouteProps) {
+export async function generateMetadata({
+  params,
+  searchParams,
+}: CategoryRouteProps): Promise<Metadata> {
+  const { category } = await params;
+  const language = getLanguage((await searchParams).lang);
+
+  if (!isProductCategory(category)) {
+    return { title: siteName };
+  }
+
+  const title = `${categoryLabels[category][language]} | ${siteName}`;
+  return {
+    title,
+    description: `Browse ${categoryLabels[category][language].toLowerCase()} at ${siteName}. Clothing, shoes, bags and accessories with Mediterranean style.`,
+    alternates: { canonical: `${siteUrl()}/${category}` },
+    openGraph: { title, siteName },
+  };
+}
+
+export default async function DynamicCategoryPage({
+  params,
+  searchParams,
+}: CategoryRouteProps) {
   const { category } = await params;
   const resolvedSearchParams = await searchParams;
   const language = getLanguage(resolvedSearchParams.lang);

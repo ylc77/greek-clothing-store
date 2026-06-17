@@ -22,7 +22,7 @@ export function ProductCard({ product, language }: { product: Product; language:
           />
         ) : (
           <div className="flex aspect-[4/5] items-center justify-center bg-stone-100 text-xs font-bold text-stone-400">
-            No image
+            {t.noImage}
           </div>
         )}
       </div>

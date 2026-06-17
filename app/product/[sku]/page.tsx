@@ -14,7 +14,7 @@ import {
   withLanguage
 } from "@/lib/i18n";
 import { getProductBySku } from "@/lib/products";
-import { siteName } from "@/lib/site";
+import { siteName, siteUrl } from "@/lib/site";
 
 type ProductPageProps = {
   params: Promise<{
@@ -31,10 +31,6 @@ function productImages(product: LoadedProduct) {
   const urls = Array.isArray(product.image_urls) ? product.image_urls.filter(Boolean) : [];
   const images = product.image_url ? [product.image_url, ...urls] : urls;
   return Array.from(new Set(images));
-}
-
-function siteUrl() {
-  return (process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").replace(/\/$/, "");
 }
 
 function categoryBackHref(product: LoadedProduct, language: "el" | "en") {
@@ -133,7 +129,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
         </div>
 
         <div className="grid gap-5 sm:gap-8 lg:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
-          <ProductImageGallery images={images} alt={productName(product, language)} />
+          <ProductImageGallery images={images} alt={productName(product, language)} language={language} />
 
           <article className="rounded-md border border-stone-200 bg-white p-4 shadow-sm sm:p-7">
             <p className="text-sm font-black uppercase tracking-[0.18em] text-olive">{product.sku}</p>
@@ -144,7 +140,11 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
 
             <div className="mt-6 grid gap-3 rounded-md bg-stone-50 p-4 text-sm text-stone-700">
               <p className="flex justify-between gap-4">
-                <strong className="text-ink">{t.inStock}</strong>
+                <strong className="text-ink">{t.skuLabel}</strong>
+                <span className="font-mono">{product.sku}</span>
+              </p>
+              <p className="flex justify-between gap-4">
+                <strong className="text-ink">{t.stock}</strong>
                 <span>{product.stock > 0 ? `${t.inStock} (${product.stock})` : t.outOfStock}</span>
               </p>
               <p className="flex justify-between gap-4">
@@ -157,14 +157,45 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
                   <span>{subcategoryLabels[product.subcategory]?.[language] || product.subcategory}</span>
                 </p>
               ) : null}
+              {product.color ? (
+                <p className="flex justify-between gap-4">
+                  <strong className="text-ink">{t.color}</strong>
+                  <span>{product.color}</span>
+                </p>
+              ) : null}
+              {product.sizes ? (
+                <p className="flex justify-between gap-4">
+                  <strong className="text-ink">{t.sizes}</strong>
+                  <span>{product.sizes}</span>
+                </p>
+              ) : null}
+              {product.material ? (
+                <p className="flex justify-between gap-4">
+                  <strong className="text-ink">{t.material}</strong>
+                  <span>{product.material}</span>
+                </p>
+              ) : null}
+              {product.fit ? (
+                <p className="flex justify-between gap-4">
+                  <strong className="text-ink">{t.fit}</strong>
+                  <span>{product.fit}</span>
+                </p>
+              ) : null}
+              {product.season ? (
+                <p className="flex justify-between gap-4">
+                  <strong className="text-ink">{t.season}</strong>
+                  <span>{product.season}</span>
+                </p>
+              ) : null}
             </div>
 
             <ProductActions
               productName={productName(product, language)}
-              productNameEn={product.name_en || product.name_gr || product.sku}
+              productNameEn={product.name_en || product.name_cn || product.sku}
               sku={product.sku}
               sizes={product.sizes}
               skroutzUrl={product.skroutz_url}
+              language={language}
             />
 
             {description ? (

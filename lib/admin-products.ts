@@ -23,10 +23,19 @@ export type AdminProductPayload = {
   image_urls?: unknown;
   brand?: unknown;
   barcode?: unknown;
+  ean?: unknown;
   vat?: unknown;
   color?: unknown;
   additional_image_urls?: unknown;
   skroutz_url?: unknown;
+  material?: unknown;
+  fit?: unknown;
+  season?: unknown;
+  mpn?: unknown;
+  availability?: unknown;
+  category_path_en?: unknown;
+  category_path_gr?: unknown;
+  is_active?: unknown;
 };
 
 export type ProductMutation = Omit<ProductFormData, "category" | "image_urls"> & {
@@ -60,7 +69,7 @@ function imageUrlsValue(value: unknown) {
 
   if (typeof value === "string") {
     return value
-      .split(/\r?\n/)
+      .split(/[\r?\n,]+/)
       .map((item) => item.trim())
       .filter(Boolean);
   }
@@ -127,8 +136,8 @@ export function validateProductPayload(payload: AdminProductPayload) {
           barcode: stringValue(payload.barcode),
           vat,
           color: stringValue(payload.color),
-          additional_image_urls: stringValue(payload.additional_image_urls),
-          skroutz_url: stringValue(payload.skroutz_url)
+          skroutz_url: stringValue(payload.skroutz_url),
+          is_active: payload.is_active === false ? false : true
         }
       : null;
 
@@ -156,7 +165,7 @@ export function productForForm(product: Product): ProductFormData & { id: string
     barcode: product.barcode || "",
     vat: Number(product.vat ?? 24),
     color: product.color || "",
-    additional_image_urls: product.additional_image_urls || "",
-    skroutz_url: product.skroutz_url || ""
+    skroutz_url: product.skroutz_url || "",
+    is_active: product.is_active !== false
   };
 }

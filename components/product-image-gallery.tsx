@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { text, type Language } from "@/lib/i18n";
 
 type ProductImageGalleryProps = {
   images: string[];
   alt: string;
+  language?: Language;
 };
 
-export function ProductImageGallery({ images, alt }: ProductImageGalleryProps) {
+export function ProductImageGallery({ images, alt, language }: ProductImageGalleryProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const hasImages = images.length > 0;
   const hasMultipleImages = images.length > 1;
@@ -21,9 +23,10 @@ export function ProductImageGallery({ images, alt }: ProductImageGalleryProps) {
   }
 
   if (!hasImages) {
+    const t = text[(language || "el") as Language];
     return (
       <div className="flex aspect-[4/5] items-center justify-center rounded-md border border-dashed border-stone-300 bg-white text-sm text-stone-500">
-        No image
+        {t.noImage}
       </div>
     );
   }
