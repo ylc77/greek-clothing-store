@@ -21,6 +21,8 @@ type ApiResult = {
   ok: boolean;
   message: string;
   imageUrl?: string;
+  translated?: boolean;
+  translateError?: string;
 };
 
 type CsvRow = Record<string, string | number>;
@@ -315,7 +317,18 @@ export function AdminDashboard() {
 
   const csvSummary = useMemo(() => {
     const valid = csvRows.filter((row) => validatePreviewRow(row).length === 0).length;
-    return { valid, invalid: csvRows.length - valid };
+    const needsTranslation = csvRows.filter((row) => {
+      if (validatePreviewRow(row).length > 0) return false;
+      const nameCn = String(row.name_cn || "").trim();
+      const descCn = String(row.description_cn || "").trim();
+      if (!nameCn && !descCn) return false;
+      const nameEn = String(row.name_en || "").trim();
+      const descEn = String(row.description_en || "").trim();
+      const nameGr = String(row.name_gr || "").trim();
+      const descGr = String(row.description_gr || "").trim();
+      return !(nameEn && descEn && nameGr && descGr);
+    }).length;
+    return { valid, invalid: csvRows.length - valid, needsTranslation };
   }, [csvRows]);
 
   async function api(path: string, init: RequestInit = {}) {
@@ -514,7 +527,14 @@ export function AdminDashboard() {
         body: JSON.stringify({ rows: csvRows })
       });
       setCsvResults(data.results || []);
-      setStatus(`CSV 导入完成：成功 ${data.successCount}，失败 ${data.failureCount}`);
+      let statusMsg = `CSV 导入完成：成功 ${data.successCount}，失败 ${data.failureCount}`;
+      if (data.translatedCount > 0) {
+        statusMsg += `，翻译成功 ${data.translatedCount}`;
+      }
+      if (data.translateFailureCount > 0) {
+        statusMsg += `，翻译失败 ${data.translateFailureCount}`;
+      }
+      setStatus(statusMsg);
       await loadProducts();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "CSV 导入失败");
@@ -909,15 +929,32 @@ export function AdminDashboard() {
             <div className="mt-4">
               <p className="text-sm font-bold text-ink">
                 预览：有效 {csvSummary.valid}，错误 {csvSummary.invalid}
+                {csvSummary.needsTranslation > 0 ? `，需翻译 ${csvSummary.needsTranslation}` : ""}
               </p>
               <ResultTable
                 results={csvRows.map((row) => {
                   const errors = validatePreviewRow(row);
+                  let message = errors.length === 0 ? "OK" : errors.join("; ");
+                  if (errors.length === 0) {
+                    const nameCn = String(row.name_cn || "").trim();
+                    const descCn = String(row.description_cn || "").trim();
+                    if (nameCn || descCn) {
+                      const nameEn = String(row.name_en || "").trim();
+                      const descEn = String(row.description_en || "").trim();
+                      const nameGr = String(row.name_gr || "").trim();
+                      const descGr = String(row.description_gr || "").trim();
+                      if (nameEn && descEn && nameGr && descGr) {
+                        message = "OK，无需翻译";
+                      } else {
+                        message = "OK，需翻译";
+                      }
+                    }
+                  }
                   return {
                     rowNumber: Number(row.rowNumber),
                     sku: String(row.sku || ""),
                     ok: errors.length === 0,
-                    message: errors.length === 0 ? "OK" : errors.join("; ")
+                    message,
                   };
                 })}
               />
@@ -1129,7 +1166,12 @@ function ResultTable({ results }: { results: ApiResult[] }) {
               <td className={result.ok ? "py-2 pr-4 font-bold text-green-700" : "py-2 pr-4 font-bold text-red-700"}>
                 {result.ok ? "成功" : "失败"}
               </td>
-              <td className="py-2 pr-4">{result.message}</td>
+              <td className="py-2 pr-4">
+                {result.message}
+                {result.translateError ? (
+                  <span className="ml-2 text-orange-600">翻译错误: {result.translateError}</span>
+                ) : null}
+              </td>
             </tr>
           ))}
         </tbody>
