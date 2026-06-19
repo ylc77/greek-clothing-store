@@ -39,7 +39,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const settings = await getBusinessSettings();
   const { products, error } = await getLatestProducts(8);
 
-  const heroImage = settings.hero_image_url || "/images/home-hero.png";
+  const heroImage = settings.hero_image_url || "/images/home-hero.webp";
   const siteName = settings.business_name;
   const siteIntro =
     language === "en"
