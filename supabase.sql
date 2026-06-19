@@ -69,6 +69,25 @@ on products
 for select
 using (true);
 
+-- Block anon writes — admin API uses service_role which bypasses RLS
+drop policy if exists "Block anon insert" on products;
+create policy "Block anon insert"
+on products
+for insert
+with check (false);
+
+drop policy if exists "Block anon update" on products;
+create policy "Block anon update"
+on products
+for update
+using (false);
+
+drop policy if exists "Block anon delete" on products;
+create policy "Block anon delete"
+on products
+for delete
+using (false);
+
 insert into storage.buckets (id, name, public)
 values ('product-images', 'product-images', true)
 on conflict (id) do update
@@ -129,3 +148,29 @@ values (
   '© 2026 Helios Wear. All rights reserved.'
 )
 where not exists (select 1 from business_settings);
+
+alter table business_settings enable row level security;
+
+drop policy if exists "Public read business_settings" on business_settings;
+create policy "Public read business_settings"
+on business_settings
+for select
+using (true);
+
+drop policy if exists "Block anon insert settings" on business_settings;
+create policy "Block anon insert settings"
+on business_settings
+for insert
+with check (false);
+
+drop policy if exists "Block anon update settings" on business_settings;
+create policy "Block anon update settings"
+on business_settings
+for update
+using (false);
+
+drop policy if exists "Block anon delete settings" on business_settings;
+create policy "Block anon delete settings"
+on business_settings
+for delete
+using (false);

@@ -367,7 +367,7 @@ export function AdminDashboard() {
     setStatus("");
 
     try {
-      const data = await api("/api/admin/products");
+      const data = await api("/api/admin/products?limit=500");
       setProducts(data.products || []);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "商品读取失败");
@@ -520,6 +520,12 @@ export function AdminDashboard() {
   }
 
   async function importCsv() {
+    if (csvSummary.needsTranslation > 20) {
+      const ok = window.confirm(
+        `有 ${csvSummary.needsTranslation} 行需要自动翻译，将调用 DeepSeek API 约 ${Math.ceil(csvSummary.needsTranslation / 3)} 次。是否继续？`
+      );
+      if (!ok) return;
+    }
     setLoading(true);
     setStatus("");
 
@@ -684,6 +690,25 @@ export function AdminDashboard() {
           >
             店铺设置
           </a>
+          <button
+            className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold text-ink"
+            onClick={() => {
+              fetch("/api/admin/backup", {
+                headers: { "x-admin-password": activePassword },
+              })
+                .then((r) => r.blob())
+                .then((blob) => {
+                  const a = document.createElement("a");
+                  a.href = URL.createObjectURL(blob);
+                  a.download = `backup-${new Date().toISOString().split("T")[0]}.json`;
+                  a.click();
+                })
+                .catch(() => setStatus("备份下载失败"));
+            }}
+            type="button"
+          >
+            备份数据
+          </button>
           <button
             className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold text-ink"
             onClick={() => {

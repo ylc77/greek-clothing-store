@@ -27,6 +27,8 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
   const { data, error } = await supabase
     .from("products")
     .select("*")
+    .eq("is_active", true)
+    .gte("stock", 0)
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -53,7 +55,10 @@ export async function getProductsByCategory(
     .from("products")
     .select("*")
     .eq("category", category)
-    .order("created_at", { ascending: false });
+    .eq("is_active", true)
+    .gte("stock", 0)
+    .order("created_at", { ascending: false })
+    .limit(200);
 
   if (subcategory && isProductSubcategory(category, subcategory)) {
     query = query.eq("subcategory", subcategory);

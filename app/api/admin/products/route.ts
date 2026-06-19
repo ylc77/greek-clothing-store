@@ -28,17 +28,25 @@ export async function GET(request: NextRequest) {
     return unavailable();
   }
 
-  const { data, error } = await supabase
+  const url = new URL(request.url);
+  const limit = Math.min(Number(url.searchParams.get("limit")) || 100, 500);
+  const offset = Math.max(Number(url.searchParams.get("offset")) || 0, 0);
+
+  const { data, count, error } = await supabase
     .from("products")
-    .select("*")
-    .order("created_at", { ascending: false });
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json({
-    products: ((data || []) as Product[]).map(productForForm)
+    products: ((data || []) as Product[]).map(productForForm),
+    total: count || 0,
+    limit,
+    offset,
   });
 }
 
