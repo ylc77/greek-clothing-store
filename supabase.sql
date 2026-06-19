@@ -136,16 +136,16 @@ $$;
 
 insert into business_settings (business_name, description_en, description_gr, phone, whatsapp, instagram, address, google_maps_url, opening_hours, footer_text)
 values (
-  'Helios Wear',
-  'Curated clothing, shoes, bags and accessories with a clean Mediterranean feel.',
-  'Επιλεγμένα ρούχα, παπούτσια, τσάντες και αξεσουάρ με καθαρή μεσογειακή αισθητική.',
-  '+30 690 000 0000',
-  'https://wa.me/306900000000',
-  'https://instagram.com/',
-  'Ermou 45, Athens 10563, Greece',
-  'https://maps.google.com/?q=Ermou+45+Athens+Greece',
-  'Monday - Friday: 10:00 - 20:00\nSaturday: 10:00 - 18:00\nSunday: Closed',
-  '© 2026 Helios Wear. All rights reserved.'
+  'My Store',
+  'Welcome to our online store.',
+  'Καλώς ήρθατε στο ηλεκτρονικό μας κατάστημα.',
+  '',
+  '',
+  '',
+  '',
+  '',
+  '',
+  ''
 )
 where not exists (select 1 from business_settings);
 

@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   title: "Helios Wear — Greek Fashion Store",
   description:
     "Curated clothing, shoes, bags and accessories from Greece. Browse our collection and shop via WhatsApp or Skroutz.",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
+  },
   openGraph: {
     title: "Helios Wear",
     description:
