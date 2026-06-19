@@ -700,7 +700,7 @@ export function AdminDashboard() {
                 .then((blob) => {
                   const a = document.createElement("a");
                   a.href = URL.createObjectURL(blob);
-                  a.download = `backup-${new Date().toISOString().split("T")[0]}.json`;
+                  a.download = `products-export-${new Date().toISOString().split("T")[0]}.csv`;
                   a.click();
                 })
                 .catch(() => setStatus("备份下载失败"));
