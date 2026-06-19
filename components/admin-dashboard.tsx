@@ -707,7 +707,7 @@ export function AdminDashboard() {
             }}
             type="button"
           >
-            备份数据
+            导出 CSV
           </button>
           <button
             className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold text-ink"
