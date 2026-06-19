@@ -11,12 +11,12 @@ export const metadata: Metadata = {
     description:
       "Curated clothing, shoes, bags and accessories with a clean Mediterranean feel.",
     siteName: "Helios Wear",
-    type: "website"
-  }
+    type: "website",
+  },
 };
 
 export default function RootLayout({
-  children
+  children,
 }: Readonly<{
   children: ReactNode;
 }>) {
@@ -25,7 +25,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){var p=(new URL(window.location)).searchParams;document.documentElement.lang=p.get("lang")==="en"?"en":"el"})()`
+            __html: `(function(){var p=(new URL(window.location)).searchParams;document.documentElement.lang=p.get("lang")==="en"?"en":"el"})()`,
           }}
         />
       </head>

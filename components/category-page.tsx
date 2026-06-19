@@ -3,6 +3,7 @@ import { ProductCard } from "@/components/product-card";
 import { SiteHeader } from "@/components/site-header";
 import { subcategoryLabels, text, withLanguage } from "@/lib/i18n";
 import { getProductsByCategory } from "@/lib/products";
+import type { BusinessSettings } from "@/lib/settings";
 import { isProductSubcategory, subcategoriesByCategory, type ProductCategory } from "@/lib/types";
 import type { Language } from "@/lib/i18n";
 
@@ -25,12 +26,14 @@ export async function CategoryPage({
   category,
   language,
   selectedSubcategory,
-  title
+  title,
+  settings,
 }: {
   category: ProductCategory;
   language: Language;
   selectedSubcategory?: string;
   title: string;
+  settings?: BusinessSettings;
 }) {
   const t = text[language];
   const activeSubcategory =
@@ -41,7 +44,7 @@ export async function CategoryPage({
 
   return (
     <main className="min-h-screen bg-paper">
-      <SiteHeader language={language} />
+      <SiteHeader language={language} settings={settings} />
 
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         <div className="mb-6 flex flex-col gap-4 border-b border-stone-200 pb-5 sm:mb-7 sm:flex-row sm:items-end sm:justify-between sm:pb-6">

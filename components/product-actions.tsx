@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { text, type Language } from "@/lib/i18n";
-import { whatsappUrl } from "@/lib/site";
 
 type ProductActionsProps = {
   productName: string;
@@ -11,6 +10,7 @@ type ProductActionsProps = {
   sizes: string | null;
   skroutzUrl?: string | null;
   language?: Language;
+  whatsappUrl?: string;
 };
 
 function parseSizes(sizes: string | null) {
@@ -27,13 +27,15 @@ function parseSizes(sizes: string | null) {
 function buildWhatsAppUrl({
   productName,
   selectedSize,
-  sku
+  sku,
+  baseUrl
 }: {
   productName: string;
   selectedSize: string;
   sku: string;
+  baseUrl: string;
 }) {
-  const url = new URL(whatsappUrl);
+  const url = new URL(baseUrl);
   const params = new URLSearchParams();
   params.set(
     "text",
@@ -60,7 +62,8 @@ function buildSkroutzUrl(skroutzUrl: string | null | undefined, productNameEn: s
   return url.toString();
 }
 
-export function ProductActions({ productName, productNameEn, sku, sizes, skroutzUrl, language }: ProductActionsProps) {
+export function ProductActions({ productName, productNameEn, sku, sizes, skroutzUrl, language, whatsappUrl }: ProductActionsProps) {
+  const waUrl = whatsappUrl || "#";
   const t = text[language || "el"];
   const sizeOptions = useMemo(() => parseSizes(sizes), [sizes]);
   const [selectedSize, setSelectedSize] = useState(sizeOptions.length === 1 ? sizeOptions[0] : "");
@@ -79,7 +82,8 @@ export function ProductActions({ productName, productNameEn, sku, sizes, skroutz
       buildWhatsAppUrl({
         productName,
         selectedSize: sizeForMessage,
-        sku
+        sku,
+        baseUrl: waUrl
       }),
       "_blank",
       "noopener,noreferrer"
@@ -91,7 +95,7 @@ export function ProductActions({ productName, productNameEn, sku, sizes, skroutz
   }
 
   function checkInStore() {
-    const url = new URL(whatsappUrl);
+    const url = new URL(waUrl);
     const params = new URLSearchParams();
     params.set(
       "text",

@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { LanguageSelector } from "@/components/language-selector";
 import { categoryLabels, subcategoryLabels, text, withLanguage, type Language } from "@/lib/i18n";
-import { instagramUrl, siteName } from "@/lib/site";
 import { categories, subcategoriesByCategory, type ProductCategory } from "@/lib/types";
+import type { BusinessSettings } from "@/lib/settings";
 
 function categoryHref(category: ProductCategory, language: Language, subcategory?: string) {
   const params = new URLSearchParams();
@@ -19,7 +19,16 @@ function categoryHref(category: ProductCategory, language: Language, subcategory
   return `/${category}${query ? `?${query}` : ""}`;
 }
 
-export function SiteHeader({ language }: { language: Language }) {
+export function SiteHeader({
+  language,
+  settings,
+}: {
+  language: Language;
+  settings?: BusinessSettings;
+}) {
+  const siteName = settings?.business_name || "Helios Wear";
+  const instagramLink = settings?.instagram || "";
+
   return (
     <header className="sticky top-0 z-20 border-b border-stone-200/80 bg-paper/90 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
@@ -65,14 +74,16 @@ export function SiteHeader({ language }: { language: Language }) {
         </nav>
 
         <div className="flex items-center gap-2">
-          <a
-            className="hidden rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-bold text-ink transition hover:border-stone-300 md:inline-flex"
-            href={instagramUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Instagram
-          </a>
+          {instagramLink ? (
+            <a
+              className="hidden rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-bold text-ink transition hover:border-stone-300 md:inline-flex"
+              href={instagramLink}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Instagram
+            </a>
+          ) : null}
           <LanguageSelector language={language} />
         </div>
       </div>

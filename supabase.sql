@@ -73,3 +73,59 @@ insert into storage.buckets (id, name, public)
 values ('product-images', 'product-images', true)
 on conflict (id) do update
 set public = true;
+
+-- ── Business settings table ──────────────────────────────
+create table if not exists business_settings (
+  id uuid primary key default gen_random_uuid(),
+  business_name text default 'Helios Wear',
+  logo_url text,
+  hero_image_url text,
+  description_cn text,
+  description_en text,
+  description_gr text,
+  phone text,
+  whatsapp text,
+  instagram text,
+  facebook text,
+  tiktok text,
+  address text,
+  google_maps_url text,
+  opening_hours text,
+  footer_text text,
+  enable_skroutz boolean default false,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create or replace function update_settings_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+do $$
+begin
+  if not exists (select 1 from pg_trigger where tgname = 'settings_updated_at') then
+    create trigger settings_updated_at
+      before update on business_settings
+      for each row execute function update_settings_updated_at();
+  end if;
+end;
+$$;
+
+insert into business_settings (business_name, description_en, description_gr, phone, whatsapp, instagram, address, google_maps_url, opening_hours, footer_text)
+values (
+  'Helios Wear',
+  'Curated clothing, shoes, bags and accessories with a clean Mediterranean feel.',
+  'Επιλεγμένα ρούχα, παπούτσια, τσάντες και αξεσουάρ με καθαρή μεσογειακή αισθητική.',
+  '+30 690 000 0000',
+  'https://wa.me/306900000000',
+  'https://instagram.com/',
+  'Ermou 45, Athens 10563, Greece',
+  'https://maps.google.com/?q=Ermou+45+Athens+Greece',
+  'Monday - Friday: 10:00 - 20:00\nSaturday: 10:00 - 18:00\nSunday: Closed',
+  '© 2026 Helios Wear. All rights reserved.'
+)
+where not exists (select 1 from business_settings);

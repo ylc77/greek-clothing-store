@@ -1,10 +1,9 @@
 import { getSupabaseClient } from "@/lib/supabase";
+import { getBusinessSettings } from "@/lib/settings";
 import type { Product, ProductCategory, ProductSubcategory } from "@/lib/types";
 import { siteUrl } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
-
-const defaultBrandName = "Helios Wear";
 
 const categoryPathEn: Record<ProductCategory, string> = {
   men: "Men",
@@ -108,7 +107,7 @@ function allAdditionalUrls(product: Product): string[] {
   return Array.from(new Set(all)).filter((u) => u !== product.image_url);
 }
 
-function buildFeed(products: Product[]) {
+function buildFeed(products: Product[], defaultBrandName: string) {
   const rows = products
     .map((product) => {
       const image = product.image_url?.trim() || "";
@@ -166,6 +165,9 @@ export async function GET() {
     );
   }
 
+  const settings = await getBusinessSettings();
+  const defaultBrandName = settings.business_name || "Helios Wear";
+
   // Only active products with stock >= 0
   const { data, error } = await supabase
     .from("products")
@@ -181,7 +183,7 @@ export async function GET() {
     });
   }
 
-  const xml = buildFeed((data || []) as Product[]);
+  const xml = buildFeed((data || []) as Product[], defaultBrandName);
 
   return new Response(xml, {
     headers: {

@@ -14,7 +14,8 @@ import {
   withLanguage
 } from "@/lib/i18n";
 import { getProductBySku } from "@/lib/products";
-import { siteName, siteUrl } from "@/lib/site";
+import { getBusinessSettings } from "@/lib/settings";
+import { siteUrl } from "@/lib/site";
 
 type ProductPageProps = {
   params: Promise<{
@@ -51,15 +52,16 @@ function categoryBackHref(product: LoadedProduct, language: "el" | "en") {
 export async function generateMetadata({ params, searchParams }: ProductPageProps): Promise<Metadata> {
   const [{ sku }, resolvedSearchParams] = await Promise.all([params, searchParams]);
   const language = getLanguage(resolvedSearchParams.lang);
+  const settings = await getBusinessSettings();
   const { product } = await getProductBySku(decodeURIComponent(sku));
 
   if (!product) {
     return {
-      title: siteName
+      title: settings.business_name
     };
   }
 
-  const title = `${productName(product, language)} | ${siteName}`;
+  const title = `${productName(product, language)} | ${settings.business_name}`;
   const description = productDescription(product, language) || productName(product, language);
   const url = `${siteUrl()}/product/${encodeURIComponent(product.sku)}`;
 
@@ -73,7 +75,7 @@ export async function generateMetadata({ params, searchParams }: ProductPageProp
       title,
       description,
       url,
-      siteName,
+      siteName: settings.business_name,
       images: product.image_url ? [{ url: product.image_url, alt: productName(product, language) }] : []
     }
   };
@@ -83,6 +85,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   const [{ sku }, resolvedSearchParams] = await Promise.all([params, searchParams]);
   const language = getLanguage(resolvedSearchParams.lang);
   const t = text[language];
+  const settings = await getBusinessSettings();
   const { product, error } = await getProductBySku(decodeURIComponent(sku));
 
   if (!product && !error) {
@@ -92,7 +95,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   if (error || !product) {
     return (
       <main className="min-h-screen bg-paper">
-        <SiteHeader language={language} />
+        <SiteHeader language={language} settings={settings} />
         <section className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
           <Link className="text-sm font-bold text-stone-500 hover:text-ink" href={withLanguage("/", language)}>
             {t.backHome}
@@ -116,7 +119,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
 
   return (
     <main className="min-h-screen bg-paper">
-      <SiteHeader language={language} />
+      <SiteHeader language={language} settings={settings} />
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         <div className="mb-5 flex flex-wrap items-center gap-3 text-sm font-bold text-stone-500 sm:mb-6">
           <Link className="hover:text-ink" href={withLanguage("/", language)}>
@@ -196,6 +199,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
               sizes={product.sizes}
               skroutzUrl={product.skroutz_url}
               language={language}
+              whatsappUrl={settings.whatsapp || undefined}
             />
 
             {description ? (
