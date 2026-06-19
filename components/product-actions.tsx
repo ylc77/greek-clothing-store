@@ -25,27 +25,15 @@ function parseSizes(sizes: string | null) {
 }
 
 function buildWhatsAppUrl({
-  productName,
-  selectedSize,
-  sku,
-  baseUrl
+  baseUrl,
+  text
 }: {
-  productName: string;
-  selectedSize: string;
-  sku: string;
   baseUrl: string;
+  text: string;
 }) {
   const url = new URL(baseUrl);
   const params = new URLSearchParams();
-  params.set(
-    "text",
-    [
-      `Product: ${productName}`,
-      `SKU: ${sku}`,
-      `Link: ${window.location.href}`,
-      selectedSize ? `Size: ${selectedSize}` : ""
-    ].filter(Boolean).join("\n")
-  );
+  params.set("text", text);
   url.search = params.toString();
   return url.toString();
 }
@@ -72,19 +60,22 @@ export function ProductActions({ productName, productNameEn, sku, sizes, skroutz
 
   function askWhatsApp() {
     if (sizeOptions.length > 1 && !selectedSize) {
-      setMessage("Please select a size first.");
+      setMessage(t.selectSize);
       return;
     }
 
-    const sizeForMessage = selectedSize || sizeOptions[0] || "One size";
+    const sizeText = selectedSize || sizeOptions[0] || t.oneSize;
     setMessage("");
+
+    const textContent = [
+      `${t.whatsappAskProduct}: ${productName}`,
+      `${t.whatsappAskSku}: ${sku}`,
+      `${window.location.href}`,
+      sizeText ? `${t.whatsappAskSize}: ${sizeText}` : ""
+    ].filter(Boolean).join("\n");
+
     window.open(
-      buildWhatsAppUrl({
-        productName,
-        selectedSize: sizeForMessage,
-        sku,
-        baseUrl: waUrl
-      }),
+      buildWhatsAppUrl({ baseUrl: waUrl, text: textContent }),
       "_blank",
       "noopener,noreferrer"
     );
@@ -95,14 +86,15 @@ export function ProductActions({ productName, productNameEn, sku, sizes, skroutz
   }
 
   function checkInStore() {
-    const url = new URL(waUrl);
-    const params = new URLSearchParams();
-    params.set(
-      "text",
-      `Is "${productName}" (SKU: ${sku}) available in your store?\n${window.location.href}`
+    const checkText = t.whatsappCheckStore
+      .replace("{name}", productName)
+      .replace("{sku}", sku) + "\n" + window.location.href;
+
+    window.open(
+      buildWhatsAppUrl({ baseUrl: waUrl, text: checkText }),
+      "_blank",
+      "noopener,noreferrer"
     );
-    url.search = params.toString();
-    window.open(url.toString(), "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -116,7 +108,7 @@ export function ProductActions({ productName, productNameEn, sku, sizes, skroutz
               onClick={() => setSizeGuideOpen((current) => !current)}
               type="button"
             >
-              Size guide
+              {t.sizeGuide}
             </button>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -143,7 +135,7 @@ export function ProductActions({ productName, productNameEn, sku, sizes, skroutz
 
       {sizeGuideOpen ? (
         <div className="mt-3 rounded-md border border-stone-200 bg-stone-50 p-4 text-sm leading-6 text-stone-700">
-          Not sure about your size? Send us your height, weight and usual size. We will help you choose.
+          {t.sizeGuideHelp}
         </div>
       ) : null}
 

@@ -30,7 +30,7 @@ export type BusinessSettings = {
 
 const defaults: BusinessSettings = {
   id: "default",
-  business_name: "Helios Wear",
+  business_name: "Our Store",
   logo_url: "",
   hero_image_url: "",
   description_cn: "",

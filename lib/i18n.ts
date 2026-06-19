@@ -117,7 +117,15 @@ export const text = {
     siteName: "Helios Wear",
     copyright: "© 2026 Helios Wear. All rights reserved.",
     price: "Τιμή",
-    stock: "Απόθεμα"
+    stock: "Απόθεμα",
+    sizeGuide: "Οδηγός μεγεθών",
+    sizeGuideHelp: "Δεν είστε σίγουροι για το μέγεθος; Στείλτε μας το ύψος, το βάρος και το συνηθισμένο σας μέγεθος. Θα σας βοηθήσουμε.",
+    selectSize: "Επιλέξτε πρώτα μέγεθος.",
+    oneSize: "Ένα μέγεθος",
+    whatsappAskProduct: "Προϊόν",
+    whatsappAskSku: "SKU",
+    whatsappAskSize: "Μέγεθος",
+    whatsappCheckStore: "Είναι το \"{name}\" (SKU: {sku}) διαθέσιμο στο κατάστημά σας;"
   },
   en: {
     eyebrow: "Greek clothing store",
@@ -168,6 +176,14 @@ export const text = {
     siteName: "Helios Wear",
     copyright: "© 2026 Helios Wear. All rights reserved.",
     price: "Price",
-    stock: "Stock"
+    stock: "Stock",
+    sizeGuide: "Size guide",
+    sizeGuideHelp: "Not sure about your size? Send us your height, weight and usual size. We will help you choose.",
+    selectSize: "Please select a size first.",
+    oneSize: "One size",
+    whatsappAskProduct: "Product",
+    whatsappAskSku: "SKU",
+    whatsappAskSize: "Size",
+    whatsappCheckStore: "Is \"{name}\" (SKU: {sku}) available in your store?"
   }
 };

@@ -166,7 +166,7 @@ export async function GET() {
   }
 
   const settings = await getBusinessSettings();
-  const defaultBrandName = settings.business_name || "Helios Wear";
+  const defaultBrandName = settings.business_name || "Our Store";
 
   // Only active products with stock >= 0
   const { data, error } = await supabase

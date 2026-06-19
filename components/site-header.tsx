@@ -26,7 +26,7 @@ export function SiteHeader({
   language: Language;
   settings?: BusinessSettings;
 }) {
-  const siteName = settings?.business_name || "Helios Wear";
+  const siteName = settings?.business_name || "Our Store";
   const instagramLink = settings?.instagram || "";
 
   return (
