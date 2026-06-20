@@ -8,7 +8,7 @@ export function LogoImg({ src, alt }: { src: string; alt: string }) {
   return (
     <img
       alt={alt}
-      className="h-8 w-auto rounded object-contain"
+      className="h-9 max-w-[120px] w-auto rounded object-contain"
       src={src}
       onError={() => setOk(false)}
     />
