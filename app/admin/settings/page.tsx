@@ -3,6 +3,14 @@
 import { FormEvent, useEffect, useState } from "react";
 import type { BusinessSettings } from "@/lib/settings";
 
+async function uploadStoreImage(file: File, name: string, password: string): Promise<string> {
+  const fd = new FormData(); fd.append("images", file); fd.append("sku", `store-${name}`); fd.append("mode", "main");
+  const r = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": password }, body: fd });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || "上传失败");
+  return d.results?.[0]?.imageUrl || "";
+}
+
 const emptySettings: BusinessSettings = {
   id: "",
   business_name: "",
@@ -112,12 +120,24 @@ export default function AdminSettingsPage() {
                 <input className="input" value={settings.business_name} onChange={e => updateField("business_name", e.target.value)} placeholder="Athens Fashion Boutique" />
               </Field>
               <Field label="Logo URL">
-                <input className="input" value={settings.logo_url} onChange={e => updateField("logo_url", e.target.value)} placeholder="https://..." />
-                {settings.logo_url ? <img alt="Logo 预览" className="mt-2 h-10 rounded border border-stone-200 object-contain" src={settings.logo_url} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} /> : null}
+                <div className="flex gap-2">
+                  <input className="input flex-1" value={settings.logo_url} onChange={e => updateField("logo_url", e.target.value)} placeholder="https://..." />
+                  <label className="cursor-pointer shrink-0 rounded-lg border border-stone-200 px-3 py-2 text-[11px] font-bold hover:bg-stone-50">
+                    上传
+                    <input accept="image/*" className="hidden" type="file" onChange={async e => { const f = e.target.files?.[0]; if (f) { try { const url = await uploadStoreImage(f, "logo", activePassword); updateField("logo_url", url); } catch (er) { alert(er instanceof Error ? er.message : "上传失败"); } } e.currentTarget.value = ""; }} />
+                  </label>
+                </div>
+                {settings.logo_url ? <img alt="Logo 预览" className="mt-2 h-10 rounded border border-stone-200 object-contain" src={settings.logo_url} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} /> : <p className="mt-2 text-[10px] text-stone-400">暂无 Logo</p>}
               </Field>
               <Field label="首页大图 URL" hint="建议横向图片，用于首页 Hero 区域">
-                <input className="input" value={settings.hero_image_url} onChange={e => updateField("hero_image_url", e.target.value)} placeholder="https://..." />
-                {settings.hero_image_url ? <img alt="首页大图预览" className="mt-2 h-24 w-full rounded-lg border border-stone-200 object-cover" src={settings.hero_image_url} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} /> : null}
+                <div className="flex gap-2">
+                  <input className="input flex-1" value={settings.hero_image_url} onChange={e => updateField("hero_image_url", e.target.value)} placeholder="https://..." />
+                  <label className="cursor-pointer shrink-0 rounded-lg border border-stone-200 px-3 py-2 text-[11px] font-bold hover:bg-stone-50">
+                    上传
+                    <input accept="image/*" className="hidden" type="file" onChange={async e => { const f = e.target.files?.[0]; if (f) { try { const url = await uploadStoreImage(f, "hero", activePassword); updateField("hero_image_url", url); } catch (er) { alert(er instanceof Error ? er.message : "上传失败"); } } e.currentTarget.value = ""; }} />
+                  </label>
+                </div>
+                {settings.hero_image_url ? <img alt="首页大图预览" className="mt-2 h-24 w-full rounded-lg border border-stone-200 object-cover" src={settings.hero_image_url} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} /> : <p className="mt-2 text-[10px] text-stone-400">暂无首页大图</p>}
               </Field>
             </div>
           </section>
