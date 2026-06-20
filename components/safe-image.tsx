@@ -10,17 +10,16 @@ type SafeImageProps = {
   fallback?: React.ReactNode;
 };
 
-/** Renders an img with onError fallback. If src is empty, shows fallback directly. */
+/** Renders an img with onError fallback. If src is empty, shows a refined placeholder. */
 export function SafeImage({ src, alt, className, loading, fallback }: SafeImageProps) {
   const [failed, setFailed] = useState(false);
 
   if (!src || failed) {
-    return fallback ? (
-      <>{fallback}</>
-    ) : (
-      <div className="flex aspect-[4/5] w-full items-center justify-center rounded-lg bg-[#f3efe8]">
+    if (fallback) return <>{fallback}</>;
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[#f3efe8]">
         <svg
-          className="h-16 w-16 text-stone-300"
+          className="h-12 w-12 text-stone-300"
           fill="none"
           stroke="currentColor"
           strokeWidth="1"

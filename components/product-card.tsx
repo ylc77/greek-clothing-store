@@ -10,29 +10,29 @@ export function ProductCard({ product, language }: { product: Product; language:
   return (
     <Link
       aria-label={name}
-      className="group flex flex-col overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-stone-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-ink/20"
+      className="group flex flex-col overflow-hidden rounded-xl border border-stone-100 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-stone-900/5"
       href={withLanguage(`/product/${encodeURIComponent(product.sku)}`, language)}
     >
       {/* Image */}
       <div className="relative overflow-hidden bg-[#f3efe8]">
         <SafeImage
           alt={name}
-          className="aspect-[4/5] w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+          className="aspect-[4/5] w-full object-cover transition duration-500 group-hover:scale-[1.04]"
           loading="lazy"
           src={product.image_url}
         />
       </div>
 
       {/* Info */}
-      <div className="flex flex-1 flex-col justify-between gap-3 p-3 sm:p-4">
-        <p className="line-clamp-2 text-sm font-black leading-5 text-ink sm:text-base sm:leading-6">
+      <div className="flex flex-1 flex-col justify-between gap-2 p-4">
+        <p className="line-clamp-2 text-sm font-bold leading-5 text-ink">
           {name}
         </p>
-        <div>
-          <p className="text-lg font-black text-terracotta sm:text-xl">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-base font-black text-terracotta">
             €{Number(product.price).toFixed(2)}
           </p>
-          <p className="mt-1 text-xs font-bold text-stone-400">
+          <p className="text-[11px] font-medium text-stone-400">
             {product.stock > 0 ? t.inStock : t.outOfStock}
           </p>
         </div>
