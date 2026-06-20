@@ -19,14 +19,14 @@ type CsvRow = Record<string, string | number>;
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = "dashboard" | "add" | "csv" | "images" | "skroutz";
+type Tab = "dashboard" | "add" | "csv" | "images" | "skroutz" | "categories";
 
 /* ── Constants ───────────────────────────────────────────── */
 const uploadImageWidth = 1200; const uploadImageHeight = 1500; const webpUploadQuality = 0.82;
 const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_en: "", description_cn: "", description_gr: "", description_en: "", category: "men", subcategory: "tshirts", price: 0, stock: 0, sizes: "", image_url: "", image_urls: "", brand: "", barcode: "", vat: 24, color: "", skroutz_url: "", is_active: true };
 const csvFields = ["sku","name_cn","description_cn","name_en","description_en","name_gr","description_gr","category","subcategory","price","stock","sizes","size_stock","image_url","image_urls","brand","barcode","vat","color","skroutz_url","is_active"];
 const tabs: { key: Tab; label: string }[] = [
-  { key: "dashboard", label: "商品列表" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "批量图片上传" }, { key: "skroutz", label: "Skroutz Feed" },
+  { key: "dashboard", label: "商品列表" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "批量图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
 
 /* ── Utilities ───────────────────────────────────────────── */
@@ -517,6 +517,9 @@ export function AdminDashboard() {
           </section>
         ) : null}
 
+        {/* ── TAB: Categories ─────────────────────────────── */}
+        {tab === "categories" ? <CategoriesManager activePassword={activePassword} toast={toast} /> : null}
+
         {/* ── TAB: Skroutz Feed ───────────────────────────── */}
         {tab === "skroutz" ? (
           <section className="flex flex-col gap-5">
@@ -606,6 +609,52 @@ function ImgThumb({ src }: { src: string }) {
   const [ok, setOk] = useState(true);
   if (!ok) return <span className="inline-block rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-bold text-stone-400">缺图</span>;
   return <img alt="" className="h-11 w-9 rounded object-cover bg-stone-100" src={src} onError={() => setOk(false)} />;
+}
+
+function CategoriesManager({ activePassword, toast }: { activePassword: string; toast: (m: string, t?: "ok" | "err") => void }) {
+  const [cats, setCats] = useState<Array<Record<string, unknown>>>([]);
+  const [subs, setSubs] = useState<Array<Record<string, unknown>>>([]);
+  const [loading, setLoading] = useState(false);
+
+  async function load() { setLoading(true); try { const r = await fetch("/api/admin/categories", { headers: { "x-admin-password": activePassword } }); const d = await r.json(); setCats(d.categories || []); setSubs(d.subcategories || []); } catch {} finally { setLoading(false); } }
+  useEffect(() => { load(); }, [activePassword]);
+
+  function updateCat(idx: number, key: string, val: unknown) { setCats(prev => { const n = [...prev]; n[idx] = { ...n[idx], [key]: val }; return n; }); }
+  function updateSub(idx: number, key: string, val: unknown) { setSubs(prev => { const n = [...prev]; n[idx] = { ...n[idx], [key]: val }; return n; }); }
+
+  async function save() {
+    setLoading(true);
+    try {
+      await fetch("/api/admin/categories", { method: "PUT", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ categories: cats, subcategories: subs }) });
+      toast("分类已保存");
+      load();
+    } catch { toast("保存失败", "err"); } finally { setLoading(false); }
+  }
+
+  return (
+    <section className="flex flex-col gap-5">
+      <div className="rounded-xl border border-stone-100 bg-white p-5 shadow-sm">
+        <h2 className="mb-1 text-lg font-black text-ink">一级分类</h2>
+        <p className="mb-3 text-xs text-stone-400">slug 用于 SKU 前缀和 URL，不可与其他分类重复。</p>
+        <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+          <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-2 px-2 text-xs font-bold">slug</th><th className="py-2 px-2 text-xs font-bold">中文</th><th className="py-2 px-2 text-xs font-bold">English</th><th className="py-2 px-2 text-xs font-bold">Ελληνικά</th><th className="py-2 px-2 text-xs font-bold w-16">排序</th><th className="py-2 px-2 text-xs font-bold w-16">启用</th></tr></thead>
+          <tbody>
+            {cats.map((c, i) => (
+              <tr key={i} className="border-t border-stone-50">
+                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs font-mono" value={String(c.slug||"")} onChange={e => updateCat(i, "slug", e.target.value)} /></td>
+                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs" value={String(c.name_cn||"")} onChange={e => updateCat(i, "name_cn", e.target.value)} /></td>
+                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs" value={String(c.name_en||"")} onChange={e => updateCat(i, "name_en", e.target.value)} /></td>
+                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs" value={String(c.name_gr||"")} onChange={e => updateCat(i, "name_gr", e.target.value)} /></td>
+                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs text-center" type="number" value={Number(c.sort_order||0)} onChange={e => updateCat(i, "sort_order", parseInt(e.target.value)||0)} /></td>
+                <td className="py-1.5 px-2 text-center"><input type="checkbox" checked={c.is_active !== false} onChange={e => updateCat(i, "is_active", e.target.checked)} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+        <button className="mt-3 rounded-lg bg-ink px-6 py-2.5 text-sm font-bold text-white hover:bg-stone-800 transition" onClick={save} disabled={loading}>保存分类</button>
+      </div>
+    </section>
+  );
 }
 
 function ResultTable({ results }: { results: ApiResult[] }) {
