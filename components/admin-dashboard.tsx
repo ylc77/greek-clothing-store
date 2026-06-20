@@ -200,12 +200,12 @@ export function AdminDashboard() {
   /* ── Logged-in UI ────────────────────────────────────────── */
   return (
     <main className="min-h-screen bg-paper">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[82rem] px-4 py-6 sm:px-6 lg:px-8">
         {/* ── Top bar ────────────────────────────────────── */}
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-4">
           <div>
             <h1 className="text-2xl font-black text-ink">商品管理后台</h1>
-            <p className="text-xs text-stone-500">管理商品、图片、CSV 导入和 Skroutz Feed</p>
+            <p className="text-xs text-stone-400">管理商品、图片、库存、CSV 导入和 Skroutz Feed</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <a className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" href="/admin/settings">店铺设置</a>
@@ -215,19 +215,20 @@ export function AdminDashboard() {
         </header>
 
         {/* ── Stats cards ────────────────────────────────── */}
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
-          {[{ label: "商品总数", v: stats.total }, { label: "已上架", v: stats.active }, { label: "缺图片", v: stats.noImage }, { label: "库存为0", v: stats.noStock }, { label: "未分尺码", v: stats.noSizeStock }, { label: "分类数", v: stats.categories }].map(s => (
-            <div key={s.label} className="rounded-xl border border-stone-200 bg-white p-4 text-center shadow-sm">
+        <div className="mb-6 grid grid-cols-3 gap-3 sm:grid-cols-6">
+          {[{ label: "商品总数", v: stats.total, color: "bg-ink" }, { label: "已上架", v: stats.active, color: "bg-green-600" }, { label: "缺图片", v: stats.noImage, color: "bg-amber-500" }, { label: "库存为0", v: stats.noStock, color: "bg-red-500" }, { label: "未分尺码", v: stats.noSizeStock, color: "bg-purple-500" }, { label: "分类数", v: stats.categories, color: "bg-blue-500" }].map(s => (
+            <div key={s.label} className="relative overflow-hidden rounded-xl border border-stone-100 bg-white p-4 shadow-sm">
+              <div className={`absolute top-0 left-0 w-1 h-full ${s.color} rounded-l-full`} />
               <p className="text-2xl font-black text-ink">{s.v}</p>
-              <p className="mt-1 text-xs font-bold text-stone-500">{s.label}</p>
+              <p className="mt-0.5 text-[11px] font-bold text-stone-400">{s.label}</p>
             </div>
           ))}
         </div>
 
         {/* ── Tab bar ─────────────────────────────────────── */}
-        <nav className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-stone-200 bg-white p-1 shadow-sm">
+        <nav className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-stone-100 bg-white p-1 shadow-sm">
           {tabs.map(t => (
-            <button key={t.key} className={`shrink-0 rounded-lg px-4 py-2 text-sm font-bold transition ${tab === t.key ? "bg-ink text-white" : "text-stone-500 hover:text-ink hover:bg-stone-100"}`} onClick={() => setTab(t.key)} type="button">{t.label}</button>
+            <button key={t.key} className={`shrink-0 rounded-lg px-5 py-2.5 text-sm font-bold transition ${tab === t.key ? "bg-ink text-white shadow-sm" : "text-stone-400 hover:text-ink hover:bg-stone-100"}`} onClick={() => setTab(t.key)} type="button">{t.label}</button>
           ))}
         </nav>
 
@@ -489,17 +490,18 @@ export function AdminDashboard() {
 
         {/* ── TAB: Skroutz Feed ───────────────────────────── */}
         {tab === "skroutz" ? (
-          <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-4 text-lg font-black text-ink">Skroutz Feed 状态</h2>
+          <section className="rounded-xl border border-stone-100 bg-white p-5 shadow-sm">
+            <h2 className="mb-1 text-lg font-black text-ink">Skroutz Feed 状态</h2>
+            <p className="mb-4 text-xs text-stone-400">将此 Feed 链接提交给 Skroutz，用于同步商品信息。</p>
             <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[{ label: "Feed 商品数", v: feedStats.total }, { label: "缺图片", v: feedStats.noImage }, { label: "缺描述", v: feedStats.noDesc }].map(s => (
-                <div key={s.label} className="rounded-lg border border-stone-100 bg-stone-50 p-4 text-center"><p className="text-xl font-black text-ink">{s.v}</p><p className="mt-1 text-xs text-stone-500">{s.label}</p></div>
+              {[{ label: "Feed 商品数", v: feedStats.total }, { label: "缺图片", v: feedStats.noImage }, { label: "缺描述", v: feedStats.noDesc }, { label: "库存为0", v: stats.noStock }].map(s => (
+                <div key={s.label} className="rounded-lg border border-stone-100 bg-stone-50 p-4 text-center"><p className="text-xl font-black text-ink">{s.v}</p><p className="mt-1 text-xs text-stone-400">{s.label}</p></div>
               ))}
             </div>
             <div className="flex flex-wrap items-center gap-3 rounded-lg bg-stone-50 p-4">
               <code className="text-sm font-bold text-ink break-all">/feed.xml</code>
-              <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/feed.xml`); toast("Feed 链接已复制"); }} type="button">复制链接</button>
-              <a className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" href="/feed.xml" rel="noreferrer" target="_blank">预览 Feed</a>
+              <button className="rounded-lg border border-stone-200 px-4 py-2 text-sm font-bold hover:bg-stone-50 transition" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/feed.xml`); toast("Feed 链接已复制"); }} type="button">复制链接</button>
+              <a className="rounded-lg border border-stone-200 px-4 py-2 text-sm font-bold hover:bg-stone-50 transition" href="/feed.xml" rel="noreferrer" target="_blank">预览 Feed</a>
             </div>
           </section>
         ) : null}
