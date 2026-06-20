@@ -167,7 +167,7 @@ export function AdminDashboard() {
   }
 
   /* ── Submit / Delete ──────────────────────────────────── */
-  async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!form.sku.trim()) { toast("请填写 SKU", "err"); return; } if (!form.name_cn.trim() && !form.name_en.trim() && !form.name_gr.trim()) { toast("请至少填写一个语言的商品名", "err"); return; } if (!form.image_url && !newMainFile && !window.confirm("商品没有图片，是否继续保存？")) return; setLoading(true); const p = normalizeProduct(form); const sizeKeys = Object.keys(sizeStock); const hasSizeStock = sizeKeys.length > 0; const totalStock = sizeKeys.reduce((sum, k) => sum + (sizeStock[k] || 0), 0); const payload = hasSizeStock ? { ...(p as Record<string,unknown>), sizes: sizeKeys.join(","), size_stock: sizeStock, stock: totalStock } : p; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { const saved = await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); if (!editingId && (newMainFile || newGalleryFiles.length > 0)) { const sku = saved?.product?.sku || form.sku; try { if (newMainFile) { const cm = await compressImageForUpload(newMainFile); const fd = new FormData(); fd.append("images", cm); fd.append("sku", sku); fd.append("mode", "main"); await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); } if (newGalleryFiles.length > 0) { const cg = await Promise.all(newGalleryFiles.map(compressImageForUpload)); const fd = new FormData(); cg.forEach(f => fd.append("images", f)); fd.append("sku", sku); fd.append("mode", "gallery"); await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); } toast("图片已上传"); } catch { toast("商品已保存，图片上传失败", "err"); } setNewMainFile(null); setNewGalleryFiles([]); } setForm(emptyProduct); setEditingId(null); setSizeStock({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
+  async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!form.sku.trim()) { toast("请填写 SKU", "err"); return; } if (!form.name_cn.trim() && !form.name_en.trim() && !form.name_gr.trim()) { toast("请至少填写一个语言的商品名", "err"); return; } if (!form.image_url && !newMainFile && !window.confirm("商品没有图片，是否继续保存？")) return; setLoading(true); const p = normalizeProduct(form); const sizeKeys = Object.keys(sizeStock); const hasSizeStock = sizeKeys.length > 0; const totalStock = sizeKeys.reduce((sum, k) => sum + (sizeStock[k] || 0), 0); const payload = hasSizeStock ? { ...(p as Record<string,unknown>), sizes: sortSizeKeys(sizeKeys).join(","), size_stock: sizeStock, stock: totalStock } : p; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { const saved = await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); if (!editingId && (newMainFile || newGalleryFiles.length > 0)) { const sku = saved?.product?.sku || form.sku; try { if (newMainFile) { const cm = await compressImageForUpload(newMainFile); const fd = new FormData(); fd.append("images", cm); fd.append("sku", sku); fd.append("mode", "main"); await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); } if (newGalleryFiles.length > 0) { const cg = await Promise.all(newGalleryFiles.map(compressImageForUpload)); const fd = new FormData(); cg.forEach(f => fd.append("images", f)); fd.append("sku", sku); fd.append("mode", "gallery"); await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); } toast("图片已上传"); } catch { toast("商品已保存，图片上传失败", "err"); } setNewMainFile(null); setNewGalleryFiles([]); } setForm(emptyProduct); setEditingId(null); setSizeStock({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
   async function deleteProduct(p: AdminProduct) { if (!window.confirm(`删除商品 ${p.sku}?`)) return; setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "DELETE" }); toast("商品已删除"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "删除失败", "err"); } finally { setLoading(false); } }
 
   /* ── CSV ──────────────────────────────────────────────── */
@@ -317,7 +317,7 @@ export function AdminDashboard() {
                 <Field label="尺码">
                   {Object.keys(sizeStock).length > 0 ? (
                     <div>
-                      <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" value={Object.keys(sizeStock).join(",")} readOnly />
+                      <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" value={sortSizeKeys(Object.keys(sizeStock)).join(",")} readOnly />
                       <p className="mt-1 text-[10px] text-stone-400">由下方尺码库存自动同步</p>
                     </div>
                   ) : (
@@ -357,20 +357,20 @@ export function AdminDashboard() {
 
               {Object.keys(sizeStock).length > 0 ? (
                 <div className="rounded-lg border border-stone-200 overflow-hidden">
-                  <table className="w-full text-sm"><thead><tr className="bg-stone-50 text-stone-500"><th className="py-2 px-3 text-left text-xs font-bold">尺码</th><th className="py-2 px-3 text-left text-xs font-bold">库存</th><th className="py-2 px-3 text-center text-xs font-bold w-14">状态</th><th className="py-2 px-3 text-right text-xs font-bold w-12">操作</th></tr></thead>
+                  <table className="w-full text-sm"><thead><tr className="bg-stone-50 text-stone-500"><th className="py-2 px-3 text-left text-xs font-bold">尺码</th><th className="py-2 px-3 text-left text-xs font-bold">库存</th><th className="py-2 px-3 text-center text-xs font-bold w-20">状态</th><th className="py-2 px-3 text-right text-xs font-bold w-12">操作</th></tr></thead>
                     <tbody>
-                      {Object.entries(sizeStock).map(([sz, qty]) => (
+                      {sortSizeKeys(Object.keys(sizeStock)).map(sz => { const qty = sizeStock[sz]; return (
                         <tr className="border-t border-stone-100" key={sz}>
-                          <td className="py-1.5 px-3 text-sm font-bold text-ink">{sz}</td>
-                          <td className="py-1.5 px-3"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm text-center" min="0" step="1" type="number" value={qty} onChange={e => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, parseInt(e.target.value) || 0) }))} /></td>
-                          <td className="py-1.5 px-3 text-center">{qty > 0 ? <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800">有货</span> : <span className="inline-block rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-400">售罄</span>}</td>
+                          <td className="py-1.5 px-3 text-sm font-bold text-ink align-middle">{sz}</td>
+                          <td className="py-1.5 px-3 align-middle"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm text-center" min="0" step="1" type="number" value={qty} onChange={e => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, parseInt(e.target.value) || 0) }))} /></td>
+                          <td className="py-1.5 px-3 text-center align-middle">{qty > 0 ? <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800 whitespace-nowrap">有货</span> : <span className="inline-block rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-400 whitespace-nowrap">售罄</span>}</td>
                           <td className="py-1.5 px-3 text-right"><button className="text-[11px] font-bold text-red-500 hover:text-red-700" onClick={() => setSizeStock(prev => { const n = { ...prev }; delete n[sz]; return n; })} type="button">×</button></td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>
-              ) : <p className="text-xs text-stone-400">点击上方按钮添加尺码。补充 sizes 尺码只会添加缺失的尺码，不覆盖已有库存。</p>}
+              ) : <p className="text-xs text-stone-400">请选择尺码并填写库存。库存为 0 的尺码前台显示为售罄。</p>}
               {Object.keys(sizeStock).length > 0 ? <p className="mt-2 text-xs text-stone-500">总库存（所有尺码合计）：{Object.values(sizeStock).reduce((a,b)=>a+b,0)}，保存时自动同步到基础信息的库存和 sizes 字段。</p> : null}
             </section>
 
