@@ -28,9 +28,11 @@ export function productDescription(product: Product, language: Language) {
 }
 
 /** Convert English day names in opening hours to Greek */
-export function localizeHours(hours: string, language: Language): string {
+export function localizeHours(hours: unknown, language: Language): string {
+  const h = typeof hours === "string" ? hours : "";
+  if (!h) return "";
   if (language === "el") {
-    return hours
+    return h
       .replace(/Monday/g, "Δευτέρα")
       .replace(/Tuesday/g, "Τρίτη")
       .replace(/Wednesday/g, "Τετάρτη")
@@ -40,7 +42,7 @@ export function localizeHours(hours: string, language: Language): string {
       .replace(/Sunday/g, "Κυριακή")
       .replace(/Closed/g, "Κλειστά");
   }
-  return hours;
+  return h;
 }
 
 export const categoryLabels: Record<ProductCategory, Record<Language, string>> = {

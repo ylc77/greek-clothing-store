@@ -292,7 +292,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 <p className="mt-4 text-sm font-black text-ink">{t.hours}</p>
                 {settings.opening_hours ? (
                   <div className="mt-2 space-y-0.5 text-sm leading-relaxed text-stone-500">
-                    {localizeHours(settings.opening_hours, language).replace(/\\n/g, "\n").split("\n").map((line, i) => (
+                    {localizeHours(settings.opening_hours || "", language).replace(/\\n/g, "\n").split("\n").map((line, i) => (
                       <p key={i}>{line}</p>
                     ))}
                   </div>
