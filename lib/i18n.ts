@@ -137,7 +137,11 @@ export const text = {
     step3Desc: "Δοκιμάστε στο κατάστημά μας στην Αθήνα.",
     step4Title: "Skroutz",
     step4Desc: "Παραγγείλτε online μέσω Skroutz.",
-    browseCollection: "Περιηγηθείτε στη συλλογή"
+    browseCollection: "Περιηγηθείτε στη συλλογή",
+    purchaseNote: "Η αγορά ολοκληρώνεται μέσω Skroutz ή επικοινωνώντας με το κατάστημα.",
+    details: "Λεπτομέρειες",
+    inStockLabel: "Σε απόθεμα",
+    outOfStockLabel: "Εκτός αποθέματος"
   },
   en: {
     eyebrow: "Athens boutique",
@@ -208,6 +212,10 @@ export const text = {
     step3Desc: "Try on at our boutique in Athens.",
     step4Title: "Skroutz",
     step4Desc: "Order online via Skroutz.",
-    browseCollection: "Browse collection"
+    browseCollection: "Browse collection",
+    purchaseNote: "Purchase is completed through Skroutz or by contacting the store.",
+    details: "Details",
+    inStockLabel: "In stock",
+    outOfStockLabel: "Out of stock"
   }
 };
