@@ -112,17 +112,27 @@ export default async function ProductPage({
       ? subcategoryLabels[product.subcategory][language]
       : categoryLabels[product.category][language];
 
+  // Filter out placeholder / meaningless values
+  function isReal(v: string | null | undefined): v is string {
+    if (!v || !v.trim()) return false;
+    const s = v.trim().toUpperCase();
+    return s !== "NO" && s !== "N/A" && s !== "-" && s !== "NONE" && s !== "NA";
+  }
+
+  const ean = product.ean?.trim() || product.barcode?.trim() || "";
+
   const detailItems = [
-    { label: t.skuLabel, value: product.sku },
     { label: t.stock, value: stockQty > 0 ? `${t.inStockLabel} (${stockQty})` : t.outOfStockLabel },
     { label: t.category, value: categoryLabels[product.category][language] },
     product.subcategory
       ? { label: t.subcategory, value: subcategoryLabels[product.subcategory]?.[language] || product.subcategory }
       : null,
-    product.color ? { label: t.color, value: product.color } : null,
-    product.material ? { label: t.material, value: product.material } : null,
-    product.fit ? { label: t.fit, value: product.fit } : null,
-    product.season ? { label: t.season, value: product.season } : null,
+    isReal(product.brand) ? { label: t.brand, value: product.brand!.trim() } : null,
+    isReal(product.color) ? { label: t.color, value: product.color!.trim() } : null,
+    isReal(ean) ? { label: t.ean, value: ean } : null,
+    isReal(product.material) ? { label: t.material, value: product.material!.trim() } : null,
+    isReal(product.fit) ? { label: t.fit, value: product.fit!.trim() } : null,
+    isReal(product.season) ? { label: t.season, value: product.season!.trim() } : null,
   ].filter(Boolean) as { label: string; value: string }[];
 
   return (

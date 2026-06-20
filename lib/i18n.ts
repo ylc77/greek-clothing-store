@@ -141,7 +141,9 @@ export const text = {
     purchaseNote: "Η αγορά ολοκληρώνεται μέσω Skroutz ή επικοινωνώντας με το κατάστημα.",
     details: "Λεπτομέρειες",
     inStockLabel: "Σε απόθεμα",
-    outOfStockLabel: "Εκτός αποθέματος"
+    outOfStockLabel: "Εκτός αποθέματος",
+    brand: "Μάρκα",
+    ean: "EAN"
   },
   en: {
     eyebrow: "Athens boutique",
@@ -216,6 +218,8 @@ export const text = {
     purchaseNote: "Purchase is completed through Skroutz or by contacting the store.",
     details: "Details",
     inStockLabel: "In stock",
-    outOfStockLabel: "Out of stock"
+    outOfStockLabel: "Out of stock",
+    brand: "Brand",
+    ean: "EAN"
   }
 };
