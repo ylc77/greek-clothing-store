@@ -11,7 +11,8 @@ function mapProduct(product: Product): Product {
     ...product,
     price: Number(product.price),
     stock: Number(product.stock),
-    image_urls: Array.isArray(product.image_urls) ? product.image_urls : []
+    image_urls: Array.isArray(product.image_urls) ? product.image_urls : [],
+    size_stock: (product as Record<string, unknown>).size_stock as Record<string, number> | null | undefined,
   };
 }
 

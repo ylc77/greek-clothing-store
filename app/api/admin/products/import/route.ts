@@ -70,6 +70,23 @@ export async function POST(request: NextRequest) {
       return;
     }
 
+    // Parse size_stock from CSV (format: "S:2,M:3,L:1,XL:0")
+    const rawSizeStock = row.size_stock;
+    if (typeof rawSizeStock === "string" && rawSizeStock.trim()) {
+      const ss: Record<string, number> = {};
+      rawSizeStock.split(/[,\s]+/).forEach((pair) => {
+        const [sz, qty] = pair.split(":");
+        if (sz && qty !== undefined) {
+          const n = parseInt(qty, 10);
+          if (!isNaN(n) && n >= 0) ss[sz.trim().toUpperCase()] = n;
+        }
+      });
+      if (Object.keys(ss).length > 0) {
+        (mutation as Record<string, unknown>).size_stock = ss;
+        (mutation as Record<string, unknown>).stock = Object.values(ss).reduce((a: number, b: number) => a + b, 0);
+      }
+    }
+
     validRows.push({ rowNumber, mutation });
   });
 

@@ -38,6 +38,7 @@ alter table products add column if not exists category_path_en text;
 alter table products add column if not exists category_path_gr text;
 alter table products add column if not exists is_active boolean default true;
 alter table products add column if not exists updated_at timestamptz default now();
+alter table products add column if not exists size_stock jsonb default '{}'::jsonb;
 
 create or replace function update_updated_at()
 returns trigger as $$

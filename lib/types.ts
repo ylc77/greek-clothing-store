@@ -58,6 +58,7 @@ export type Product = {
   price: number;
   stock: number;
   sizes: string | null;
+  size_stock?: Record<string, number> | null;
   image_url: string;
   image_urls: string[] | null;
   brand?: string | null;

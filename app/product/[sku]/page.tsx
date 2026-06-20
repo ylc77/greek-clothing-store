@@ -197,6 +197,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
               productNameEn={product.name_en || product.name_cn || product.sku}
               sku={product.sku}
               sizes={product.sizes}
+              sizeStock={product.size_stock}
               skroutzUrl={product.skroutz_url}
               language={language}
               whatsappUrl={settings.whatsapp || undefined}
