@@ -125,7 +125,19 @@ export const text = {
     whatsappAskProduct: "Προϊόν",
     whatsappAskSku: "SKU",
     whatsappAskSize: "Μέγεθος",
-    whatsappCheckStore: "Είναι το \"{name}\" (SKU: {sku}) διαθέσιμο στο κατάστημά σας;"
+    whatsappCheckStore: "Είναι το \"{name}\" (SKU: {sku}) διαθέσιμο στο κατάστημά σας;",
+    heroCTA: "Δείτε τα προϊόντα",
+    heroWhatsApp: "Επικοινωνήστε στο WhatsApp",
+    howToBuy: "Πώς να αγοράσετε",
+    step1Title: "Περιηγηθείτε",
+    step1Desc: "Δείτε τη συλλογή μας και επιλέξτε τα αγαπημένα σας.",
+    step2Title: "Ρωτήστε μας",
+    step2Desc: "Στείλτε μας WhatsApp για διαθεσιμότητα και μεγέθη.",
+    step3Title: "Επισκεφθείτε μας",
+    step3Desc: "Δοκιμάστε στο κατάστημά μας στην Αθήνα.",
+    step4Title: "Skroutz",
+    step4Desc: "Παραγγείλτε online μέσω Skroutz.",
+    browseCollection: "Περιηγηθείτε στη συλλογή"
   },
   en: {
     eyebrow: "Greek clothing store",
@@ -184,6 +196,18 @@ export const text = {
     whatsappAskProduct: "Product",
     whatsappAskSku: "SKU",
     whatsappAskSize: "Size",
-    whatsappCheckStore: "Is \"{name}\" (SKU: {sku}) available in your store?"
+    whatsappCheckStore: "Is \"{name}\" (SKU: {sku}) available in your store?",
+    heroCTA: "View products",
+    heroWhatsApp: "Ask on WhatsApp",
+    howToBuy: "How to buy",
+    step1Title: "Browse",
+    step1Desc: "Explore our collection and pick your favorites.",
+    step2Title: "Ask us",
+    step2Desc: "WhatsApp us for availability and sizes.",
+    step3Title: "Visit us",
+    step3Desc: "Try on at our boutique in Athens.",
+    step4Title: "Skroutz",
+    step4Desc: "Order online via Skroutz.",
+    browseCollection: "Browse collection"
   }
 };
