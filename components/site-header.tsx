@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LanguageSelector } from "@/components/language-selector";
+import { LogoImg } from "@/components/logo-img";
 import { categoryLabels, subcategoryLabels, text, withLanguage, type Language } from "@/lib/i18n";
 import { categories, subcategoriesByCategory, type ProductCategory } from "@/lib/types";
 import type { BusinessSettings } from "@/lib/settings";
@@ -31,9 +32,7 @@ export function SiteHeader({
           className="flex items-center gap-2.5 text-lg font-black tracking-tight text-ink shrink-0"
           href={withLanguage("/", language)}
         >
-          {logoUrl ? (
-            <img alt={siteName} className="h-8 w-auto rounded object-contain" src={logoUrl} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-          ) : null}
+          {logoUrl ? <LogoImg src={logoUrl} alt={siteName} /> : null}
           <span>{siteName}</span>
         </Link>
 
