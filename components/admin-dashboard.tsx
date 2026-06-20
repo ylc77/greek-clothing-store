@@ -141,7 +141,9 @@ export function AdminDashboard() {
   async function loadProducts() { setLoading(true); try { const d = await api("/api/admin/products?limit=500"); setProducts(d.products||[]); } catch (e) { toast(e instanceof Error ? e.message : "商品读取失败", "err"); } finally { setLoading(false); } }
   useEffect(() => { if (activePassword) void loadProducts(); }, [activePassword]);
 
-  function updateField<K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) { setForm(c => { if (key === "category") return { ...c, category: value as ProductCategory, subcategory: subcategoriesByCategory[value as ProductCategory][0] }; return { ...c, [key]: value }; }); }
+  function skuPrefix(cat: string, sub: string) { return `${cat || "x"}-${sub || "x"}-`; }
+  function updateField<K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) { setForm(c => { if (key === "category") { const nextCat = value as ProductCategory; const nextSub = subcategoriesByCategory[nextCat][0]; const prefix = skuPrefix(nextCat, nextSub); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, category: nextCat, subcategory: nextSub, sku: skuEmpty ? prefix : c.sku }; } if (key === "subcategory") { const prefix = skuPrefix(c.category, value as string); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, subcategory: value as string, sku: skuEmpty ? prefix : c.sku }; } return { ...c, [key]: value }; }); }
+  function generateNextSku() { const prefix = skuPrefix(form.category, form.subcategory); const existing = products.filter(p => p.sku.startsWith(prefix)); let max = 0; for (const p of existing) { const rest = p.sku.slice(prefix.length); const n = parseInt(rest, 10); if (!isNaN(n) && n > max) max = n; } const next = String(max + 1).padStart(3, "0"); updateField("sku", prefix + next); toast(`SKU 已生成: ${prefix + next}`); }
   function loadSizeStock(p: AdminProduct) { const ss = (p as Record<string,unknown>).size_stock; if (ss && typeof ss === 'object' && !Array.isArray(ss)) { const rec: Record<string,number> = {}; for (const [k,v] of Object.entries(ss as Record<string,unknown>)) { if (typeof v === 'number') rec[k.toUpperCase()] = v; } setSizeStock(rec); } else { setSizeStock({}); } }
   function startEdit(p: AdminProduct) { setEditingId(p.id); setForm({ sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, barcode:p.barcode, vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active }); loadSizeStock(p); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
   function copyProduct(p: AdminProduct) { setEditingId(null); setForm({ ...p, sku: p.sku + "-COPY" }); loadSizeStock(p); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
@@ -277,7 +279,13 @@ export function AdminDashboard() {
             <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-base font-black text-ink">基础信息</h2>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                <Field label="SKU"><input className="input" required value={form.sku} onChange={e => updateField("sku", e.target.value)} /></Field>
+                <Field label="SKU">
+                  <div className="flex gap-1.5">
+                    <input className="input flex-1" required value={form.sku} onChange={e => updateField("sku", e.target.value)} />
+                    <button className="shrink-0 rounded-lg border border-stone-300 px-3 py-2 text-[11px] font-bold hover:bg-stone-50 whitespace-nowrap" onClick={generateNextSku} type="button">生成编号</button>
+                  </div>
+                  <p className="mt-1 text-[10px] text-stone-400">切换分类自动生成前缀: {skuPrefix(form.category, form.subcategory)}001</p>
+                </Field>
                 <Field label="分类"><select className="input" value={form.category} onChange={e => updateField("category", e.target.value as ProductCategory)}>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select></Field>
                 <Field label="二级分类"><select className="input" value={form.subcategory} onChange={e => updateField("subcategory", e.target.value)}>{subcategoriesByCategory[form.category].map(s => <option key={s} value={s}>{s}</option>)}</select></Field>
                 <Field label="价格"><input className="input" min="0" step="0.01" type="number" value={form.price} onChange={e => updateField("price", Number(e.target.value))} /></Field>
@@ -291,7 +299,16 @@ export function AdminDashboard() {
                     <input className="input" min="0" step="1" type="number" value={form.stock} onChange={e => updateField("stock", Number(e.target.value))} />
                   )}
                 </Field>
-                <Field label="尺码"><input className="input" placeholder="S,M,L,XL" value={form.sizes} onChange={e => updateField("sizes", e.target.value)} /></Field>
+                <Field label="尺码">
+                  {Object.keys(sizeStock).length > 0 ? (
+                    <div>
+                      <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" value={Object.keys(sizeStock).join(",")} readOnly />
+                      <p className="mt-1 text-[10px] text-stone-400">由下方尺码库存自动同步</p>
+                    </div>
+                  ) : (
+                    <input className="input" value={form.sizes} onChange={e => updateField("sizes", e.target.value)} />
+                  )}
+                </Field>
                 <Field label="上架"><select className="input" value={form.is_active ? "true" : "false"} onChange={e => updateField("is_active", e.target.value === "true")}><option value="true">是</option><option value="false">否</option></select></Field>
               </div>
             </section>
@@ -382,7 +399,7 @@ export function AdminDashboard() {
                 <Field label="品牌"><input className="input" value={form.brand} onChange={e => updateField("brand", e.target.value)} /></Field>
                 <Field label="条码 / EAN"><input className="input" value={form.barcode} onChange={e => updateField("barcode", e.target.value)} /></Field>
                 <Field label="VAT"><input className="input" min="0" step="0.01" type="number" value={form.vat} onChange={e => updateField("vat", Number(e.target.value))} /></Field>
-                <Field label="颜色"><input className="input" value={form.color} onChange={e => updateField("color", e.target.value)} /></Field>
+                {/* color hidden — images show color, keep DB field */}
               </div>
               <div className="mt-3"><Field label="多图 URL（一行一个，可用逗号分隔）"><textarea className="input min-h-24" value={form.image_urls} onChange={e => updateField("image_urls", e.target.value)} /></Field></div>
             </section>
@@ -431,7 +448,7 @@ export function AdminDashboard() {
             </div>
             <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
               <h2 className="mb-1 text-lg font-black text-ink">按文件名批量上传</h2>
-              <p className="mb-3 text-xs text-stone-500">主图文件名：SKU.jpg / SKU.png / SKU.webp。多图文件名：SKU-1.jpg、SKU-2.jpg。上传后自动匹配 SKU 并写入商品图片字段。</p>
+              <p className="mb-3 text-xs text-stone-500">主图文件名：SKU.jpg，例如 women-shirts-001.jpg。多图文件名：SKU-1.jpg、SKU-2.jpg。上传后自动匹配 SKU 并写入商品图片字段。</p>
               <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input" disabled={loading} multiple onChange={e => { void uploadImages(e.target.files); e.currentTarget.value = ""; }} type="file" />
             </div>
             {imageResults.length > 0 ? <ResultTable results={imageResults} /> : null}

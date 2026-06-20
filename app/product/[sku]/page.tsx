@@ -128,7 +128,6 @@ export default async function ProductPage({
       ? { label: t.subcategory, value: subcategoryLabels[product.subcategory]?.[language] || product.subcategory }
       : null,
     isReal(product.brand) ? { label: t.brand, value: product.brand!.trim() } : null,
-    isReal(product.color) ? { label: t.color, value: product.color!.trim() } : null,
     isReal(ean) ? { label: t.ean, value: ean } : null,
     isReal(product.material) ? { label: t.material, value: product.material!.trim() } : null,
     isReal(product.fit) ? { label: t.fit, value: product.fit!.trim() } : null,
