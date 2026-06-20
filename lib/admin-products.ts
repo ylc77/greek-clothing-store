@@ -156,7 +156,7 @@ export function validateProductPayload(payload: AdminProductPayload) {
   return { errors, mutation };
 }
 
-export function productForForm(product: Product): ProductFormData & { id: string } {
+export function productForForm(product: Product): ProductFormData & { id: string; size_stock?: Record<string, number> | null } {
   return {
     id: product.id,
     sku: product.sku,
@@ -178,6 +178,7 @@ export function productForForm(product: Product): ProductFormData & { id: string
     vat: Number(product.vat ?? 24),
     color: product.color || "",
     skroutz_url: product.skroutz_url || "",
-    is_active: product.is_active !== false
+    is_active: product.is_active !== false,
+    size_stock: (product as Record<string, unknown>).size_stock as Record<string, number> | null | undefined,
   };
 }

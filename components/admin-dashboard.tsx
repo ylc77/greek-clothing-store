@@ -13,7 +13,7 @@ import { effectiveStock } from "@/lib/products";
 import { useToast } from "@/components/admin-toast";
 
 /* ── Types ───────────────────────────────────────────────── */
-type AdminProduct = ProductFormData & { id: string };
+type AdminProduct = ProductFormData & { id: string; size_stock?: Record<string, number> | null };
 type ApiResult = { rowNumber?: number; fileName?: string; sku: string; ok: boolean; message: string; imageUrl?: string; translated?: boolean; translateError?: string };
 type CsvRow = Record<string, string | number>;
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
@@ -153,6 +153,8 @@ export function AdminDashboard() {
   function addSize(sz: string) { setSizeStock(prev => { if (sz in prev) return prev; return { ...prev, [sz]: 0 }; }); }
   function toggleSizeSummary() { setShowSizeSummary(prev => !prev); }
   function addMissingSizes() { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); if (parts.length === 0) { toast("sizes 字段为空", "err"); return; } setSizeStock(prev => { let added = 0; const next = { ...prev }; for (const s of parts) { if (!(s in next)) { next[s] = 0; added++; } } if (added > 0) { toast(`已补充 ${added} 个缺失尺码，已有库存不变`); return next; } toast("所有 sizes 尺码已在库存表中"); return prev; }); }
+  const SIZE_ORDER = ["XS","S","M","L","XL","XXL","XXXL"];
+  function sortSizeKeys(keys: string[]) { return keys.sort((a,b) => { const ai = SIZE_ORDER.indexOf(a); const bi = SIZE_ORDER.indexOf(b); if (ai >= 0 && bi >= 0) return ai - bi; if (ai >= 0) return -1; if (bi >= 0) return 1; return a.localeCompare(b); }); }
   function addCustomSize() { const raw = prompt("输入尺码名称，多个用逗号分隔", ""); if (!raw) return; const names = raw.split(/[\/,\s]+/).map((x: string) => x.trim().toUpperCase()).filter(Boolean); if (names.length === 0) return; setSizeStock(prev => { let added = 0; const next = { ...prev }; for (const k of names) { if (!(k in next)) { next[k] = 0; added++; } } if (added > 0) { toast(`已添加 ${added} 个尺码`); return next; } toast("所有尺码已存在"); return prev; }); }
 
   /* ── Translate ────────────────────────────────────────── */
@@ -338,7 +340,7 @@ export function AdminDashboard() {
                     <button className="text-xs font-bold text-stone-400 hover:text-ink" onClick={() => setShowSizeSummary(false)} type="button">× 关闭</button>
                   </div>
                   <p className="text-[11px] text-stone-600">基础 sizes：<span className="font-bold">{form.sizes || "—"}</span></p>
-                  <p className="text-[11px] text-stone-600">库存表已有：<span className="font-bold">{Object.keys(sizeStock).join(", ") || "无"}</span></p>
+                  <p className="text-[11px] text-stone-600">库存表已有：<span className="font-bold">{sortSizeKeys(Object.keys(sizeStock)).join(", ") || "无"}</span></p>
                   {form.sizes ? (() => { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); const missing = parts.filter(s => !(s in sizeStock)); return missing.length > 0 ? <p className="text-[11px] text-amber-700">缺失尺码：<span className="font-bold">{missing.join(", ")}</span></p> : <p className="text-[11px] text-green-700">所有 sizes 尺码都在库存表中 ✓</p>; })() : null}
                   {form.sizes ? (() => { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); const missing = parts.filter(s => !(s in sizeStock)); return missing.length > 0 ? <button className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-800 hover:bg-amber-100" onClick={addMissingSizes} type="button">补充缺失尺码（不覆盖已有库存）</button> : null; })() : null}
                 </div>
