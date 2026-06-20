@@ -95,7 +95,7 @@ export function AdminDashboard() {
 
   // Search / filter state
   const [search, setSearch] = useState(""); const [filterCat, setFilterCat] = useState(""); const [filterSub, setFilterSub] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all"); // all | active | inactive | noimg | nostock | demo
+  const [filterStatus, setFilterStatus] = useState("all"); // all | active | inactive | noimg | nostock | nosizestock | demo
 
   const csvSummary = useMemo(() => {
     const valid = csvRows.filter(r => validatePreviewRow(r).length === 0).length;
@@ -106,7 +106,8 @@ export function AdminDashboard() {
   // Stats
   const stats = useMemo(() => {
     const cats = new Set(products.map(p => p.category));
-    return { total: products.length, active: products.filter(p => p.is_active).length, noImage: products.filter(p => !p.image_url).length, noStock: products.filter(p => effectiveStock(p) === 0).length, categories: cats.size };
+    const noSizeStock = products.filter(p => p.sizes.trim() && !(p as Record<string,unknown>).size_stock || (typeof (p as Record<string,unknown>).size_stock === "object" && Object.keys((p as Record<string,unknown>).size_stock as object).length === 0)).length;
+    return { total: products.length, active: products.filter(p => p.is_active).length, noImage: products.filter(p => !p.image_url).length, noStock: products.filter(p => effectiveStock(p) === 0).length, noSizeStock, categories: cats.size };
   }, [products]);
 
   // Filtered products
@@ -119,6 +120,7 @@ export function AdminDashboard() {
     if (filterStatus === "inactive") list = list.filter(p => !p.is_active);
     if (filterStatus === "noimg") list = list.filter(p => !p.image_url);
     if (filterStatus === "nostock") list = list.filter(p => effectiveStock(p) === 0);
+    if (filterStatus === "nosizestock") list = list.filter(p => p.sizes.trim() && !((p as Record<string,unknown>).size_stock && typeof (p as Record<string,unknown>).size_stock === "object" && Object.keys((p as Record<string,unknown>).size_stock as object).length > 0));
     if (filterStatus === "demo") list = list.filter(p => /TEST|DEMO/i.test(p.sku));
     return list;
   }, [products, search, filterCat, filterSub, filterStatus]);
@@ -211,7 +213,7 @@ export function AdminDashboard() {
 
         {/* ── Stats cards ────────────────────────────────── */}
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
-          {[{ label: "商品总数", v: stats.total }, { label: "已上架", v: stats.active }, { label: "缺图片", v: stats.noImage }, { label: "库存为0", v: stats.noStock }, { label: "分类数", v: stats.categories }].map(s => (
+          {[{ label: "商品总数", v: stats.total }, { label: "已上架", v: stats.active }, { label: "缺图片", v: stats.noImage }, { label: "库存为0", v: stats.noStock }, { label: "未分尺码", v: stats.noSizeStock }, { label: "分类数", v: stats.categories }].map(s => (
             <div key={s.label} className="rounded-xl border border-stone-200 bg-white p-4 text-center shadow-sm">
               <p className="text-2xl font-black text-ink">{s.v}</p>
               <p className="mt-1 text-xs font-bold text-stone-500">{s.label}</p>
@@ -234,7 +236,7 @@ export function AdminDashboard() {
               <input className="input md:col-span-2" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
               <select className="input" value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部分类</option>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select>
               <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoriesByCategory[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
-              <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="noimg">缺图片</option><option value="nostock">库存为0</option><option value="demo">测试商品</option></select>
+              <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="noimg">缺图片</option><option value="nostock">库存为0</option><option value="nosizestock">未分配尺码</option><option value="demo">测试商品</option></select>
             </div>
 
             {/* Table */}
@@ -319,7 +321,7 @@ export function AdminDashboard() {
             <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
               <h2 className="mb-1 text-base font-black text-ink">尺码库存</h2>
               <p className="mb-3 text-xs text-stone-500">库存为 0 的尺码在前台显示为售罄。总库存由尺码库存自动计算。</p>
-              {editingId && Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">该商品还没有尺码库存，点击「查看 sizes 尺码库存」可基于 "{form.sizes}" 统一管理库存。</p> : null}
+              {editingId && Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">该商品还没有尺码库存。旧总库存为 <b>{form.stock}</b>，sizes 为 "{form.sizes}"。请手动分配库存到各尺码后保存，保存后将自动计算总库存。</p> : null}
               <div className="mb-3 flex flex-wrap gap-1.5">
                 {(form.category === "shoes"
                   ? ["35","36","37","38","39","40","41","42","43","44","45"]
