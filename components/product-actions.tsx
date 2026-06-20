@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { text, type Language } from "@/lib/i18n";
 
 type ProductActionsProps = {
@@ -17,9 +17,14 @@ type ProductActionsProps = {
 interface SizeEntry { label: string; stock: number; }
 
 function parseSizeList(sizes: string | null, sizeStock?: Record<string, number> | null): SizeEntry[] {
-  if (sizeStock && typeof sizeStock === "object" && Object.keys(sizeStock).length > 0) {
-    return Object.entries(sizeStock).map(([k, v]) => ({ label: k, stock: typeof v === "number" ? v : 0 }));
+  // Only use sizeStock if it is a real object with at least one key
+  if (sizeStock && typeof sizeStock === "object" && !Array.isArray(sizeStock)) {
+    const keys = Object.keys(sizeStock);
+    if (keys.length > 0) {
+      return keys.map(k => ({ label: k, stock: typeof sizeStock[k] === "number" ? sizeStock[k] : 0 }));
+    }
   }
+  // Fallback: parse sizes string. stock = -1 means "unknown — treat as available"
   return Array.from(new Set((sizes || "").split(/[\/,\s]+/).map(s => s.trim()).filter(Boolean)))
     .map(s => ({ label: s, stock: -1 }));
 }
@@ -48,6 +53,14 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
   const allOut = sizeOptions.length > 0 && sizeOptions.every(s => s.stock === 0);
   const hasSkroutz = Boolean(skroutzUrl?.trim());
   const hasWhatsApp = Boolean(whatsappUrl?.trim());
+
+  // Auto-clear selected size if it becomes invalid (stock dropped to 0)
+  useEffect(() => {
+    if (selectedSize) {
+      const entry = sizeOptions.find(s => s.label === selectedSize);
+      if (!entry || entry.stock === 0) setSelectedSize("");
+    }
+  }, [sizeOptions, selectedSize]);
 
   function askWhatsApp() {
     if (sizeOptions.length > 1 && !selectedSize) { setMessage(t.selectSize); return; }
@@ -104,15 +117,26 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
 
       {/* BUTTONS: Skroutz first, WhatsApp second, Check in store third */}
       {hasSkroutz ? (
-        <button
-          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#2d7d46] px-6 py-3.5 text-sm font-black text-white shadow-sm transition hover:bg-[#236836] hover:shadow-md hover:-translate-y-0.5"
-          onClick={viewOnSkroutz}
-          type="button"
-        >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" /></svg>
-          {t.viewSkroutz}
-          <svg className="h-3.5 w-3.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M7 17L17 7M7 7h10v10" /></svg>
-        </button>
+        allOut ? (
+          <button
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-stone-200 px-6 py-3.5 text-sm font-black text-stone-400 cursor-not-allowed"
+            disabled
+            type="button"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" /></svg>
+            {t.viewSkroutz} ({t.outOfStockLabel})
+          </button>
+        ) : (
+          <button
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#2d7d46] px-6 py-3.5 text-sm font-black text-white shadow-sm transition hover:bg-[#236836] hover:shadow-md hover:-translate-y-0.5"
+            onClick={viewOnSkroutz}
+            type="button"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" /></svg>
+            {t.viewSkroutz}
+            <svg className="h-3.5 w-3.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M7 17L17 7M7 7h10v10" /></svg>
+          </button>
+        )
       ) : null}
 
       {hasWhatsApp ? (

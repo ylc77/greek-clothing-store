@@ -106,6 +106,12 @@ export default async function ProductPage({
   const images = productImages(product);
   const description = productDescription(product, language);
   const stockQty = effectiveStock(product);
+  // Ensure size_stock survives server→client serialization
+  const ssRaw = (product as Record<string, unknown>).size_stock;
+  const safeSizeStock: Record<string, number> | null =
+    ssRaw && typeof ssRaw === "object" && !Array.isArray(ssRaw)
+      ? JSON.parse(JSON.stringify(ssRaw))
+      : null;
   const backHref = categoryBackHref(product, language);
   const backLabel =
     product.subcategory && subcategoryLabels[product.subcategory]
@@ -194,7 +200,7 @@ export default async function ProductPage({
                 productNameEn={product.name_en || product.name_cn || product.sku}
                 sku={product.sku}
                 sizes={product.sizes}
-                sizeStock={product.size_stock}
+                sizeStock={safeSizeStock}
                 skroutzUrl={product.skroutz_url}
                 language={language}
                 whatsappUrl={settings.whatsapp || undefined}
