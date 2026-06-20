@@ -145,8 +145,8 @@ export function AdminDashboard() {
   function startEdit(p: AdminProduct) { setEditingId(p.id); setForm({ sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, barcode:p.barcode, vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active }); loadSizeStock(p); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
   function copyProduct(p: AdminProduct) { setEditingId(null); setForm({ ...p, sku: p.sku + "-COPY" }); loadSizeStock(p); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
   function addSize(sz: string) { setSizeStock(prev => prev[sz] !== undefined ? prev : { ...prev, [sz]: 0 }); }
-  function genFromSizes() { const parts = form.sizes.split(/[/,s]+/).map((s: string) => s.trim()).filter(Boolean); if (parts.length === 0) { toast("sizes 字段为空", "err"); return; } const rec: Record<string,number> = {}; parts.forEach((s: string) => { if (!(s.toUpperCase() in sizeStock)) rec[s.toUpperCase()] = 0; }); if (Object.keys(rec).length > 0) setSizeStock(prev => ({...prev, ...rec})); else toast("尺码已全部添加", "err"); }
-  function addCustomSize() { const raw = prompt("输入尺码名称，多个用逗号分隔", ""); if (!raw) return; const names = raw.split(/[/,s]+/).map((x: string) => x.trim().toUpperCase()).filter(Boolean); const rec: Record<string,number> = {}; names.forEach((k: string) => { if (!(k in sizeStock)) rec[k] = 0; }); if (Object.keys(rec).length > 0) setSizeStock(prev => ({...prev, ...rec})); }
+  function genFromSizes() { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); if (parts.length === 0) { toast("sizes 字段为空", "err"); return; } const rec: Record<string,number> = {}; parts.forEach((s: string) => { if (!(s in sizeStock)) rec[s] = 0; }); if (Object.keys(rec).length > 0) setSizeStock(prev => ({...prev, ...rec})); else toast("尺码已全部添加", "err"); }
+  function addCustomSize() { const raw = prompt("输入尺码名称，多个用逗号分隔", ""); if (!raw) return; const names = raw.split(/[\/,\s]+/).map((x: string) => x.trim().toUpperCase()).filter(Boolean); const rec: Record<string,number> = {}; names.forEach((k: string) => { if (!(k in sizeStock)) rec[k] = 0; }); if (Object.keys(rec).length > 0) setSizeStock(prev => ({...prev, ...rec})); }
 
   /* ── Translate ────────────────────────────────────────── */
   async function translateProduct() {
@@ -157,7 +157,7 @@ export function AdminDashboard() {
   }
 
   /* ── Submit / Delete ──────────────────────────────────── */
-  async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setLoading(true); const p = normalizeProduct(form); const ssEntries = Object.entries(sizeStock).filter(([,v]) => v > 0); const payload = ssEntries.length > 0 ? { ...(p as Record<string,unknown>), size_stock: sizeStock, stock: ssEntries.reduce((sum, [,v]) => sum + v, 0) } : p; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); setForm(emptyProduct); setEditingId(null); setSizeStock({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
+  async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setLoading(true); const p = normalizeProduct(form); const sizeKeys = Object.keys(sizeStock); const hasSizeStock = sizeKeys.length > 0; const totalStock = sizeKeys.reduce((sum, k) => sum + (sizeStock[k] || 0), 0); const payload = hasSizeStock ? { ...(p as Record<string,unknown>), sizes: sizeKeys.join(","), size_stock: sizeStock, stock: totalStock } : p; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); setForm(emptyProduct); setEditingId(null); setSizeStock({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
   async function deleteProduct(p: AdminProduct) { if (!window.confirm(`删除商品 ${p.sku}?`)) return; setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "DELETE" }); toast("商品已删除"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "删除失败", "err"); } finally { setLoading(false); } }
 
   /* ── CSV ──────────────────────────────────────────────── */
@@ -288,7 +288,9 @@ export function AdminDashboard() {
 
             {/* Size-Stock card */}
             <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-black text-ink">尺码库存</h2>
+              <h2 className="mb-1 text-base font-black text-ink">尺码库存</h2>
+              <p className="mb-3 text-xs text-stone-500">库存为 0 的尺码在前台显示为售罄。总库存由尺码库存自动计算。</p>
+              {editingId && Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">该商品还没有尺码库存，点击「从 sizes 生成」可基于 "{form.sizes}" 快速创建。</p> : null}
               <div className="mb-3 flex flex-wrap gap-1.5">
                 {(form.category === "shoes"
                   ? ["35","36","37","38","39","40","41","42","43","44","45"]
@@ -308,7 +310,7 @@ export function AdminDashboard() {
                   </table>
                 </div>
               ) : <p className="text-xs text-stone-400">点击上方按钮添加尺码，或从 sizes 文本生成</p>}
-              {Object.keys(sizeStock).length > 0 ? <p className="mt-2 text-xs text-stone-500">总库存（自动计算）：{Object.values(sizeStock).reduce((a,b)=>a+b,0)}</p> : null}
+              {Object.keys(sizeStock).length > 0 ? <p className="mt-2 text-xs text-stone-500">总库存（所有尺码合计）：{Object.values(sizeStock).reduce((a,b)=>a+b,0)}，保存时自动同步到基础信息的库存和 sizes 字段。</p> : null}
             </section>
 
             {/* i18n card */}
