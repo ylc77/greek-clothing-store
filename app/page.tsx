@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { ProductCard } from "@/components/product-card";
+import { SafeImage } from "@/components/safe-image";
 import { SiteHeader } from "@/components/site-header";
 import { categoryLabels, getLanguage, text, withLanguage } from "@/lib/i18n";
 import { getCategoryImages, getLatestProducts } from "@/lib/products";
@@ -88,27 +89,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
           {/* Right: image */}
           <div className="flex items-center justify-center">
-            {heroImage ? (
-              <img
-                alt={siteName}
-                className="w-full max-w-lg rounded-lg object-cover shadow-lg aspect-[4/5]"
-                src={heroImage}
-              />
-            ) : (
-              <div className="flex w-full max-w-lg aspect-[4/5] items-center justify-center rounded-lg bg-[#f3efe8] shadow-sm">
-                <svg
-                  className="h-24 w-24 text-stone-300"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1"
-                  viewBox="0 0 64 64"
-                >
-                  <path d="M24 22c0-4 3-8 8-8s8 4 8 8" />
-                  <path d="M14 50V28c0-2 1-4 3-4h30c2 0 3 2 3 4v22" />
-                  <path d="M20 24l-4-4m24 4l4-4M16 50h32v4c0 2-1 3-3 3H19c-2 0-3-1-3-3v-4z" />
-                </svg>
-              </div>
-            )}
+            <SafeImage
+              alt={siteName}
+              className="w-full max-w-lg rounded-lg object-cover shadow-lg aspect-[4/5]"
+              src={heroImage}
+            />
           </div>
         </div>
       </section>
@@ -126,26 +111,32 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {categories.map((cat, i) => {
+            {categories.map((cat) => {
               const img = categoryImages[cat.slug];
-              const fallbacks = ["👔", "👗", "👟", "👜", "🧳", "🧢", "💍", "✨"];
               return (
                 <Link
                   key={cat.slug}
                   className="group relative overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-md"
                   href={withLanguage(`/${cat.slug}`, language)}
                 >
-                  <div className="flex aspect-[3/2] items-center justify-center bg-stone-100">
-                    {img ? (
-                      <img
-                        alt={categoryLabels[cat.slug][language]}
-                        className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-                        loading="lazy"
-                        src={img}
-                      />
-                    ) : (
-                      <span className="text-4xl opacity-30 select-none">{fallbacks[i]}</span>
-                    )}
+                  <div className="flex aspect-[3/2] items-center justify-center bg-[#f3efe8]">
+                    <SafeImage
+                      alt={categoryLabels[cat.slug][language]}
+                      className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                      loading="lazy"
+                      src={img}
+                      fallback={
+                        <svg
+                          className="h-12 w-12 text-stone-300"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1"
+                          viewBox="0 0 64 64"
+                        >
+                          <path d="M14 50V28c0-2 1-4 3-4h30c2 0 3 2 3 4v22M24 22c0-4 3-8 8-8s8 4 8 8M20 24l-4-4m24 4l4-4M16 50h32v4c0 2-1 3-3 3H19c-2 0-3-1-3-3v-4z" />
+                        </svg>
+                      }
+                    />
                   </div>
                   <div className="p-4 text-center">
                     <p className="text-base font-black text-ink group-hover:text-olive transition-colors">

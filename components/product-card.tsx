@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SafeImage } from "@/components/safe-image";
 import { productName, text, withLanguage, type Language } from "@/lib/i18n";
 import type { Product } from "@/lib/types";
 
@@ -14,29 +15,12 @@ export function ProductCard({ product, language }: { product: Product; language:
     >
       {/* Image */}
       <div className="relative overflow-hidden bg-[#f3efe8]">
-        {product.image_url ? (
-          <img
-            alt={name}
-            className="aspect-[4/5] w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-            loading="lazy"
-            src={product.image_url}
-          />
-        ) : (
-          <div className="flex aspect-[4/5] items-center justify-center">
-            <svg
-              className="h-16 w-16 text-stone-300"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1"
-              viewBox="0 0 64 64"
-            >
-              <path d="M24 22c0-4 3-8 8-8s8 4 8 8" />
-              <path d="M14 50V28c0-2 1-4 3-4h30c2 0 3 2 3 4v22" />
-              <path d="M20 24l-4-4m24 4l4-4" />
-              <path d="M16 50h32v4c0 2-1 3-3 3H19c-2 0-3-1-3-3v-4z" />
-            </svg>
-          </div>
-        )}
+        <SafeImage
+          alt={name}
+          className="aspect-[4/5] w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+          loading="lazy"
+          src={product.image_url}
+        />
       </div>
 
       {/* Info */}
