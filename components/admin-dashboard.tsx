@@ -281,7 +281,16 @@ export function AdminDashboard() {
                 <Field label="分类"><select className="input" value={form.category} onChange={e => updateField("category", e.target.value as ProductCategory)}>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select></Field>
                 <Field label="二级分类"><select className="input" value={form.subcategory} onChange={e => updateField("subcategory", e.target.value)}>{subcategoriesByCategory[form.category].map(s => <option key={s} value={s}>{s}</option>)}</select></Field>
                 <Field label="价格"><input className="input" min="0" step="0.01" type="number" value={form.price} onChange={e => updateField("price", Number(e.target.value))} /></Field>
-                <Field label="库存"><input className="input" min="0" step="1" type="number" value={form.stock} onChange={e => updateField("stock", Number(e.target.value))} /></Field>
+                <Field label="库存">
+                  {Object.keys(sizeStock).length > 0 ? (
+                    <div>
+                      <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" min="0" step="1" type="number" value={Object.values(sizeStock).reduce((a,b)=>a+b,0)} readOnly />
+                      <p className="mt-1 text-[10px] text-stone-400">由尺码库存自动计算</p>
+                    </div>
+                  ) : (
+                    <input className="input" min="0" step="1" type="number" value={form.stock} onChange={e => updateField("stock", Number(e.target.value))} />
+                  )}
+                </Field>
                 <Field label="尺码"><input className="input" placeholder="S,M,L,XL" value={form.sizes} onChange={e => updateField("sizes", e.target.value)} /></Field>
                 <Field label="上架"><select className="input" value={form.is_active ? "true" : "false"} onChange={e => updateField("is_active", e.target.value === "true")}><option value="true">是</option><option value="false">否</option></select></Field>
               </div>
@@ -302,10 +311,15 @@ export function AdminDashboard() {
               </div>
               {Object.keys(sizeStock).length > 0 ? (
                 <div className="rounded-lg border border-stone-200 overflow-hidden">
-                  <table className="w-full text-sm"><thead><tr className="bg-stone-50 text-stone-500"><th className="py-2 px-3 text-left text-xs font-bold">尺码</th><th className="py-2 px-3 text-left text-xs font-bold">库存</th><th className="py-2 px-3 text-right text-xs font-bold w-16">操作</th></tr></thead>
+                  <table className="w-full text-sm"><thead><tr className="bg-stone-50 text-stone-500"><th className="py-2 px-3 text-left text-xs font-bold">尺码</th><th className="py-2 px-3 text-left text-xs font-bold">库存</th><th className="py-2 px-3 text-center text-xs font-bold w-14">状态</th><th className="py-2 px-3 text-right text-xs font-bold w-12">操作</th></tr></thead>
                     <tbody>
                       {Object.entries(sizeStock).map(([sz, qty]) => (
-                        <tr className="border-t border-stone-100" key={sz}><td className="py-1.5 px-3 text-sm font-bold text-ink">{sz}</td><td className="py-1.5 px-3"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm text-center" min="0" step="1" type="number" value={qty} onChange={e => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, parseInt(e.target.value) || 0) }))} /></td><td className="py-1.5 px-3 text-right"><button className="text-[11px] font-bold text-red-500 hover:text-red-700" onClick={() => setSizeStock(prev => { const n = { ...prev }; delete n[sz]; return n; })} type="button">×</button></td></tr>
+                        <tr className="border-t border-stone-100" key={sz}>
+                          <td className="py-1.5 px-3 text-sm font-bold text-ink">{sz}</td>
+                          <td className="py-1.5 px-3"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm text-center" min="0" step="1" type="number" value={qty} onChange={e => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, parseInt(e.target.value) || 0) }))} /></td>
+                          <td className="py-1.5 px-3 text-center">{qty > 0 ? <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800">有货</span> : <span className="inline-block rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-400">售罄</span>}</td>
+                          <td className="py-1.5 px-3 text-right"><button className="text-[11px] font-bold text-red-500 hover:text-red-700" onClick={() => setSizeStock(prev => { const n = { ...prev }; delete n[sz]; return n; })} type="button">×</button></td>
+                        </tr>
                       ))}
                     </tbody>
                   </table>
