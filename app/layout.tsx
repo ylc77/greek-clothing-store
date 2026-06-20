@@ -3,19 +3,19 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Helios Wear — Greek Fashion Store",
+  title: "Fashion Boutique",
   description:
-    "Curated clothing, shoes, bags and accessories from Greece. Browse our collection and shop via WhatsApp or Skroutz.",
+    "Selected clothing, shoes, bags and accessories. Browse our collection and shop via WhatsApp or Skroutz.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
     apple: "/favicon.svg",
   },
   openGraph: {
-    title: "Helios Wear",
+    title: "Fashion Boutique",
     description:
-      "Curated clothing, shoes, bags and accessories with a clean Mediterranean feel.",
-    siteName: "Helios Wear",
+      "Selected fashion pieces, shoes, bags and accessories with a clean Mediterranean style.",
+    siteName: "Fashion Boutique",
     type: "website",
   },
 };

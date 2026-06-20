@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { SiteHeader } from "@/components/site-header";
-import { getLanguage, text } from "@/lib/i18n";
+import { getLanguage, localizeHours, text } from "@/lib/i18n";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 
@@ -29,7 +29,7 @@ export default async function ContactPage({ searchParams }: ContactPageProps) {
 
   const addressText = settings.address || "";
   const phoneText = settings.phone || "";
-  const hoursText = settings.opening_hours || "";
+  const hoursText = localizeHours(settings.opening_hours || "", language);
 
   return (
     <main className="min-h-screen bg-paper">

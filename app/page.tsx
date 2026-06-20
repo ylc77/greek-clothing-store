@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { ProductCard } from "@/components/product-card";
 import { SafeImage } from "@/components/safe-image";
 import { SiteHeader } from "@/components/site-header";
-import { categoryLabels, getLanguage, text, withLanguage } from "@/lib/i18n";
+import { categoryLabels, getLanguage, localizeHours, text, withLanguage } from "@/lib/i18n";
 import { getCategoryImages, getLatestProducts } from "@/lib/products";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
@@ -292,7 +292,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 <p className="mt-4 text-sm font-black text-ink">{t.hours}</p>
                 {settings.opening_hours ? (
                   <div className="mt-2 space-y-0.5 text-sm leading-relaxed text-stone-500">
-                    {settings.opening_hours.replace(/\\n/g, "\n").split("\n").map((line, i) => (
+                    {localizeHours(settings.opening_hours, language).replace(/\\n/g, "\n").split("\n").map((line, i) => (
                       <p key={i}>{line}</p>
                     ))}
                   </div>

@@ -27,6 +27,22 @@ export function productDescription(product: Product, language: Language) {
     : product.description_gr || product.description_en || product.description_cn || "";
 }
 
+/** Convert English day names in opening hours to Greek */
+export function localizeHours(hours: string, language: Language): string {
+  if (language === "el") {
+    return hours
+      .replace(/Monday/g, "Δευτέρα")
+      .replace(/Tuesday/g, "Τρίτη")
+      .replace(/Wednesday/g, "Τετάρτη")
+      .replace(/Thursday/g, "Πέμπτη")
+      .replace(/Friday/g, "Παρασκευή")
+      .replace(/Saturday/g, "Σάββατο")
+      .replace(/Sunday/g, "Κυριακή")
+      .replace(/Closed/g, "Κλειστά");
+  }
+  return hours;
+}
+
 export const categoryLabels: Record<ProductCategory, Record<Language, string>> = {
   men: { el: "Ανδρικά", en: "Men" },
   women: { el: "Γυναικεία", en: "Women" },

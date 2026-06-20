@@ -97,7 +97,7 @@ set public = true;
 -- ── Business settings table ──────────────────────────────
 create table if not exists business_settings (
   id uuid primary key default gen_random_uuid(),
-  business_name text default 'Helios Wear',
+  business_name text default 'Fashion Boutique',
   logo_url text,
   hero_image_url text,
   description_cn text,
@@ -137,7 +137,7 @@ $$;
 
 insert into business_settings (business_name, description_en, description_gr, phone, whatsapp, instagram, address, google_maps_url, opening_hours, footer_text)
 values (
-  'My Store',
+  'Fashion Boutique',
   'Welcome to our online store.',
   'Καλώς ήρθατε στο ηλεκτρονικό μας κατάστημα.',
   '',
