@@ -19,6 +19,7 @@ export type AdminProductPayload = {
   price?: unknown;
   stock?: unknown;
   sizes?: unknown;
+  size_stock?: unknown;
   image_url?: unknown;
   image_urls?: unknown;
   brand?: unknown;
@@ -41,6 +42,7 @@ export type AdminProductPayload = {
 export type ProductMutation = Omit<ProductFormData, "category" | "image_urls"> & {
   category: Product["category"];
   image_urls: string[];
+  size_stock?: Record<string, number>;
 };
 
 function stringValue(value: unknown) {
@@ -57,6 +59,15 @@ function numberValue(value: unknown) {
   }
 
   return NaN;
+}
+
+function parseSizeStock(value: unknown): Record<string, number> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const rec: Record<string, number> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "number") rec[k] = Math.max(0, Math.trunc(v));
+  }
+  return Object.keys(rec).length > 0 ? rec : undefined;
 }
 
 function imageUrlsValue(value: unknown) {
@@ -137,7 +148,8 @@ export function validateProductPayload(payload: AdminProductPayload) {
           vat,
           color: stringValue(payload.color),
           skroutz_url: stringValue(payload.skroutz_url),
-          is_active: payload.is_active === false ? false : true
+          is_active: payload.is_active === false ? false : true,
+          size_stock: parseSizeStock(payload.size_stock),
         }
       : null;
 

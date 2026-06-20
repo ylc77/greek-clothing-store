@@ -114,7 +114,8 @@ export async function POST(request: NextRequest) {
     const { error } = await supabase
       .from("products")
       .upsert(
-        validRows.map((row) => row.mutation),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        validRows.map((row) => row.mutation as any),
         { onConflict: "sku" },
       );
 

@@ -69,7 +69,8 @@ export async function POST(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("products")
-    .insert(mutation)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .insert(mutation as any)
     .select("*")
     .single();
 

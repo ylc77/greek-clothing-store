@@ -45,7 +45,8 @@ export async function PUT(request: NextRequest, context: ProductRouteContext) {
 
   const { data, error } = await supabase
     .from("products")
-    .update(mutation)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .update(mutation as any)
     .eq("id", id)
     .select("*")
     .single();
