@@ -415,7 +415,7 @@ export function AdminDashboard() {
                     </div>
                     <div>
                       <p className="mb-2 text-xs font-bold text-stone-600">多图</p>
-                      {imageLines(form.image_urls).length > 0 ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{imageLines(form.image_urls).map((u, i) => <ImagePreview key={`${u}-${i}`} disabled={loading} url={u} label={`多图 ${i + 1}`} onDel={() => void deleteImage({ sku: form.sku, kind: "gallery", index: i })} />)}</div> : <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-stone-300 bg-white text-xs text-stone-400">无多图</div>}
+                      {imageLines(form.image_urls).length > 0 ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{imageLines(form.image_urls).map((u, i) => <ImagePreview key={`${u}-${i}`} disabled={loading} url={u} label={`多图 ${i + 1}`} onDel={() => void deleteImage({ sku: form.sku, kind: "gallery", index: i })} />)}</div> : <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-stone-300 bg-white text-xs text-stone-400">暂无多图，可上传背面图、细节图</div>}
                     </div>
                   </div>
                 </div>
@@ -436,16 +436,16 @@ export function AdminDashboard() {
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                 <Field label="主图 URL"><input className="input" value={form.image_url} onChange={e => updateField("image_url", e.target.value)} /></Field>
                 <Field label="Skroutz URL"><input className="input" placeholder="https://www.skroutz.gr/..." value={form.skroutz_url} onChange={e => updateField("skroutz_url", e.target.value)} /></Field>
-                <Field label="品牌"><input className="input" value={form.brand} onChange={e => updateField("brand", e.target.value)} /></Field>
-                <Field label="条码 / EAN"><input className="input" value={form.barcode} onChange={e => updateField("barcode", e.target.value)} /></Field>
+                <Field label="品牌（可选）"><input className="input" value={form.brand} onChange={e => updateField("brand", e.target.value)} placeholder="如无可留空" /></Field>
+                <Field label="条码 / EAN（可选）"><input className="input" value={form.barcode} onChange={e => updateField("barcode", e.target.value)} placeholder="如无可留空" /></Field>
                 <Field label="VAT"><input className="input" min="0" step="0.01" type="number" value={form.vat} onChange={e => updateField("vat", Number(e.target.value))} /></Field>
                 {/* color hidden — images show color, keep DB field */}
               </div>
               <div className="mt-3"><Field label="多图 URL（一行一个，可用逗号分隔）"><textarea className="input min-h-24" value={form.image_urls} onChange={e => updateField("image_urls", e.target.value)} /></Field></div>
             </section>
 
-            {/* Save buttons */}
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+            {/* Save buttons — sticky at bottom */}
+            <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-200 bg-white/95 backdrop-blur p-4 shadow-md z-10">
               <div className="flex flex-wrap gap-3">
                 <button className="rounded-lg bg-ink px-10 py-3 text-sm font-bold text-white hover:bg-stone-800 shadow-sm" disabled={loading} type="submit">{editingId ? "保存修改" : "新增商品"}</button>
                 {editingId ? <button className="rounded-lg border border-stone-200 px-6 py-3 text-sm font-bold text-ink hover:bg-stone-50" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setTab("dashboard"); }} type="button">取消编辑</button> : null}
