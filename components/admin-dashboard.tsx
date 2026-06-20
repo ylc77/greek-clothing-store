@@ -145,9 +145,9 @@ export function AdminDashboard() {
   function loadSizeStock(p: AdminProduct) { const ss = (p as Record<string,unknown>).size_stock; if (ss && typeof ss === 'object' && !Array.isArray(ss)) { const rec: Record<string,number> = {}; for (const [k,v] of Object.entries(ss as Record<string,unknown>)) { if (typeof v === 'number') rec[k.toUpperCase()] = v; } setSizeStock(rec); } else { setSizeStock({}); } }
   function startEdit(p: AdminProduct) { setEditingId(p.id); setForm({ sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, barcode:p.barcode, vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active }); loadSizeStock(p); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
   function copyProduct(p: AdminProduct) { setEditingId(null); setForm({ ...p, sku: p.sku + "-COPY" }); loadSizeStock(p); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
-  function addSize(sz: string) { setSizeStock(prev => prev[sz] !== undefined ? prev : { ...prev, [sz]: 0 }); }
-  function genFromSizes() { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); if (parts.length === 0) { toast("sizes 字段为空", "err"); return; } const rec: Record<string,number> = {}; parts.forEach((s: string) => { if (!(s in sizeStock)) rec[s] = 0; }); if (Object.keys(rec).length > 0) setSizeStock(prev => ({...prev, ...rec})); else toast("尺码已全部添加", "err"); }
-  function addCustomSize() { const raw = prompt("输入尺码名称，多个用逗号分隔", ""); if (!raw) return; const names = raw.split(/[\/,\s]+/).map((x: string) => x.trim().toUpperCase()).filter(Boolean); const rec: Record<string,number> = {}; names.forEach((k: string) => { if (!(k in sizeStock)) rec[k] = 0; }); if (Object.keys(rec).length > 0) setSizeStock(prev => ({...prev, ...rec})); }
+  function addSize(sz: string) { setSizeStock(prev => { if (sz in prev) return prev; return { ...prev, [sz]: 0 }; }); }
+  function genFromSizes() { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); if (parts.length === 0) { toast("sizes 字段为空", "err"); return; } setSizeStock(prev => { let added = 0; const next = { ...prev }; for (const s of parts) { if (!(s in next)) { next[s] = 0; added++; } } if (added > 0) { toast(`已补充 ${added} 个尺码，已有库存不变`); return next; } toast("所有尺码已存在"); return prev; }); }
+  function addCustomSize() { const raw = prompt("输入尺码名称，多个用逗号分隔", ""); if (!raw) return; const names = raw.split(/[\/,\s]+/).map((x: string) => x.trim().toUpperCase()).filter(Boolean); if (names.length === 0) return; setSizeStock(prev => { let added = 0; const next = { ...prev }; for (const k of names) { if (!(k in next)) { next[k] = 0; added++; } } if (added > 0) { toast(`已添加 ${added} 个尺码`); return next; } toast("所有尺码已存在"); return prev; }); }
 
   /* ── Translate ────────────────────────────────────────── */
   async function translateProduct() {
@@ -291,13 +291,13 @@ export function AdminDashboard() {
             <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
               <h2 className="mb-1 text-base font-black text-ink">尺码库存</h2>
               <p className="mb-3 text-xs text-stone-500">库存为 0 的尺码在前台显示为售罄。总库存由尺码库存自动计算。</p>
-              {editingId && Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">该商品还没有尺码库存，点击「从 sizes 生成」可基于 "{form.sizes}" 快速创建。</p> : null}
+              {editingId && Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">该商品还没有尺码库存，点击「补充 sizes 尺码」可基于 "{form.sizes}" 快速创建，不会覆盖已有库存。</p> : null}
               <div className="mb-3 flex flex-wrap gap-1.5">
                 {(form.category === "shoes"
                   ? ["35","36","37","38","39","40","41","42","43","44","45"]
                   : ["XS","S","M","L","XL","XXL","XXXL"]
                 ).map(s => <button key={s} className="rounded border border-stone-200 px-2 py-1 text-[11px] font-bold hover:bg-stone-100" onClick={() => addSize(s)} type="button">{s}</button>)}
-                <button className="rounded border border-dashed border-stone-300 px-2 py-1 text-[11px] font-bold text-stone-400 hover:border-stone-400" onClick={genFromSizes} type="button">从 sizes 生成</button>
+                <button className="rounded border border-dashed border-stone-300 px-2 py-1 text-[11px] font-bold text-stone-400 hover:border-stone-400" onClick={genFromSizes} type="button">补充 sizes 尺码</button>
                 <button className="rounded border border-dashed border-stone-300 px-2 py-1 text-[11px] font-bold text-stone-400 hover:border-stone-400" onClick={addCustomSize} type="button">+ 自定义</button>
               </div>
               {Object.keys(sizeStock).length > 0 ? (
@@ -310,7 +310,7 @@ export function AdminDashboard() {
                     </tbody>
                   </table>
                 </div>
-              ) : <p className="text-xs text-stone-400">点击上方按钮添加尺码，或从 sizes 文本生成</p>}
+              ) : <p className="text-xs text-stone-400">点击上方按钮添加尺码。补充 sizes 尺码只会添加缺失的尺码，不覆盖已有库存。</p>}
               {Object.keys(sizeStock).length > 0 ? <p className="mt-2 text-xs text-stone-500">总库存（所有尺码合计）：{Object.values(sizeStock).reduce((a,b)=>a+b,0)}，保存时自动同步到基础信息的库存和 sizes 字段。</p> : null}
             </section>
 
