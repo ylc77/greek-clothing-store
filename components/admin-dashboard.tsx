@@ -91,6 +91,8 @@ export function AdminDashboard() {
   const [imageResults, setImageResults] = useState<ApiResult[]>([]); const [selectedImageSku, setSelectedImageSku] = useState("");
   const [tab, setTab] = useState<Tab>("dashboard");
   const [sizeStock, setSizeStock] = useState<Record<string, number>>({});
+  const [showSizeEditor, setShowSizeEditor] = useState(false);
+  const [tempSizeStock, setTempSizeStock] = useState<Record<string, number>>({});
 
   // Search / filter state
   const [search, setSearch] = useState(""); const [filterCat, setFilterCat] = useState(""); const [filterSub, setFilterSub] = useState("");
@@ -148,7 +150,8 @@ export function AdminDashboard() {
   function startEdit(p: AdminProduct) { setEditingId(p.id); setForm({ sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, barcode:p.barcode, vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active }); loadSizeStock(p); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
   function copyProduct(p: AdminProduct) { setEditingId(null); setForm({ ...p, sku: p.sku + "-COPY" }); loadSizeStock(p); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
   function addSize(sz: string) { setSizeStock(prev => { if (sz in prev) return prev; return { ...prev, [sz]: 0 }; }); }
-  function genFromSizes() { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); if (parts.length === 0) { toast("sizes 字段为空", "err"); return; } setSizeStock(prev => { let added = 0; const next = { ...prev }; for (const s of parts) { if (!(s in next)) { next[s] = 0; added++; } } if (added > 0) { toast(`已补充 ${added} 个尺码，已有库存不变`); return next; } toast("所有尺码已存在"); return prev; }); }
+  function openSizeEditor() { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); if (parts.length === 0) { toast("sizes 字段为空", "err"); return; } const merged: Record<string, number> = {}; for (const s of parts) { merged[s] = s in sizeStock ? sizeStock[s] : 0; } setTempSizeStock(merged); setShowSizeEditor(true); }
+  function applySizeEditor() { setSizeStock(tempSizeStock); setShowSizeEditor(false); toast("尺码库存已更新"); }
   function addCustomSize() { const raw = prompt("输入尺码名称，多个用逗号分隔", ""); if (!raw) return; const names = raw.split(/[\/,\s]+/).map((x: string) => x.trim().toUpperCase()).filter(Boolean); if (names.length === 0) return; setSizeStock(prev => { let added = 0; const next = { ...prev }; for (const k of names) { if (!(k in next)) { next[k] = 0; added++; } } if (added > 0) { toast(`已添加 ${added} 个尺码`); return next; } toast("所有尺码已存在"); return prev; }); }
 
   /* ── Translate ────────────────────────────────────────── */
@@ -317,15 +320,43 @@ export function AdminDashboard() {
             <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
               <h2 className="mb-1 text-base font-black text-ink">尺码库存</h2>
               <p className="mb-3 text-xs text-stone-500">库存为 0 的尺码在前台显示为售罄。总库存由尺码库存自动计算。</p>
-              {editingId && Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">该商品还没有尺码库存，点击「补充 sizes 尺码」可基于 "{form.sizes}" 快速创建，不会覆盖已有库存。</p> : null}
+              {editingId && Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">该商品还没有尺码库存，点击「查看 sizes 尺码库存」可基于 "{form.sizes}" 统一管理库存。</p> : null}
               <div className="mb-3 flex flex-wrap gap-1.5">
                 {(form.category === "shoes"
                   ? ["35","36","37","38","39","40","41","42","43","44","45"]
                   : ["XS","S","M","L","XL","XXL","XXXL"]
                 ).map(s => <button key={s} className="rounded border border-stone-200 px-2 py-1 text-[11px] font-bold hover:bg-stone-100" onClick={() => addSize(s)} type="button">{s}</button>)}
-                <button className="rounded border border-dashed border-stone-300 px-2 py-1 text-[11px] font-bold text-stone-400 hover:border-stone-400" onClick={genFromSizes} type="button">补充 sizes 尺码</button>
+                <button className="rounded border border-dashed border-stone-300 px-2 py-1 text-[11px] font-bold text-stone-400 hover:border-stone-400" onClick={openSizeEditor} type="button">查看 sizes 尺码库存</button>
                 <button className="rounded border border-dashed border-stone-300 px-2 py-1 text-[11px] font-bold text-stone-400 hover:border-stone-400" onClick={addCustomSize} type="button">+ 自定义</button>
               </div>
+              {/* Size editor panel */}
+              {showSizeEditor ? (
+                <div className="mb-3 rounded-lg border border-olive/30 bg-olive/5 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-black text-ink">查看 sizes 尺码库存</p>
+                    <button className="text-xs font-bold text-stone-400 hover:text-ink" onClick={() => setShowSizeEditor(false)} type="button">× 关闭</button>
+                  </div>
+                  <p className="text-xs text-stone-500 mb-3">基于 sizes 字段 "<span className="font-bold">{form.sizes}</span>" 的尺码，可直接修改库存。</p>
+                  <div className="rounded-lg border border-stone-200 overflow-hidden bg-white">
+                    <table className="w-full text-sm"><thead><tr className="bg-stone-50 text-stone-500"><th className="py-2 px-3 text-left text-xs font-bold">尺码</th><th className="py-2 px-3 text-left text-xs font-bold">库存</th><th className="py-2 px-3 text-center text-xs font-bold w-14">状态</th></tr></thead>
+                      <tbody>
+                        {Object.entries(tempSizeStock).map(([sz, qty]) => (
+                          <tr className="border-t border-stone-100" key={sz}>
+                            <td className="py-1.5 px-3 text-sm font-bold text-ink">{sz}</td>
+                            <td className="py-1.5 px-3"><input className="w-24 rounded border border-stone-200 px-2 py-1 text-sm text-center" min="0" step="1" type="number" value={qty} onChange={e => setTempSizeStock(prev => ({ ...prev, [sz]: Math.max(0, parseInt(e.target.value) || 0) }))} /></td>
+                            <td className="py-1.5 px-3 text-center">{qty > 0 ? <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800">有货</span> : <span className="inline-block rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-400">售罄</span>}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button className="rounded-lg bg-ink px-4 py-2 text-xs font-bold text-white hover:bg-stone-800" onClick={applySizeEditor} type="button">保存尺码库存</button>
+                    <button className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => setShowSizeEditor(false)} type="button">取消</button>
+                  </div>
+                </div>
+              ) : null}
+
               {Object.keys(sizeStock).length > 0 ? (
                 <div className="rounded-lg border border-stone-200 overflow-hidden">
                   <table className="w-full text-sm"><thead><tr className="bg-stone-50 text-stone-500"><th className="py-2 px-3 text-left text-xs font-bold">尺码</th><th className="py-2 px-3 text-left text-xs font-bold">库存</th><th className="py-2 px-3 text-center text-xs font-bold w-14">状态</th><th className="py-2 px-3 text-right text-xs font-bold w-12">操作</th></tr></thead>
