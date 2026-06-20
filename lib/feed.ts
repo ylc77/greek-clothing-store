@@ -76,7 +76,7 @@ export function getProductImages(product: Product): string[] {
     ? product.image_urls.filter((u): u is string => typeof u === "string" && u.trim().length > 0)
     : [];
   const fromExtra = (product.additional_image_urls || "")
-    .split(/[\r?\n,]+/)
+    .split(/[\r\n,]+/)
     .map(u => u.trim())
     .filter(Boolean);
   return Array.from(new Set([...fromUrls, ...fromExtra])).filter(u => u !== product.image_url);
@@ -92,7 +92,13 @@ export async function getFeedProducts(): Promise<Product[]> {
     .eq("is_active", true)
     .gte("stock", 0)
     .order("created_at", { ascending: false });
-  return (data || []) as Product[];
+  const products = (data || []) as Product[];
+  // Filter out test products from feed
+  return products.filter(p => {
+    if (/(?:^|[_-])test(?:[_-]|$)/i.test(p.sku)) return false;
+    if (/(?:^|[_-])demo(?:[_-]|$)/i.test(p.sku)) return false;
+    return true;
+  });
 }
 
 /* ── Feed builder: Skroutz / MyWebstore ───────────────────── */

@@ -36,7 +36,7 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
     .eq("is_active", true)
     .gte("stock", 0)
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(limit * 2); // fetch extra to account for test product filtering
 
   if (error) {
     return { products: [], error: error.message };
@@ -57,7 +57,7 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
     },
   );
 
-  return { products: filtered.map(mapProduct), error: null };
+  return { products: filtered.slice(0, limit).map(mapProduct), error: null };
 }
 
 export async function getProductsByCategory(
@@ -91,7 +91,13 @@ export async function getProductsByCategory(
     return { products: [], error: error.message };
   }
 
-  return { products: (data || []).map(mapProduct), error: null };
+  const filtered = (data || []).filter((p: Product) => {
+    if (/(?:^|[_-])test(?:[_-]|$)/i.test(p.sku)) return false;
+    if (/(?:^|[_-])demo(?:[_-]|$)/i.test(p.sku)) return false;
+    return true;
+  });
+
+  return { products: filtered.map(mapProduct), error: null };
 }
 
 export async function getProductBySku(sku: string): Promise<{ product: Product | null; error: string | null }> {

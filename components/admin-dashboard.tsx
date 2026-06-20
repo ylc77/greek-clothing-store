@@ -46,7 +46,7 @@ function parseCsv(text: string) {
 }
 function csvCell(v: string) { return `"${v.replace(/"/g, '""')}"`; }
 function downloadCsvTemplate() {
-  const sample = ["DEMO-WOMEN-DRESSES-001","女士连衣裙","示例中文描述","Women dress","Sample English description","Γυναικείο φόρεμα","Παράδειγμα περιγραφής","women","dresses","29.90","10","S,M,L","S:2,M:3,L:1,XL:0","","","Helios Wear","","24","black","","true"];
+  const sample = ["DEMO-WOMEN-DRESSES-001","女士连衣裙","示例中文描述","Women dress","Sample English description","Γυναικείο φόρεμα","Παράδειγμα περιγραφής","women","dresses","29.90","10","S,M,L","S:2,M:3,L:1,XL:0","","","Fashion Boutique","","24","black","","true"];
   const csv = `${csvFields.join(",")}\n${sample.map(csvCell).join(",")}\n`;
   const b = new Blob(["﻿", csv], { type: "text/csv;charset=utf-8" });
   const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = "products-template.csv"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
@@ -627,7 +627,7 @@ function CategoriesManager({ activePassword, toast }: { activePassword: string; 
   function updateSub(idx: number, key: string, val: unknown) { setSubs(prev => { const n = [...prev]; n[idx] = { ...n[idx], [key]: val }; return n; }); }
   function addCat() { const newCat = { id: "", slug: "", name_cn: "", name_en: "", name_gr: "", image_url: "", sort_order: cats.length + 1, is_active: true }; setCats(prev => [...prev, newCat as Record<string, unknown>]); }
   function addSub(catId: string) { const newSub = { id: "", category_id: catId, slug: "", name_cn: "", name_en: "", name_gr: "", sort_order: subs.filter(s => s.category_id === catId).length + 1, is_active: true }; setSubs(prev => [...prev, newSub as Record<string, unknown>]); }
-  function removeCat(idx: number) { const slug = String(cats[idx].slug||""); if (slug && !window.confirm(`删除分类 ${slug}? 如果有商品使用该分类将无法删除。`)) return; setCats(prev => prev.filter((_, i) => i !== idx)); }
+  function removeCat(idx: number) { const c = cats[idx]; const slug = String(c.slug||""); const id = String(c.id||""); if (slug && !window.confirm(`删除分类 ${slug}?`)) return; setCats(prev => prev.filter(x => String(x.id||"") !== id || String(x.slug||"") !== slug)); }
 
   async function save() { setLoading(true); try { await fetch("/api/admin/categories", { method: "PUT", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ categories: cats, subcategories: subs }) }); toast("分类已保存"); load(); } catch { toast("保存失败", "err"); } finally { setLoading(false); } }
 
