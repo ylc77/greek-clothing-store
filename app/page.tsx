@@ -54,8 +54,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       <SiteHeader language={language} settings={settings} />
 
       {/* ━━━ Hero ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <section className="mx-auto max-w-7xl px-4 pt-6 pb-10 sm:px-6 sm:pt-10 sm:pb-14 lg:pt-16 lg:pb-20 lg:px-8">
-        <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+      <section className="mx-auto max-w-7xl px-4 pt-8 pb-12 sm:px-6 sm:pt-14 sm:pb-16 lg:py-24 lg:px-8">
+        <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-20">
           {/* Left: text */}
           <div className="flex flex-col justify-center">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-olive">

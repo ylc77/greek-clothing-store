@@ -69,10 +69,11 @@ export const subcategoryLabels: Record<ProductSubcategory, Record<Language, stri
 
 export const text = {
   el: {
-    eyebrow: "Ελληνικό κατάστημα μόδας",
-    intro: "Επιλεγμένα ρούχα, παπούτσια, τσάντες και αξεσουάρ με καθαρή μεσογειακή αισθητική.",
+    eyebrow: "Athens boutique",
+    intro: "Επιλεγμένα κομμάτια μόδας, παπούτσια, τσάντες και αξεσουάρ. Επικοινωνήστε μαζί μας για διαθεσιμότητα και μεγέθη.",
     latest: "Νέα προϊόντα",
     latestText: "Οι πιο πρόσφατες επιλογές από τη συλλογή μας.",
+    categoryIntro: "Περιηγηθείτε στα πιο πρόσφατα προϊόντα αυτής της κατηγορίας.",
     cannotLoad: "Τα προϊόντα δεν μπορούν να φορτωθούν ακόμα.",
     noProducts: "Δεν υπάρχουν προϊόντα ακόμα.",
     noCategoryProducts: "Δεν υπάρχουν προϊόντα σε αυτή την κατηγορία ακόμα.",
@@ -147,9 +148,10 @@ export const text = {
   },
   en: {
     eyebrow: "Athens boutique",
-    intro: "Curated clothing, shoes, bags and accessories with a clean Mediterranean feel.",
+    intro: "Selected fashion pieces, shoes, bags and accessories. Contact us for availability and sizing.",
     latest: "Latest products",
     latestText: "Newest pieces from our collection.",
+    categoryIntro: "Browse our latest items in this category.",
     cannotLoad: "Products cannot load yet.",
     noProducts: "No products yet.",
     noCategoryProducts: "No products in this category yet.",
