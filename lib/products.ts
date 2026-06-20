@@ -42,10 +42,17 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
     return { products: [], error: error.message };
   }
 
-  // Filter out test products that have no Greek or English name
+  // Filter out test products: no Greek/English name, SKU contains TEST/DEMO, or name is just numbers
   const filtered = (data || []).filter(
-    (p: Product) =>
-      (p.name_gr && p.name_gr.trim()) || (p.name_en && p.name_en.trim()),
+    (p: Product) => {
+      if (/(?:^|[_-])test(?:[_-]|$)/i.test(p.sku)) return false;
+      if (/(?:^|[_-])demo(?:[_-]|$)/i.test(p.sku)) return false;
+      if (!(p.name_gr && p.name_gr.trim()) && !(p.name_en && p.name_en.trim())) {
+        const cn = (p.name_cn || "").trim();
+        if (!cn || /^[\d\s]+$/.test(cn)) return false; // only numbers = test
+      }
+      return true;
+    },
   );
 
   return { products: filtered.map(mapProduct), error: null };
