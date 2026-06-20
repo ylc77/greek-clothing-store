@@ -42,15 +42,17 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
     return { products: [], error: error.message };
   }
 
-  // Filter out test products: no Greek/English name, SKU contains TEST/DEMO, or name is just numbers
+  // Filter out test products: SKU or name looks like test data
   const filtered = (data || []).filter(
     (p: Product) => {
       if (/(?:^|[_-])test(?:[_-]|$)/i.test(p.sku)) return false;
       if (/(?:^|[_-])demo(?:[_-]|$)/i.test(p.sku)) return false;
-      if (!(p.name_gr && p.name_gr.trim()) && !(p.name_en && p.name_en.trim())) {
-        const cn = (p.name_cn || "").trim();
-        if (!cn || /^[\d\s]+$/.test(cn)) return false; // only numbers = test
-      }
+      // Filter out products whose only name is numeric (like "111")
+      const gr = (p.name_gr || "").trim();
+      const en = (p.name_en || "").trim();
+      const cn = (p.name_cn || "").trim();
+      const anyName = [gr, en, cn].filter(Boolean);
+      if (anyName.length > 0 && anyName.every(n => /^[\d\s.-]+$/.test(n))) return false;
       return true;
     },
   );
