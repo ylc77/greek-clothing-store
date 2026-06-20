@@ -14,19 +14,23 @@ type ProductActionsProps = {
   whatsappUrl?: string;
 };
 
-interface SizeEntry { label: string; stock: number; }
+interface SizeEntry { label: string; stock: number; disabled: boolean; }
 
 function parseSizeList(sizes: string | null, sizeStock?: Record<string, number> | null): SizeEntry[] {
-  // Only use sizeStock if it is a real object with at least one key
+  // Use sizeStock only if it's a non-empty plain object
   if (sizeStock && typeof sizeStock === "object" && !Array.isArray(sizeStock)) {
     const keys = Object.keys(sizeStock);
     if (keys.length > 0) {
-      return keys.map(k => ({ label: k, stock: typeof sizeStock[k] === "number" ? sizeStock[k] : 0 }));
+      return keys.map(k => {
+        const qty = typeof sizeStock[k] === "number" && sizeStock[k] > 0 ? sizeStock[k] : 0;
+        return { label: k, stock: qty, disabled: qty === 0 };
+      });
     }
+    // sizeStock is an empty object {} — treat as "no data", fall through
   }
-  // Fallback: parse sizes string. stock = -1 means "unknown — treat as available"
+  // Fallback: parse sizes string. stock=-1, disabled=false (old data, unknown stock)
   return Array.from(new Set((sizes || "").split(/[\/,\s]+/).map(s => s.trim()).filter(Boolean)))
-    .map(s => ({ label: s, stock: -1 }));
+    .map(s => ({ label: s, stock: -1, disabled: false }));
 }
 
 function buildWhatsAppUrl({ baseUrl, text }: { baseUrl: string; text: string }) {
@@ -50,22 +54,22 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [message, setMessage] = useState("");
 
-  const allOut = sizeOptions.length > 0 && sizeOptions.every(s => s.stock === 0);
+  const allOut = sizeOptions.length > 0 && sizeOptions.every(s => s.disabled);
   const hasSkroutz = Boolean(skroutzUrl?.trim());
   const hasWhatsApp = Boolean(whatsappUrl?.trim());
 
-  // Auto-clear selected size if it becomes invalid (stock dropped to 0)
+  // Auto-clear selected size if it becomes disabled
   useEffect(() => {
     if (selectedSize) {
       const entry = sizeOptions.find(s => s.label === selectedSize);
-      if (!entry || entry.stock === 0) setSelectedSize("");
+      if (!entry || entry.disabled) setSelectedSize("");
     }
   }, [sizeOptions, selectedSize]);
 
   function askWhatsApp() {
     if (sizeOptions.length > 1 && !selectedSize) { setMessage(t.selectSize); return; }
     setMessage("");
-    const sizeText = selectedSize || sizeOptions[0]?.label || t.oneSize;
+    const sizeText = selectedSize || (sizeOptions.find(s => !s.disabled)?.label) || t.oneSize;
     const textContent = [`${t.whatsappAskProduct}: ${productName}`, `${t.whatsappAskSku}: ${sku}`, `${window.location.href}`, sizeText ? `${t.whatsappAskSize}: ${sizeText}` : ""].filter(Boolean).join("\n");
     window.open(buildWhatsAppUrl({ baseUrl: waUrl, text: textContent }), "_blank", "noopener,noreferrer");
   }
@@ -86,24 +90,27 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
           </div>
           <div className="flex flex-wrap gap-2">
             {sizeOptions.map((size) => {
-              const soldOut = size.stock === 0;
-              const selected = selectedSize === size.label;
+              const selected = !size.disabled && selectedSize === size.label;
               return (
                 <button
                   key={size.label}
                   className={`relative min-w-[44px] rounded-full border px-4 py-2.5 text-sm font-bold transition ${
-                    soldOut
-                      ? "border-stone-100 bg-stone-50 text-stone-300 cursor-not-allowed"
+                    size.disabled
+                      ? "border-stone-100 bg-stone-50 text-stone-300 cursor-not-allowed opacity-60"
                       : selected
                         ? "border-ink bg-ink text-white shadow-sm"
                         : "border-stone-200 bg-white text-ink hover:border-ink hover:shadow-sm"
                   }`}
-                  disabled={soldOut}
-                  onClick={() => { if (!soldOut) { setSelectedSize(size.label); setMessage(""); } }}
+                  disabled={size.disabled}
+                  onClick={() => {
+                    if (size.disabled) return;
+                    setSelectedSize(size.label);
+                    setMessage("");
+                  }}
                   type="button"
                 >
                   {size.label}
-                  {soldOut ? <span className="ml-1 text-[10px] text-stone-300">×</span> : null}
+                  {size.disabled ? <span className="ml-1 text-[10px] text-stone-300">×</span> : null}
                 </button>
               );
             })}
@@ -118,20 +125,12 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
       {/* BUTTONS: Skroutz first, WhatsApp second, Check in store third */}
       {hasSkroutz ? (
         allOut ? (
-          <button
-            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-stone-200 px-6 py-3.5 text-sm font-black text-stone-400 cursor-not-allowed"
-            disabled
-            type="button"
-          >
+          <button className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-stone-200 px-6 py-3.5 text-sm font-black text-stone-400 cursor-not-allowed" disabled type="button">
             <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" /></svg>
             {t.viewSkroutz} ({t.outOfStockLabel})
           </button>
         ) : (
-          <button
-            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#2d7d46] px-6 py-3.5 text-sm font-black text-white shadow-sm transition hover:bg-[#236836] hover:shadow-md hover:-translate-y-0.5"
-            onClick={viewOnSkroutz}
-            type="button"
-          >
+          <button className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#2d7d46] px-6 py-3.5 text-sm font-black text-white shadow-sm transition hover:bg-[#236836] hover:shadow-md hover:-translate-y-0.5" onClick={viewOnSkroutz} type="button">
             <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" /></svg>
             {t.viewSkroutz}
             <svg className="h-3.5 w-3.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M7 17L17 7M7 7h10v10" /></svg>
@@ -140,22 +139,10 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
       ) : null}
 
       {hasWhatsApp ? (
-        <button
-          className={`mt-2 inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-6 py-3 text-sm font-bold text-ink transition hover:border-ink hover:bg-stone-50 ${!hasSkroutz ? "py-3.5 shadow-sm" : ""}`}
-          onClick={askWhatsApp}
-          type="button"
-        >
-          {t.askWhatsApp}
-        </button>
+        <button className={`mt-2 inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-6 py-3 text-sm font-bold text-ink transition hover:border-ink hover:bg-stone-50 ${!hasSkroutz ? "py-3.5 shadow-sm" : ""}`} onClick={askWhatsApp} type="button">{t.askWhatsApp}</button>
       ) : null}
 
-      <button
-        className="mt-2 inline-flex w-full items-center justify-center rounded-full border border-stone-200 bg-white px-6 py-2.5 text-xs font-bold text-stone-500 transition hover:border-stone-300 hover:text-ink"
-        onClick={checkInStore}
-        type="button"
-      >
-        {t.checkStore}
-      </button>
+      <button className="mt-2 inline-flex w-full items-center justify-center rounded-full border border-stone-200 bg-white px-6 py-2.5 text-xs font-bold text-stone-500 transition hover:border-stone-300 hover:text-ink" onClick={checkInStore} type="button">{t.checkStore}</button>
     </div>
   );
 }
