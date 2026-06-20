@@ -102,6 +102,9 @@ export function AdminDashboard() {
   const [newMainFile, setNewMainFile] = useState<File | null>(null); const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
   const [sizeStock, setSizeStock] = useState<Record<string, number>>({});
   const [showSizeSummary, setShowSizeSummary] = useState(false);
+  const [dbCats, setDbCats] = useState<Array<Record<string,unknown>>>([]);
+  const [dbSubs, setDbSubs] = useState<Array<Record<string,unknown>>>([]);
+  useEffect(() => { if (activePassword) { fetch("/api/admin/categories", { headers: { "x-admin-password": activePassword } }).then(r => r.json()).then(d => { setDbCats((d.categories||[]).filter((c:Record<string,unknown>) => c.is_active !== false)); setDbSubs((d.subcategories||[]).filter((s:Record<string,unknown>) => s.is_active !== false)); }).catch(() => {}); } }, [activePassword, tab]);
 
   // Search / filter state
   const [search, setSearch] = useState(""); const [filterCat, setFilterCat] = useState(""); const [filterSub, setFilterSub] = useState("");
@@ -312,8 +315,8 @@ export function AdminDashboard() {
                   </div>
                   <p className="mt-1 text-[10px] text-stone-400">切换分类自动生成前缀: {skuPrefix(form.category, form.subcategory)}001</p>
                 </Field>
-                <Field label="分类"><select className="input" value={form.category} onChange={e => updateField("category", e.target.value as ProductCategory)}>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select></Field>
-                <Field label="二级分类"><select className="input" value={form.subcategory} onChange={e => updateField("subcategory", e.target.value)}>{subcategoriesByCategory[form.category].map(s => <option key={s} value={s}>{s}</option>)}</select></Field>
+                <Field label="分类"><select className="input" value={form.category} onChange={e => updateField("category", e.target.value as ProductCategory)}>{(dbCats.length > 0 ? dbCats : categories.map(c => ({slug:c.slug}))).map((c:Record<string,unknown>) => <option key={String(c.slug)} value={String(c.slug)}>{String(c.slug)}</option>)}</select></Field>
+                <Field label="二级分类"><select className="input" value={form.subcategory} onChange={e => updateField("subcategory", e.target.value)}>{(() => { if (dbSubs.length > 0) { const cat = dbCats.find(x => String(x.slug) === form.category); const list = cat ? dbSubs.filter(s => String(s.category_id) === String(cat.id)) : []; return list.map((s: Record<string, unknown>) => <option key={String(s.slug)} value={String(s.slug)}>{String(s.slug)}</option>); } if (form.category in subcategoriesByCategory) { return subcategoriesByCategory[form.category as ProductCategory].map(s => <option key={s} value={s}>{s}</option>); } return null; })()}</select></Field>
                 <Field label="价格"><input className="input" min="0" step="0.01" type="number" value={form.price} onChange={e => updateField("price", Number(e.target.value))} /></Field>
                 <Field label="库存">
                   {Object.keys(sizeStock).length > 0 ? (
@@ -621,38 +624,66 @@ function CategoriesManager({ activePassword, toast }: { activePassword: string; 
 
   function updateCat(idx: number, key: string, val: unknown) { setCats(prev => { const n = [...prev]; n[idx] = { ...n[idx], [key]: val }; return n; }); }
   function updateSub(idx: number, key: string, val: unknown) { setSubs(prev => { const n = [...prev]; n[idx] = { ...n[idx], [key]: val }; return n; }); }
+  function addCat() { const newCat = { id: "", slug: "", name_cn: "", name_en: "", name_gr: "", image_url: "", sort_order: cats.length + 1, is_active: true }; setCats(prev => [...prev, newCat as Record<string, unknown>]); }
+  function addSub(catId: string) { const newSub = { id: "", category_id: catId, slug: "", name_cn: "", name_en: "", name_gr: "", sort_order: subs.filter(s => s.category_id === catId).length + 1, is_active: true }; setSubs(prev => [...prev, newSub as Record<string, unknown>]); }
+  function removeCat(idx: number) { const slug = String(cats[idx].slug||""); if (slug && !window.confirm(`删除分类 ${slug}? 如果有商品使用该分类将无法删除。`)) return; setCats(prev => prev.filter((_, i) => i !== idx)); }
 
-  async function save() {
-    setLoading(true);
-    try {
-      await fetch("/api/admin/categories", { method: "PUT", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ categories: cats, subcategories: subs }) });
-      toast("分类已保存");
-      load();
-    } catch { toast("保存失败", "err"); } finally { setLoading(false); }
-  }
+  async function save() { setLoading(true); try { await fetch("/api/admin/categories", { method: "PUT", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ categories: cats, subcategories: subs }) }); toast("分类已保存"); load(); } catch { toast("保存失败", "err"); } finally { setLoading(false); } }
+
+  function subForCat(catId: string) { return subs.filter(s => s.category_id === catId); }
 
   return (
     <section className="flex flex-col gap-5">
+      {/* 一级分类 */}
       <div className="rounded-xl border border-stone-100 bg-white p-5 shadow-sm">
-        <h2 className="mb-1 text-lg font-black text-ink">一级分类</h2>
-        <p className="mb-3 text-xs text-stone-400">slug 用于 SKU 前缀和 URL，不可与其他分类重复。</p>
+        <div className="flex items-center justify-between mb-3"><h2 className="text-lg font-black text-ink">一级分类</h2><button className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-bold hover:bg-stone-50" onClick={addCat} type="button">+ 新增</button></div>
+        <p className="mb-3 text-xs text-stone-400">slug 只允许小写英文和横线。停用后前台不再显示，但已有商品不受影响。</p>
         <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-          <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-2 px-2 text-xs font-bold">slug</th><th className="py-2 px-2 text-xs font-bold">中文</th><th className="py-2 px-2 text-xs font-bold">English</th><th className="py-2 px-2 text-xs font-bold">Ελληνικά</th><th className="py-2 px-2 text-xs font-bold w-16">排序</th><th className="py-2 px-2 text-xs font-bold w-16">启用</th></tr></thead>
+          <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-2 px-2 text-xs font-bold">slug</th><th className="py-2 px-2 text-xs font-bold">中文</th><th className="py-2 px-2 text-xs font-bold">English</th><th className="py-2 px-2 text-xs font-bold">Ελληνικά</th><th className="py-2 px-2 text-xs font-bold w-14">排序</th><th className="py-2 px-2 text-xs font-bold w-12">启用</th><th className="py-2 px-2 text-xs font-bold w-12">删除</th></tr></thead>
           <tbody>
             {cats.map((c, i) => (
               <tr key={i} className="border-t border-stone-50">
-                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs font-mono" value={String(c.slug||"")} onChange={e => updateCat(i, "slug", e.target.value)} /></td>
+                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs font-mono" value={String(c.slug||"")} onChange={e => updateCat(i, "slug", e.target.value.replace(/[^a-z0-9-]/g,"").toLowerCase())} /></td>
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs" value={String(c.name_cn||"")} onChange={e => updateCat(i, "name_cn", e.target.value)} /></td>
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs" value={String(c.name_en||"")} onChange={e => updateCat(i, "name_en", e.target.value)} /></td>
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs" value={String(c.name_gr||"")} onChange={e => updateCat(i, "name_gr", e.target.value)} /></td>
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs text-center" type="number" value={Number(c.sort_order||0)} onChange={e => updateCat(i, "sort_order", parseInt(e.target.value)||0)} /></td>
                 <td className="py-1.5 px-2 text-center"><input type="checkbox" checked={c.is_active !== false} onChange={e => updateCat(i, "is_active", e.target.checked)} /></td>
+                <td className="py-1.5 px-2 text-center"><button className="text-xs font-bold text-red-400 hover:text-red-600" onClick={() => removeCat(i)} type="button">×</button></td>
               </tr>
             ))}
           </tbody>
         </table></div>
-        <button className="mt-3 rounded-lg bg-ink px-6 py-2.5 text-sm font-bold text-white hover:bg-stone-800 transition" onClick={save} disabled={loading}>保存分类</button>
       </div>
+
+      {/* 二级分类 */}
+      <div className="rounded-xl border border-stone-100 bg-white p-5 shadow-sm">
+        <h2 className="mb-3 text-lg font-black text-ink">二级分类</h2>
+        {cats.filter(c => c.is_active !== false).map(c => { const catId = String(c.id||""); const catSubs = subForCat(catId); return (
+          <div key={catId} className="mb-4 last:mb-0">
+            <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-bold text-ink">{String(c.name_cn||c.slug||"")} ({String(c.slug)})</h3><button className="rounded-lg border border-stone-200 px-2 py-1 text-[11px] font-bold hover:bg-stone-50" onClick={() => addSub(catId)} type="button">+ 新增</button></div>
+            {catSubs.length > 0 ? (
+              <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+                <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-1.5 px-2 text-[11px] font-bold">slug</th><th className="py-1.5 px-2 text-[11px] font-bold">中文</th><th className="py-1.5 px-2 text-[11px] font-bold">English</th><th className="py-1.5 px-2 text-[11px] font-bold">Ελληνικά</th><th className="py-1.5 px-2 text-[11px] font-bold w-12">排序</th><th className="py-1.5 px-2 text-[11px] font-bold w-10">启用</th></tr></thead>
+                <tbody>
+                  {catSubs.map((s, si) => { const gi = subs.findIndex(x => x === s); return (
+                    <tr key={gi} className="border-t border-stone-50">
+                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-[11px] font-mono" value={String(s.slug||"")} onChange={e => updateSub(gi, "slug", e.target.value.replace(/[^a-z0-9_-]/g,"").toLowerCase())} /></td>
+                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-[11px]" value={String(s.name_cn||"")} onChange={e => updateSub(gi, "name_cn", e.target.value)} /></td>
+                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-[11px]" value={String(s.name_en||"")} onChange={e => updateSub(gi, "name_en", e.target.value)} /></td>
+                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-[11px]" value={String(s.name_gr||"")} onChange={e => updateSub(gi, "name_gr", e.target.value)} /></td>
+                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-[11px] text-center" type="number" value={Number(s.sort_order||0)} onChange={e => updateSub(gi, "sort_order", parseInt(e.target.value)||0)} /></td>
+                      <td className="py-1 px-2 text-center"><input type="checkbox" checked={s.is_active !== false} onChange={e => updateSub(gi, "is_active", e.target.checked)} /></td>
+                    </tr>
+                  );})}
+                </tbody>
+              </table></div>
+            ) : <p className="text-xs text-stone-400">暂无二级分类</p>}
+          </div>
+        );})}
+      </div>
+
+      <button className="rounded-lg bg-ink px-8 py-3 text-sm font-bold text-white hover:bg-stone-800 transition self-start" onClick={save} disabled={loading}>保存全部</button>
     </section>
   );
 }
