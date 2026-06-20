@@ -92,7 +92,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             <div className="w-full max-w-lg">
               <SafeImage
                 alt={siteName}
-                className="aspect-[4/5] w-full rounded-2xl object-cover shadow-2xl shadow-stone-900/10"
+                className="aspect-[4/3] w-full rounded-2xl object-cover object-center shadow-2xl shadow-stone-900/10"
                 src={heroImage}
               />
             </div>

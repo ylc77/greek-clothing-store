@@ -21,16 +21,20 @@ export function SiteHeader({
 }) {
   const siteName = settings?.business_name || "Fashion Boutique";
   const instagramLink = settings?.instagram || "";
+  const logoUrl = settings?.logo_url || "";
 
   return (
     <header className="sticky top-0 z-20 border-b border-stone-200/80 bg-paper/90 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
-        {/* Left: brand name */}
+        {/* Left: Logo + brand name */}
         <Link
-          className="text-lg font-black tracking-tight text-ink shrink-0"
+          className="flex items-center gap-2.5 text-lg font-black tracking-tight text-ink shrink-0"
           href={withLanguage("/", language)}
         >
-          {siteName}
+          {logoUrl ? (
+            <img alt={siteName} className="h-8 w-auto rounded object-contain" src={logoUrl} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          ) : null}
+          <span>{siteName}</span>
         </Link>
 
         {/* Center: category links with subcategory dropdown */}

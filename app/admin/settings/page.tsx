@@ -119,7 +119,7 @@ export default function AdminSettingsPage() {
               <Field label="店铺名称" hint="显示在顶部导航、首页标题和页脚">
                 <input className="input" value={settings.business_name} onChange={e => updateField("business_name", e.target.value)} placeholder="Athens Fashion Boutique" />
               </Field>
-              <Field label="Logo URL">
+              <Field label="Logo URL" hint="推荐 PNG/WebP，透明背景，建议 512×512 或 600×200">
                 <div className="flex gap-2">
                   <input className="input flex-1" value={settings.logo_url} onChange={e => updateField("logo_url", e.target.value)} placeholder="https://..." />
                   <label className="cursor-pointer shrink-0 rounded-lg border border-stone-200 px-3 py-2 text-[11px] font-bold hover:bg-stone-50">
@@ -129,7 +129,7 @@ export default function AdminSettingsPage() {
                 </div>
                 {settings.logo_url ? <img alt="Logo 预览" className="mt-2 h-10 rounded border border-stone-200 object-contain" src={settings.logo_url} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} /> : <p className="mt-2 text-[10px] text-stone-400">暂无 Logo</p>}
               </Field>
-              <Field label="首页大图 URL" hint="建议横向图片，用于首页 Hero 区域">
+              <Field label="首页大图 URL" hint="推荐 1200x900 或 1600x1200 (4:3)，适合服装模特图或店铺风格图">
                 <div className="flex gap-2">
                   <input className="input flex-1" value={settings.hero_image_url} onChange={e => updateField("hero_image_url", e.target.value)} placeholder="https://..." />
                   <label className="cursor-pointer shrink-0 rounded-lg border border-stone-200 px-3 py-2 text-[11px] font-bold hover:bg-stone-50">
