@@ -66,10 +66,13 @@ export function getSizeOptions(product: {
       string,
       number
     >;
-    return Object.entries(ss).map(([k, v]) => {
+    const opts = Object.entries(ss).map(([k, v]) => {
       const qty = typeof v === "number" && v > 0 ? v : 0;
       return { label: k, stock: qty, disabled: qty === 0 };
     });
+    // If size_stock only has a subset of sizes (e.g. only L),
+    // we still show ONLY those — the caller should never merge with old sizes.
+    return opts;
   }
 
   // Fallback: old data (sizes string + stock number)
@@ -87,4 +90,21 @@ export function getSizeOptions(product: {
     stock: -1, // unknown — treat as available if stock > 0
     disabled: stockNum <= 0,
   }));
+}
+
+/** Debug helper — logs what the component actually received (client-side only) */
+export function debugSizeStock(label: string, sizeStock: unknown, sizes: unknown) {
+  if (typeof window === "undefined") return;
+  console.group(`[size-stock debug] ${label}`);
+  console.log("sizeStock:", sizeStock, "type:", typeof sizeStock);
+  if (sizeStock && typeof sizeStock === "object") {
+    console.log("  keys:", Object.keys(sizeStock as object));
+    console.log("  values:", Object.values(sizeStock as object));
+    console.log("  isArray:", Array.isArray(sizeStock));
+  }
+  console.log("sizes:", sizes);
+  console.log("hasSizeStock result:", hasSizeStock({ size_stock: sizeStock as Record<string, number> | null | undefined }));
+  const opts = getSizeOptions({ sizes: String(sizes || ""), stock: 0, size_stock: sizeStock as Record<string, number> | null | undefined });
+  console.log("getSizeOptions result:", opts);
+  console.groupEnd();
 }

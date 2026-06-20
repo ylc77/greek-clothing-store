@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { text, type Language } from "@/lib/i18n";
-import { getSizeOptions } from "@/lib/product-stock";
+import { debugSizeStock, getSizeOptions } from "@/lib/product-stock";
 
 type ProductActionsProps = {
   productName: string;
@@ -32,7 +32,7 @@ function buildSkroutzUrl(skroutzUrl: string | null | undefined, productNameEn: s
 export function ProductActions({ productName, productNameEn, sku, sizes, sizeStock, stock, skroutzUrl, language, whatsappUrl }: ProductActionsProps) {
   const waUrl = whatsappUrl || "#";
   const t = text[language || "el"];
-  const sizeOptions = useMemo(() => getSizeOptions({ sizes, stock, size_stock: sizeStock }), [sizes, stock, sizeStock]);
+  const sizeOptions = useMemo(() => { debugSizeStock("ProductActions", sizeStock, sizes); return getSizeOptions({ sizes, stock, size_stock: sizeStock }); }, [sizes, stock, sizeStock]);
   const [selectedSize, setSelectedSize] = useState("");
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [message, setMessage] = useState("");
