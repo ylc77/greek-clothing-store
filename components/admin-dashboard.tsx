@@ -200,7 +200,7 @@ export function AdminDashboard() {
   /* ── Logged-in UI ────────────────────────────────────────── */
   return (
     <main className="min-h-screen bg-paper">
-      <div className="mx-auto max-w-[88rem] px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[96rem] px-4 py-6 sm:px-6 lg:px-8">
         {/* ── Top bar ────────────────────────────────────── */}
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-4">
           <div>
@@ -245,37 +245,37 @@ export function AdminDashboard() {
             {/* Quick filter buttons */}
             <div className="mb-3 flex flex-wrap gap-1.5">
               {[{k:"noimg",l:"缺图片"},{k:"nosizestock",l:"未分配尺码"},{k:"nostock",l:"库存为0"},{k:"demo",l:"测试商品"}].map(b => (
-                <button key={b.k} className={`rounded-full px-3 py-1 text-[11px] font-bold transition ${filterStatus===b.k ? "bg-ink text-white" : "border border-stone-200 bg-white text-stone-400 hover:border-stone-300 hover:text-ink"}`} onClick={() => setFilterStatus(filterStatus===b.k ? "all" : b.k)} type="button">{b.l}</button>
+                <button key={b.k} className={`rounded-full px-3.5 py-1.5 text-xs font-bold transition ${filterStatus===b.k ? "bg-ink text-white" : "border border-stone-200 bg-white text-stone-400 hover:border-stone-300 hover:text-ink"}`} onClick={() => setFilterStatus(filterStatus===b.k ? "all" : b.k)} type="button">{b.l}</button>
               ))}
-              {filterStatus !== "all" ? <button className="rounded-full px-3 py-1 text-[11px] font-bold text-stone-400 hover:text-ink" onClick={() => setFilterStatus("all")} type="button">清除筛选</button> : null}
+              {filterStatus !== "all" ? <button className="rounded-full px-3.5 py-1.5 text-xs font-bold text-stone-400 hover:text-ink" onClick={() => setFilterStatus("all")} type="button">清除筛选</button> : null}
             </div>
 
             {/* Table */}
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left">
                 <thead><tr className="bg-stone-50/80 text-stone-400">
-                  <th className="py-2.5 pr-2 text-[11px] font-bold w-14">图片</th><th className="py-2.5 pr-2 text-[11px] font-bold">SKU</th><th className="py-2.5 pr-2 text-[11px] font-bold">商品名</th><th className="py-2.5 pr-2 text-[11px] font-bold">分类</th><th className="py-2.5 pr-2 text-[11px] font-bold">价格</th><th className="py-2.5 pr-2 text-[11px] font-bold">库存</th><th className="py-2.5 pr-2 text-[11px] font-bold">状态</th><th className="py-2.5 pr-2 text-[11px] font-bold w-36">操作</th>
+                  <th className="py-2.5 pr-3 text-xs font-bold w-14">图片</th><th className="py-2.5 pr-3 text-xs font-bold">SKU</th><th className="py-2.5 pr-3 text-xs font-bold">商品名</th><th className="py-2.5 pr-3 text-xs font-bold">分类</th><th className="py-2.5 pr-3 text-xs font-bold">价格</th><th className="py-2.5 pr-3 text-xs font-bold">库存</th><th className="py-2.5 pr-3 text-xs font-bold">状态</th><th className="py-2.5 pr-3 text-xs font-bold w-40">操作</th>
                 </tr></thead>
                 <tbody>
                   {filteredProducts.slice(0, 100).map(p => (
                     <tr className="border-b border-stone-50 hover:bg-stone-50/70 transition-colors" key={p.id}>
-                      <td className="py-2 pr-2">
+                      <td className="py-2 pr-3 align-middle">
                         {p.image_url ? (
                           <ImgThumb src={p.image_url} />
                         ) : (
                           <span className="inline-block rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-bold text-stone-400">缺图</span>
                         )}
                       </td>
-                      <td className="py-2 pr-2 font-mono text-[11px] font-bold text-ink">{p.sku}</td>
-                      <td className="py-2 pr-2"><p className="text-xs font-bold text-ink line-clamp-1">{p.name_cn || p.name_en || p.name_gr || "—"}</p><p className="text-[10px] text-stone-400 line-clamp-1">{p.name_en}</p></td>
-                      <td className="py-2 pr-2"><span className="inline-block rounded bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-500">{p.category}/{p.subcategory}</span></td>
-                      <td className="py-2 pr-2 text-[11px] font-bold">€{Number(p.price).toFixed(2)}</td>
-                      <td className="py-2 pr-2 text-[11px]">{effectiveStock(p)}</td>
-                      <td className="py-2 pr-2"><span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${p.is_active ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-500"}`}>{p.is_active ? "上架" : "下架"}</span></td>
-                      <td className="py-2 pr-2"><div className="flex gap-1">
-                        <button className="rounded-md border border-stone-200 px-2.5 py-1.5 text-[11px] font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => startEdit(p)}>编辑</button>
-                        <button className="rounded-md border border-stone-200 px-2.5 py-1.5 text-[11px] font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => copyProduct(p)}>复制</button>
-                        <button className="rounded-md border border-red-100 px-2.5 py-1.5 text-[11px] font-bold whitespace-nowrap text-red-600 hover:bg-red-50" onClick={() => void deleteProduct(p)}>删除</button>
+                      <td className="py-2 pr-3 font-mono text-xs font-bold text-ink">{p.sku}</td>
+                      <td className="py-2 pr-3"><p className="text-sm font-bold text-ink line-clamp-1">{p.name_cn || p.name_en || p.name_gr || "—"}</p><p className="text-[11px] text-stone-400 line-clamp-1">{p.name_en}</p></td>
+                      <td className="py-2 pr-3"><span className="inline-block rounded bg-stone-100 px-2 py-0.5 text-[11px] font-bold text-stone-500">{p.category}/{p.subcategory}</span></td>
+                      <td className="py-2 pr-3 text-sm font-bold">€{Number(p.price).toFixed(2)}</td>
+                      <td className="py-2 pr-3 text-sm">{effectiveStock(p)}</td>
+                      <td className="py-2 pr-3"><span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap ${p.is_active ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-500"}`}>{p.is_active ? "上架" : "下架"}</span></td>
+                      <td className="py-2 pr-3"><div className="flex gap-1.5">
+                        <button className="rounded-md border border-stone-200 px-3 py-1.5 text-xs font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => startEdit(p)}>编辑</button>
+                        <button className="rounded-md border border-stone-200 px-3 py-1.5 text-xs font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => copyProduct(p)}>复制</button>
+                        <button className="rounded-md border border-red-100 px-3 py-1.5 text-xs font-bold whitespace-nowrap text-red-600 hover:bg-red-50" onClick={() => void deleteProduct(p)}>删除</button>
                       </div></td>
                     </tr>
                   ))}
