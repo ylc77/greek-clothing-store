@@ -4,11 +4,11 @@ import { FormEvent, useEffect, useState } from "react";
 import type { BusinessSettings } from "@/lib/settings";
 
 async function uploadStoreImage(file: File, name: string, password: string): Promise<string> {
-  const fd = new FormData(); fd.append("images", file); fd.append("sku", `store-${name}`); fd.append("mode", "main");
-  const r = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": password }, body: fd });
+  const fd = new FormData(); fd.append("file", file); fd.append("name", name);
+  const r = await fetch("/api/admin/settings/upload", { method: "POST", headers: { "x-admin-password": password }, body: fd });
   const d = await r.json();
   if (!r.ok) throw new Error(d.error || "上传失败");
-  return d.results?.[0]?.imageUrl || "";
+  return d.url || "";
 }
 
 const emptySettings: BusinessSettings = {
