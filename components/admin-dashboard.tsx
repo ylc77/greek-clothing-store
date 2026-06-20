@@ -200,7 +200,7 @@ export function AdminDashboard() {
   /* ── Logged-in UI ────────────────────────────────────────── */
   return (
     <main className="min-h-screen bg-paper">
-      <div className="mx-auto max-w-[82rem] px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[88rem] px-4 py-6 sm:px-6 lg:px-8">
         {/* ── Top bar ────────────────────────────────────── */}
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-4">
           <div>
@@ -216,7 +216,7 @@ export function AdminDashboard() {
 
         {/* ── Stats cards ────────────────────────────────── */}
         <div className="mb-6 grid grid-cols-3 gap-3 sm:grid-cols-6">
-          {[{ label: "商品总数", v: stats.total, color: "bg-ink" }, { label: "已上架", v: stats.active, color: "bg-green-600" }, { label: "缺图片", v: stats.noImage, color: "bg-amber-500" }, { label: "库存为0", v: stats.noStock, color: "bg-red-500" }, { label: "未分尺码", v: stats.noSizeStock, color: "bg-purple-500" }, { label: "分类数", v: stats.categories, color: "bg-blue-500" }].map(s => (
+          {[{ label: "商品总数", v: stats.total, color: "bg-stone-500" }, { label: "已上架", v: stats.active, color: "bg-emerald-500" }, { label: "缺图片", v: stats.noImage, color: "bg-amber-400" }, { label: "库存为0", v: stats.noStock, color: "bg-rose-400" }, { label: "未分尺码", v: stats.noSizeStock, color: "bg-violet-400" }, { label: "分类数", v: stats.categories, color: "bg-sky-400" }].map(s => (
             <div key={s.label} className="relative overflow-hidden rounded-xl border border-stone-100 bg-white p-4 shadow-sm">
               <div className={`absolute top-0 left-0 w-1 h-full ${s.color} rounded-l-full`} />
               <p className="text-2xl font-black text-ink">{s.v}</p>
@@ -242,16 +242,23 @@ export function AdminDashboard() {
               <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoriesByCategory[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
               <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="noimg">缺图片</option><option value="nostock">库存为0</option><option value="nosizestock">未分配尺码</option><option value="demo">测试商品</option></select>
             </div>
+            {/* Quick filter buttons */}
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              {[{k:"noimg",l:"缺图片"},{k:"nosizestock",l:"未分配尺码"},{k:"nostock",l:"库存为0"},{k:"demo",l:"测试商品"}].map(b => (
+                <button key={b.k} className={`rounded-full px-3 py-1 text-[11px] font-bold transition ${filterStatus===b.k ? "bg-ink text-white" : "border border-stone-200 bg-white text-stone-400 hover:border-stone-300 hover:text-ink"}`} onClick={() => setFilterStatus(filterStatus===b.k ? "all" : b.k)} type="button">{b.l}</button>
+              ))}
+              {filterStatus !== "all" ? <button className="rounded-full px-3 py-1 text-[11px] font-bold text-stone-400 hover:text-ink" onClick={() => setFilterStatus("all")} type="button">清除筛选</button> : null}
+            </div>
 
             {/* Table */}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead><tr className="border-b border-stone-200 text-stone-500">
-                  <th className="py-3 pr-2 text-[11px] font-bold w-14">图片</th><th className="py-3 pr-2 text-[11px] font-bold">SKU</th><th className="py-3 pr-2 text-[11px] font-bold">商品名</th><th className="py-3 pr-2 text-[11px] font-bold">分类</th><th className="py-3 pr-2 text-[11px] font-bold">价格</th><th className="py-3 pr-2 text-[11px] font-bold">库存</th><th className="py-3 pr-2 text-[11px] font-bold">状态</th><th className="py-3 pr-2 text-[11px] font-bold w-36">操作</th>
+                <thead><tr className="bg-stone-50/80 text-stone-400">
+                  <th className="py-2.5 pr-2 text-[11px] font-bold w-14">图片</th><th className="py-2.5 pr-2 text-[11px] font-bold">SKU</th><th className="py-2.5 pr-2 text-[11px] font-bold">商品名</th><th className="py-2.5 pr-2 text-[11px] font-bold">分类</th><th className="py-2.5 pr-2 text-[11px] font-bold">价格</th><th className="py-2.5 pr-2 text-[11px] font-bold">库存</th><th className="py-2.5 pr-2 text-[11px] font-bold">状态</th><th className="py-2.5 pr-2 text-[11px] font-bold w-36">操作</th>
                 </tr></thead>
                 <tbody>
                   {filteredProducts.slice(0, 100).map(p => (
-                    <tr className="border-b border-stone-50 hover:bg-stone-50/50" key={p.id}>
+                    <tr className="border-b border-stone-50 hover:bg-stone-50/70 transition-colors" key={p.id}>
                       <td className="py-2 pr-2">
                         {p.image_url ? (
                           <ImgThumb src={p.image_url} />
@@ -261,7 +268,7 @@ export function AdminDashboard() {
                       </td>
                       <td className="py-2 pr-2 font-mono text-[11px] font-bold text-ink">{p.sku}</td>
                       <td className="py-2 pr-2"><p className="text-xs font-bold text-ink line-clamp-1">{p.name_cn || p.name_en || p.name_gr || "—"}</p><p className="text-[10px] text-stone-400 line-clamp-1">{p.name_en}</p></td>
-                      <td className="py-2 pr-2 text-[11px] text-stone-600">{p.category}/{p.subcategory}</td>
+                      <td className="py-2 pr-2"><span className="inline-block rounded bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-500">{p.category}/{p.subcategory}</span></td>
                       <td className="py-2 pr-2 text-[11px] font-bold">€{Number(p.price).toFixed(2)}</td>
                       <td className="py-2 pr-2 text-[11px]">{effectiveStock(p)}</td>
                       <td className="py-2 pr-2"><span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${p.is_active ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-500"}`}>{p.is_active ? "上架" : "下架"}</span></td>
