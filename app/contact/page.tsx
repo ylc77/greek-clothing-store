@@ -76,7 +76,7 @@ export default async function ContactPage({ searchParams }: ContactPageProps) {
             <div className="rounded-md border border-stone-200 bg-white p-6">
               <h2 className="text-lg font-black text-ink">{t.hours}</h2>
               <div className="mt-2 space-y-1 text-sm leading-6 text-stone-600">
-                {hoursText.split("\n").map((line, i) => (
+                {hoursText.replace(/\\n/g, "\n").split("\n").map((line, i) => (
                   <p key={i}>{line}</p>
                 ))}
               </div>

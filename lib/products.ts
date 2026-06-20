@@ -36,7 +36,13 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
     return { products: [], error: error.message };
   }
 
-  return { products: (data || []).map(mapProduct), error: null };
+  // Filter out test products that have no Greek or English name
+  const filtered = (data || []).filter(
+    (p: Product) =>
+      (p.name_gr && p.name_gr.trim()) || (p.name_en && p.name_en.trim()),
+  );
+
+  return { products: filtered.map(mapProduct), error: null };
 }
 
 export async function getProductsByCategory(

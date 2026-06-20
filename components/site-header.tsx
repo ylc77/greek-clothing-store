@@ -11,7 +11,7 @@ export function SiteHeader({
   language: Language;
   settings?: BusinessSettings;
 }) {
-  const siteName = settings?.business_name || "Our Store";
+  const siteName = settings?.business_name || "Fashion Boutique";
   const instagramLink = settings?.instagram || "";
 
   return (

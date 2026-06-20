@@ -140,7 +140,7 @@ export const text = {
     browseCollection: "Περιηγηθείτε στη συλλογή"
   },
   en: {
-    eyebrow: "Greek clothing store",
+    eyebrow: "Athens boutique",
     intro: "Curated clothing, shoes, bags and accessories with a clean Mediterranean feel.",
     latest: "Latest products",
     latestText: "Newest pieces from our collection.",

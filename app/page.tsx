@@ -271,7 +271,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                     {t.hours}
                   </p>
                   <div className="mt-2 space-y-1 text-sm leading-6 text-stone-600">
-                    {settings.opening_hours.split("\n").map((line, i) => (
+                    {settings.opening_hours.replace(/\\n/g, "\n").split("\n").map((line, i) => (
                       <p key={i}>{line}</p>
                     ))}
                   </div>
