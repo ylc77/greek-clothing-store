@@ -13,7 +13,7 @@ import {
   text,
   withLanguage
 } from "@/lib/i18n";
-import { getProductBySku } from "@/lib/products";
+import { effectiveStock, getProductBySku } from "@/lib/products";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 
@@ -148,7 +148,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
               </p>
               <p className="flex justify-between gap-4">
                 <strong className="text-ink">{t.stock}</strong>
-                <span>{product.stock > 0 ? `${t.inStock} (${product.stock})` : t.outOfStock}</span>
+                <span>{effectiveStock(product) > 0 ? `${t.inStock} (${effectiveStock(product)})` : t.outOfStock}</span>
               </p>
               <p className="flex justify-between gap-4">
                 <strong className="text-ink">{t.category}</strong>

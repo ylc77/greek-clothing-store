@@ -1,5 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase";
 import { getBusinessSettings } from "@/lib/settings";
+import { effectiveStock } from "@/lib/products";
 import type { Product, ProductCategory, ProductSubcategory } from "@/lib/types";
 import { siteUrl } from "@/lib/site";
 
@@ -118,11 +119,12 @@ function buildFeed(products: Product[], defaultBrandName: string) {
         .map((u) => `      <additional_imageurl>${xmlEscape(u)}</additional_imageurl>`)
         .join("\n");
 
+      const stockQty = effectiveStock(product);
       const mpn = product.mpn?.trim() || product.sku;
       const ean = product.ean?.trim() || product.barcode?.trim() || "";
       const availability =
         product.availability?.trim() ||
-        (product.stock > 0 ? "In stock" : "Available from 1 to 3 days");
+        (stockQty > 0 ? "In stock" : "Available from 1 to 3 days");
 
       return `    <product>
       <id>${xmlEscape(product.sku)}</id>
@@ -133,11 +135,11 @@ ${imageTag}      <category>${xmlEscape(feedCategory(product))}</category>
       <price_with_vat>${xmlEscape(formatPrice(product.price))}</price_with_vat>
       <price>${xmlEscape(formatPrice(product.price))}</price>
       <vat>${xmlEscape(formatPrice(product.vat, 24))}</vat>
-      <instock>${product.stock > 0 ? "Y" : "N"}</instock>
+      <instock>${stockQty > 0 ? "Y" : "N"}</instock>
       <availability>${xmlEscape(availability)}</availability>
       <manufacturer>${xmlEscape(product.brand || defaultBrandName)}</manufacturer>
       <mpn>${xmlEscape(mpn)}</mpn>
-${opt("ean", ean)}${opt("size", product.sizes)}${opt("color", product.color)}      <quantity>${Math.max(0, Math.trunc(Number(product.stock) || 0))}</quantity>
+${opt("ean", ean)}${opt("size", product.sizes)}${opt("color", product.color)}      <quantity>${Math.max(0, Math.trunc(stockQty))}</quantity>
       <description>${xmlEscape(feedDescription(product))}</description>
 ${extras ? `${extras}\n` : ""}    </product>`;
     })

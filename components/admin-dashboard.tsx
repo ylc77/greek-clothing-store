@@ -9,6 +9,7 @@ import {
   type ProductCategory,
   type ProductFormData,
 } from "@/lib/types";
+import { effectiveStock } from "@/lib/products";
 import { useToast } from "@/components/admin-toast";
 
 /* ── Types ───────────────────────────────────────────────── */
@@ -104,7 +105,7 @@ export function AdminDashboard() {
   // Stats
   const stats = useMemo(() => {
     const cats = new Set(products.map(p => p.category));
-    return { total: products.length, active: products.filter(p => p.is_active).length, noImage: products.filter(p => !p.image_url).length, noStock: products.filter(p => p.stock === 0).length, categories: cats.size };
+    return { total: products.length, active: products.filter(p => p.is_active).length, noImage: products.filter(p => !p.image_url).length, noStock: products.filter(p => effectiveStock(p) === 0).length, categories: cats.size };
   }, [products]);
 
   // Filtered products
@@ -116,16 +117,16 @@ export function AdminDashboard() {
     if (filterStatus === "active") list = list.filter(p => p.is_active);
     if (filterStatus === "inactive") list = list.filter(p => !p.is_active);
     if (filterStatus === "noimg") list = list.filter(p => !p.image_url);
-    if (filterStatus === "nostock") list = list.filter(p => p.stock === 0);
+    if (filterStatus === "nostock") list = list.filter(p => effectiveStock(p) === 0);
     if (filterStatus === "demo") list = list.filter(p => /TEST|DEMO/i.test(p.sku));
     return list;
   }, [products, search, filterCat, filterSub, filterStatus]);
 
   // Feed stats
   const feedStats = useMemo(() => ({
-    total: products.filter(p => p.is_active && p.stock >= 0).length,
-    noImage: products.filter(p => p.is_active && p.stock >= 0 && !p.image_url).length,
-    noDesc: products.filter(p => p.is_active && p.stock >= 0 && !p.description_en && !p.description_gr).length,
+    total: products.filter(p => p.is_active && effectiveStock(p) >= 0).length,
+    noImage: products.filter(p => p.is_active && effectiveStock(p) >= 0 && !p.image_url).length,
+    noDesc: products.filter(p => p.is_active && effectiveStock(p) >= 0 && !p.description_en && !p.description_gr).length,
   }), [products]);
 
   /* ── API helper ───────────────────────────────────────── */
@@ -252,7 +253,7 @@ export function AdminDashboard() {
                       <td className="py-2 pr-2"><p className="text-xs font-bold text-ink line-clamp-1">{p.name_cn || p.name_en || p.name_gr || "—"}</p><p className="text-[10px] text-stone-400 line-clamp-1">{p.name_en}</p></td>
                       <td className="py-2 pr-2 text-[11px] text-stone-600">{p.category}/{p.subcategory}</td>
                       <td className="py-2 pr-2 text-[11px] font-bold">€{Number(p.price).toFixed(2)}</td>
-                      <td className="py-2 pr-2 text-[11px]">{p.stock}</td>
+                      <td className="py-2 pr-2 text-[11px]">{effectiveStock(p)}</td>
                       <td className="py-2 pr-2"><span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${p.is_active ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-500"}`}>{p.is_active ? "上架" : "下架"}</span></td>
                       <td className="py-2 pr-2"><div className="flex gap-1">
                         <button className="rounded-md border border-stone-200 px-2.5 py-1.5 text-[11px] font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => startEdit(p)}>编辑</button>

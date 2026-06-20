@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SafeImage } from "@/components/safe-image";
 import { productName, text, withLanguage, type Language } from "@/lib/i18n";
+import { effectiveStock } from "@/lib/products";
 import type { Product } from "@/lib/types";
 
 export function ProductCard({ product, language }: { product: Product; language: Language }) {
@@ -33,7 +34,7 @@ export function ProductCard({ product, language }: { product: Product; language:
             €{Number(product.price).toFixed(2)}
           </p>
           <p className="text-[11px] font-medium text-stone-400">
-            {product.stock > 0 ? t.inStock : t.outOfStock}
+            {effectiveStock(product) > 0 ? t.inStock : t.outOfStock}
           </p>
         </div>
       </div>
