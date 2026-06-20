@@ -6,17 +6,10 @@ export type ProductsResult = {
   error: string | null;
 };
 
-/** Compute effective stock: size_stock total if available, else product.stock */
-export function effectiveStock(product: { stock: number; size_stock?: Record<string, number> | null }): number {
-  const ss = (product as Record<string, unknown>).size_stock;
-  if (ss && typeof ss === "object" && !Array.isArray(ss)) {
-    const entries = Object.entries(ss as Record<string, unknown>);
-    if (entries.length > 0) {
-      return entries.reduce((sum, [, v]) => sum + (typeof v === "number" ? v : 0), 0);
-    }
-  }
-  return Number(product.stock) || 0;
-}
+import { getTotalStock } from "@/lib/product-stock";
+
+/** @deprecated Use getTotalStock from lib/product-stock.ts instead */
+export const effectiveStock = getTotalStock;
 
 function mapProduct(product: Product): Product {
   return {

@@ -13,7 +13,8 @@ import {
   text,
   withLanguage,
 } from "@/lib/i18n";
-import { effectiveStock, getProductBySku } from "@/lib/products";
+import { getProductBySku } from "@/lib/products";
+import { getTotalStock } from "@/lib/product-stock";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 
@@ -105,7 +106,7 @@ export default async function ProductPage({
 
   const images = productImages(product);
   const description = productDescription(product, language);
-  const stockQty = effectiveStock(product);
+  const stockQty = getTotalStock(product);
   // Ensure size_stock survives server→client serialization
   const ssRaw = (product as Record<string, unknown>).size_stock;
   const safeSizeStock: Record<string, number> | null =
@@ -201,6 +202,7 @@ export default async function ProductPage({
                 sku={product.sku}
                 sizes={product.sizes}
                 sizeStock={safeSizeStock}
+                stock={Number(product.stock)}
                 skroutzUrl={product.skroutz_url}
                 language={language}
                 whatsappUrl={settings.whatsapp || undefined}

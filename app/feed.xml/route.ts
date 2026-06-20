@@ -1,6 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase";
 import { getBusinessSettings } from "@/lib/settings";
-import { effectiveStock } from "@/lib/products";
+import { getTotalStock } from "@/lib/product-stock";
 import type { Product, ProductCategory, ProductSubcategory } from "@/lib/types";
 import { siteUrl } from "@/lib/site";
 
@@ -119,7 +119,7 @@ function buildFeed(products: Product[], defaultBrandName: string) {
         .map((u) => `      <additional_imageurl>${xmlEscape(u)}</additional_imageurl>`)
         .join("\n");
 
-      const stockQty = effectiveStock(product);
+      const stockQty = getTotalStock(product);
       const mpn = product.mpn?.trim() || product.sku;
       const ean = product.ean?.trim() || product.barcode?.trim() || "";
       const availability =

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { text, type Language } from "@/lib/i18n";
+import { getSizeOptions } from "@/lib/product-stock";
 
 type ProductActionsProps = {
   productName: string;
@@ -9,29 +10,11 @@ type ProductActionsProps = {
   sku: string;
   sizes: string | null;
   sizeStock?: Record<string, number> | null;
+  stock: number;
   skroutzUrl?: string | null;
   language?: Language;
   whatsappUrl?: string;
 };
-
-interface SizeEntry { label: string; stock: number; disabled: boolean; }
-
-function parseSizeList(sizes: string | null, sizeStock?: Record<string, number> | null): SizeEntry[] {
-  // Use sizeStock only if it's a non-empty plain object
-  if (sizeStock && typeof sizeStock === "object" && !Array.isArray(sizeStock)) {
-    const keys = Object.keys(sizeStock);
-    if (keys.length > 0) {
-      return keys.map(k => {
-        const qty = typeof sizeStock[k] === "number" && sizeStock[k] > 0 ? sizeStock[k] : 0;
-        return { label: k, stock: qty, disabled: qty === 0 };
-      });
-    }
-    // sizeStock is an empty object {} — treat as "no data", fall through
-  }
-  // Fallback: parse sizes string. stock=-1, disabled=false (old data, unknown stock)
-  return Array.from(new Set((sizes || "").split(/[\/,\s]+/).map(s => s.trim()).filter(Boolean)))
-    .map(s => ({ label: s, stock: -1, disabled: false }));
-}
 
 function buildWhatsAppUrl({ baseUrl, text }: { baseUrl: string; text: string }) {
   const url = new URL(baseUrl);
@@ -46,10 +29,10 @@ function buildSkroutzUrl(skroutzUrl: string | null | undefined, productNameEn: s
   return url.toString();
 }
 
-export function ProductActions({ productName, productNameEn, sku, sizes, sizeStock, skroutzUrl, language, whatsappUrl }: ProductActionsProps) {
+export function ProductActions({ productName, productNameEn, sku, sizes, sizeStock, stock, skroutzUrl, language, whatsappUrl }: ProductActionsProps) {
   const waUrl = whatsappUrl || "#";
   const t = text[language || "el"];
-  const sizeOptions = useMemo(() => parseSizeList(sizes, sizeStock), [sizes, sizeStock]);
+  const sizeOptions = useMemo(() => getSizeOptions({ sizes, stock, size_stock: sizeStock }), [sizes, stock, sizeStock]);
   const [selectedSize, setSelectedSize] = useState("");
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [message, setMessage] = useState("");
