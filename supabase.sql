@@ -219,40 +219,40 @@ on conflict (slug) do nothing;
 do $$ declare cid uuid;
 begin
   select id into cid from product_categories where slug='men';
-  if cid is not null then insert into product_subcategories (category_id,slug,name_en,name_gr,sort_order) values
-    (cid,'tshirts','T-shirts','T-shirts',1),(cid,'shirts','Shirts','Πουκάμισα',2),
-    (cid,'hoodies','Hoodies','Φούτερ',3),(cid,'jackets','Jackets','Μπουφάν',4),
-    (cid,'trousers','Trousers','Παντελόνια',5),(cid,'jeans','Jeans','Τζιν',6),
-    (cid,'shorts','Shorts','Σορτς',7) on conflict (category_id,slug) do nothing; end if;
+  if cid is not null then insert into product_subcategories (category_id,slug,name_cn,name_en,name_gr,sort_order) values
+    (cid,'tshirts','T恤','T-shirts','T-shirts',1),(cid,'shirts','衬衫','Shirts','Πουκάμισα',2),
+    (cid,'hoodies','连帽卫衣','Hoodies','Φούτερ',3),(cid,'jackets','外套','Jackets','Μπουφάν',4),
+    (cid,'trousers','长裤','Trousers','Παντελόνια',5),(cid,'jeans','牛仔裤','Jeans','Τζιν',6),
+    (cid,'shorts','短裤','Shorts','Σορτς',7) on conflict (category_id,slug) do nothing; end if;
   select id into cid from product_categories where slug='women';
-  if cid is not null then insert into product_subcategories (category_id,slug,name_en,name_gr,sort_order) values
-    (cid,'dresses','Dresses','Φορέματα',1),(cid,'tops','Tops','Τοπ',2),
-    (cid,'shirts','Shirts','Πουκάμισα',3),(cid,'hoodies','Hoodies','Φούτερ',4),
-    (cid,'jackets','Jackets','Μπουφάν',5),(cid,'trousers','Trousers','Παντελόνια',6),
-    (cid,'skirts','Skirts','Φούστες',7) on conflict (category_id,slug) do nothing; end if;
+  if cid is not null then insert into product_subcategories (category_id,slug,name_cn,name_en,name_gr,sort_order) values
+    (cid,'dresses','连衣裙','Dresses','Φορέματα',1),(cid,'tops','上衣','Tops','Τοπ',2),
+    (cid,'shirts','衬衫','Shirts','Πουκάμισα',3),(cid,'hoodies','连帽卫衣','Hoodies','Φούτερ',4),
+    (cid,'jackets','外套','Jackets','Μπουφάν',5),(cid,'trousers','长裤','Trousers','Παντελόνια',6),
+    (cid,'skirts','半身裙','Skirts','Φούστες',7) on conflict (category_id,slug) do nothing; end if;
   select id into cid from product_categories where slug='shoes';
-  if cid is not null then insert into product_subcategories (category_id,slug,name_en,name_gr,sort_order) values
-    (cid,'sneakers','Sneakers','Sneakers',1),(cid,'boots','Boots','Μπότες',2),
-    (cid,'sandals','Sandals','Σανδάλια',3),(cid,'heels','Heels','Γόβες',4)
+  if cid is not null then insert into product_subcategories (category_id,slug,name_cn,name_en,name_gr,sort_order) values
+    (cid,'sneakers','运动鞋','Sneakers','Sneakers',1),(cid,'boots','靴子','Boots','Μπότες',2),
+    (cid,'sandals','凉鞋','Sandals','Σανδάλια',3),(cid,'heels','高跟鞋','Heels','Γόβες',4)
     on conflict (category_id,slug) do nothing; end if;
   select id into cid from product_categories where slug='bags';
-  if cid is not null then insert into product_subcategories (category_id,slug,name_en,name_gr,sort_order) values
-    (cid,'handbags','Handbags','Τσάντες χειρός',1),(cid,'backpacks','Backpacks','Σακίδια',2),
-    (cid,'wallets','Wallets','Πορτοφόλια',3) on conflict (category_id,slug) do nothing; end if;
+  if cid is not null then insert into product_subcategories (category_id,slug,name_cn,name_en,name_gr,sort_order) values
+    (cid,'handbags','手提包','Handbags','Τσάντες χειρός',1),(cid,'backpacks','双肩包','Backpacks','Σακίδια',2),
+    (cid,'wallets','钱包','Wallets','Πορτοφόλια',3) on conflict (category_id,slug) do nothing; end if;
   select id into cid from product_categories where slug='luggage';
-  if cid is not null then insert into product_subcategories (category_id,slug,name_en,name_gr,sort_order) values
-    (cid,'suitcases','Suitcases','Βαλίτσες',1),(cid,'travel_bags','Travel Bags','Ταξιδιωτικές τσάντες',2)
+  if cid is not null then insert into product_subcategories (category_id,slug,name_cn,name_en,name_gr,sort_order) values
+    (cid,'suitcases','行李箱','Suitcases','Βαλίτσες',1),(cid,'travel_bags','旅行包','Travel Bags','Ταξιδιωτικές τσάντες',2)
     on conflict (category_id,slug) do nothing; end if;
   select id into cid from product_categories where slug='hats';
-  if cid is not null then insert into product_subcategories (category_id,slug,name_en,name_gr,sort_order) values
-    (cid,'caps','Caps','Καπέλα',1),(cid,'beanies','Beanies','Σκούφοι',2)
+  if cid is not null then insert into product_subcategories (category_id,slug,name_cn,name_en,name_gr,sort_order) values
+    (cid,'caps','鸭舌帽','Caps','Καπέλα',1),(cid,'beanies','针织帽','Beanies','Σκούφοι',2)
     on conflict (category_id,slug) do nothing; end if;
   select id into cid from product_categories where slug='jewelry';
-  if cid is not null then insert into product_subcategories (category_id,slug,name_en,name_gr,sort_order) values
-    (cid,'necklaces','Necklaces','Κολιέ',1),(cid,'bracelets','Bracelets','Βραχιόλια',2),
-    (cid,'earrings','Earrings','Σκουλαρίκια',3),(cid,'rings','Rings','Δαχτυλίδια',4)
+  if cid is not null then insert into product_subcategories (category_id,slug,name_cn,name_en,name_gr,sort_order) values
+    (cid,'necklaces','项链','Necklaces','Κολιέ',1),(cid,'bracelets','手链','Bracelets','Βραχιόλια',2),
+    (cid,'earrings','耳环','Earrings','Σκουλαρίκια',3),(cid,'rings','戒指','Rings','Δαχτυλίδια',4)
     on conflict (category_id,slug) do nothing; end if;
   select id into cid from product_categories where slug='other';
-  if cid is not null then insert into product_subcategories (category_id,slug,name_en,name_gr,sort_order) values
-    (cid,'accessories','Accessories','Αξεσουάρ',1) on conflict (category_id,slug) do nothing; end if;
+  if cid is not null then insert into product_subcategories (category_id,slug,name_cn,name_en,name_gr,sort_order) values
+    (cid,'accessories','配饰','Accessories','Αξεσουάρ',1) on conflict (category_id,slug) do nothing; end if;
 end $$;

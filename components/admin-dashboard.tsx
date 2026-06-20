@@ -618,6 +618,7 @@ function CategoriesManager({ activePassword, toast }: { activePassword: string; 
   const [cats, setCats] = useState<Array<Record<string, unknown>>>([]);
   const [subs, setSubs] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   async function load() { setLoading(true); try { const r = await fetch("/api/admin/categories", { headers: { "x-admin-password": activePassword } }); const d = await r.json(); setCats(d.categories || []); setSubs(d.subcategories || []); } catch {} finally { setLoading(false); } }
   useEffect(() => { load(); }, [activePassword]);
@@ -659,10 +660,16 @@ function CategoriesManager({ activePassword, toast }: { activePassword: string; 
       {/* 二级分类 */}
       <div className="rounded-xl border border-stone-100 bg-white p-5 shadow-sm">
         <h2 className="mb-3 text-lg font-black text-ink">二级分类</h2>
-        {cats.filter(c => c.is_active !== false).map(c => { const catId = String(c.id||""); const catSubs = subForCat(catId); return (
-          <div key={catId} className="mb-4 last:mb-0">
-            <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-bold text-ink">{String(c.name_cn||c.slug||"")} ({String(c.slug)})</h3><button className="rounded-lg border border-stone-200 px-2 py-1 text-[11px] font-bold hover:bg-stone-50" onClick={() => addSub(catId)} type="button">+ 新增</button></div>
-            {catSubs.length > 0 ? (
+        {cats.filter(c => c.is_active !== false).map((c, ci) => { const catId = String(c.id||""); const catSubs = subForCat(catId); const isOpen = !collapsed.has(catId) && (ci === 0 || collapsed.size <= ci); return (
+          <div key={catId} className="mb-3 last:mb-0 border border-stone-100 rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between bg-stone-50 px-3 py-2 cursor-pointer" onClick={() => setCollapsed(prev => { const n = new Set(prev); if (n.has(catId)) n.delete(catId); else n.add(catId); return n; })}>
+              <h3 className="text-sm font-bold text-ink">{String(c.name_cn||c.name_en||c.slug)} <span className="text-xs text-stone-400 font-normal">({String(c.slug)}) — {catSubs.length} 个二级分类</span></h3>
+              <div className="flex items-center gap-2">
+                <button className="rounded border border-stone-200 bg-white px-2 py-1 text-[11px] font-bold hover:bg-stone-100" onClick={e => { e.stopPropagation(); addSub(catId); }} type="button">+ 新增</button>
+                <span className="text-xs text-stone-400">{isOpen ? "▲" : "▼"}</span>
+              </div>
+            </div>
+            {isOpen && catSubs.length > 0 ? (
               <div className="overflow-x-auto"><table className="w-full text-left text-sm">
                 <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-1.5 px-2 text-[11px] font-bold">slug</th><th className="py-1.5 px-2 text-[11px] font-bold">中文</th><th className="py-1.5 px-2 text-[11px] font-bold">English</th><th className="py-1.5 px-2 text-[11px] font-bold">Ελληνικά</th><th className="py-1.5 px-2 text-[11px] font-bold w-12">排序</th><th className="py-1.5 px-2 text-[11px] font-bold w-10">启用</th></tr></thead>
                 <tbody>
