@@ -90,6 +90,7 @@ export function AdminDashboard() {
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]); const [csvResults, setCsvResults] = useState<ApiResult[]>([]);
   const [imageResults, setImageResults] = useState<ApiResult[]>([]); const [selectedImageSku, setSelectedImageSku] = useState("");
   const [tab, setTab] = useState<Tab>("dashboard");
+  const [newMainFile, setNewMainFile] = useState<File | null>(null); const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
   const [sizeStock, setSizeStock] = useState<Record<string, number>>({});
   const [showSizeSummary, setShowSizeSummary] = useState(false);
 
@@ -166,7 +167,7 @@ export function AdminDashboard() {
   }
 
   /* ── Submit / Delete ──────────────────────────────────── */
-  async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setLoading(true); const p = normalizeProduct(form); const sizeKeys = Object.keys(sizeStock); const hasSizeStock = sizeKeys.length > 0; const totalStock = sizeKeys.reduce((sum, k) => sum + (sizeStock[k] || 0), 0); const payload = hasSizeStock ? { ...(p as Record<string,unknown>), sizes: sizeKeys.join(","), size_stock: sizeStock, stock: totalStock } : p; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); setForm(emptyProduct); setEditingId(null); setSizeStock({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
+  async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setLoading(true); const p = normalizeProduct(form); const sizeKeys = Object.keys(sizeStock); const hasSizeStock = sizeKeys.length > 0; const totalStock = sizeKeys.reduce((sum, k) => sum + (sizeStock[k] || 0), 0); const payload = hasSizeStock ? { ...(p as Record<string,unknown>), sizes: sizeKeys.join(","), size_stock: sizeStock, stock: totalStock } : p; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { const saved = await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); if (!editingId && (newMainFile || newGalleryFiles.length > 0)) { const sku = saved?.product?.sku || form.sku; try { if (newMainFile) { const cm = await compressImageForUpload(newMainFile); const fd = new FormData(); fd.append("images", cm); fd.append("sku", sku); fd.append("mode", "main"); await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); } if (newGalleryFiles.length > 0) { const cg = await Promise.all(newGalleryFiles.map(compressImageForUpload)); const fd = new FormData(); cg.forEach(f => fd.append("images", f)); fd.append("sku", sku); fd.append("mode", "gallery"); await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); } toast("图片已上传"); } catch { toast("商品已保存，图片上传失败", "err"); } setNewMainFile(null); setNewGalleryFiles([]); } setForm(emptyProduct); setEditingId(null); setSizeStock({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
   async function deleteProduct(p: AdminProduct) { if (!window.confirm(`删除商品 ${p.sku}?`)) return; setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "DELETE" }); toast("商品已删除"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "删除失败", "err"); } finally { setLoading(false); } }
 
   /* ── CSV ──────────────────────────────────────────────── */
@@ -410,7 +411,18 @@ export function AdminDashboard() {
                     </div>
                   </div>
                 </div>
-              ) : <p className="mb-4 text-xs text-amber-700 bg-amber-50 rounded-lg p-3">请先保存商品，再上传图片。</p>}
+              ) : (
+                <div className="mb-4 rounded-lg border border-stone-200 bg-stone-50 p-4">
+                  <p className="text-xs text-stone-500 mb-2">新商品图片会在保存时自动上传。</p>
+                  <div className="flex gap-2">
+                    <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">选择主图<input accept="image/*" className="hidden" type="file" onChange={e => setNewMainFile(e.target.files?.[0] || null)} /></label>
+                    <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">选择多图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setNewGalleryFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
+                    {(newMainFile || newGalleryFiles.length > 0) ? <button className="rounded-lg border border-red-100 px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-50" onClick={() => { setNewMainFile(null); setNewGalleryFiles([]); }} type="button">清除</button> : null}
+                  </div>
+                  {newMainFile ? <p className="mt-2 text-xs text-stone-500">主图: {newMainFile.name}</p> : null}
+                  {newGalleryFiles.length > 0 ? <p className="mt-1 text-xs text-stone-500">多图: {newGalleryFiles.map(f=>f.name).join(", ")}</p> : null}
+                </div>
+              )}
 
               {/* URL fields */}
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
