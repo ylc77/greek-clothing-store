@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { ProductCard } from "@/components/product-card";
 import { SiteHeader } from "@/components/site-header";
 import { categoryLabels, getLanguage, text, withLanguage } from "@/lib/i18n";
-import { getLatestProducts } from "@/lib/products";
+import { getCategoryImages, getLatestProducts } from "@/lib/products";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 import { categories } from "@/lib/types";
@@ -39,6 +39,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const t = text[language];
   const settings = await getBusinessSettings();
   const { products, error } = await getLatestProducts(4);
+  const categoryImages = await getCategoryImages();
 
   const siteName = settings.business_name;
   const siteIntro =
@@ -126,23 +127,25 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {categories.map((cat, i) => {
-              const hues = [30, 15, 200, 340, 45, 60, 280, 0];
-              const hue = hues[i] || 0;
+              const img = categoryImages[cat.slug];
+              const fallbacks = ["👔", "👗", "👟", "👜", "🧳", "🧢", "💍", "✨"];
               return (
                 <Link
                   key={cat.slug}
                   className="group relative overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-md"
                   href={withLanguage(`/${cat.slug}`, language)}
                 >
-                  <div
-                    className="flex aspect-[3/2] items-center justify-center"
-                    style={{
-                      background: `linear-gradient(135deg, hsl(${hue}, 20%, 94%), hsl(${hue}, 25%, 88%))`,
-                    }}
-                  >
-                    <span className="text-4xl opacity-40 select-none">
-                      {["👔", "👗", "👟", "👜", "🧳", "🧢", "💍", "✨"][i]}
-                    </span>
+                  <div className="flex aspect-[3/2] items-center justify-center bg-stone-100">
+                    {img ? (
+                      <img
+                        alt={categoryLabels[cat.slug][language]}
+                        className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                        loading="lazy"
+                        src={img}
+                      />
+                    ) : (
+                      <span className="text-4xl opacity-30 select-none">{fallbacks[i]}</span>
+                    )}
                   </div>
                   <div className="p-4 text-center">
                     <p className="text-base font-black text-ink group-hover:text-olive transition-colors">

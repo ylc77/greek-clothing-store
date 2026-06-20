@@ -96,3 +96,33 @@ export async function getProductBySku(sku: string): Promise<{ product: Product |
 
   return { product: data ? mapProduct(data as Product) : null, error: null };
 }
+
+/** Fetch one product image per category (for category card backgrounds). */
+export async function getCategoryImages(): Promise<Record<string, string>> {
+  const supabase = getSupabaseClient();
+  const images: Record<string, string> = {};
+
+  if (!supabase) return images;
+
+  // Fetch latest active product with image per category using one query
+  const { data } = await supabase
+    .from("products")
+    .select("category, image_url")
+    .eq("is_active", true)
+    .gte("stock", 0)
+    .not("image_url", "is", null)
+    .neq("image_url", "")
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (data) {
+    for (const row of data) {
+      const cat = String(row.category);
+      if (!images[cat] && row.image_url) {
+        images[cat] = String(row.image_url);
+      }
+    }
+  }
+
+  return images;
+}

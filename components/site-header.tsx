@@ -1,8 +1,16 @@
 import Link from "next/link";
 import { LanguageSelector } from "@/components/language-selector";
-import { categoryLabels, withLanguage, type Language } from "@/lib/i18n";
-import { categories } from "@/lib/types";
+import { categoryLabels, subcategoryLabels, text, withLanguage, type Language } from "@/lib/i18n";
+import { categories, subcategoriesByCategory, type ProductCategory } from "@/lib/types";
 import type { BusinessSettings } from "@/lib/settings";
+
+function categoryHref(category: ProductCategory, language: Language, subcategory?: string) {
+  const params = new URLSearchParams();
+  if (subcategory) params.set("subcategory", subcategory);
+  if (language === "en") params.set("lang", "en");
+  const query = params.toString();
+  return `/${category}${query ? `?${query}` : ""}`;
+}
 
 export function SiteHeader({
   language,
@@ -25,16 +33,39 @@ export function SiteHeader({
           {siteName}
         </Link>
 
-        {/* Center: category links */}
+        {/* Center: category links with subcategory dropdown */}
         <nav className="hidden items-center gap-1 lg:flex">
           {categories.map((cat) => (
-            <Link
-              key={cat.slug}
-              className="rounded-full px-3 py-2 text-sm font-bold text-stone-600 transition hover:bg-white hover:text-ink"
-              href={withLanguage(`/${cat.slug}`, language)}
-            >
-              {categoryLabels[cat.slug][language]}
-            </Link>
+            <div className="group relative" key={cat.slug}>
+              <Link
+                className="inline-flex rounded-full px-3 py-2 text-sm font-bold text-stone-600 transition hover:bg-white hover:text-ink"
+                href={categoryHref(cat.slug, language)}
+              >
+                {categoryLabels[cat.slug][language]}
+              </Link>
+
+              {/* Subcategory dropdown */}
+              <div className="invisible absolute left-1/2 top-full z-30 w-52 -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:visible group-hover:opacity-100">
+                <div className="overflow-hidden rounded-lg border border-stone-200 bg-white p-2 shadow-xl shadow-stone-900/10">
+                  <Link
+                    className="block rounded-md px-3 py-2 text-sm font-black text-ink transition hover:bg-stone-100"
+                    href={categoryHref(cat.slug, language)}
+                  >
+                    {text[language].all} {categoryLabels[cat.slug][language]}
+                  </Link>
+                  <div className="my-1 border-t border-stone-100" />
+                  {subcategoriesByCategory[cat.slug].map((sub) => (
+                    <Link
+                      className="block rounded-md px-3 py-2 text-sm font-bold text-stone-600 transition hover:bg-stone-100 hover:text-ink"
+                      href={categoryHref(cat.slug, language, sub)}
+                      key={sub}
+                    >
+                      {subcategoryLabels[sub][language]}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </div>
           ))}
         </nav>
 
