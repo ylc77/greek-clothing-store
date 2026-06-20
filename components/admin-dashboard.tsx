@@ -122,6 +122,7 @@ export function AdminDashboard() {
     if (filterStatus === "noimg") list = list.filter(p => !p.image_url);
     if (filterStatus === "nostock") list = list.filter(p => effectiveStock(p) === 0);
     if (filterStatus === "nosizestock") list = list.filter(p => p.sizes.trim() && !((p as Record<string,unknown>).size_stock && typeof (p as Record<string,unknown>).size_stock === "object" && Object.keys((p as Record<string,unknown>).size_stock as object).length > 0));
+    if (filterStatus === "nodesc") list = list.filter(p => !p.description_en?.trim() && !p.description_gr?.trim());
     if (filterStatus === "demo") list = list.filter(p => /TEST|DEMO/i.test(p.sku));
     return list;
   }, [products, search, filterCat, filterSub, filterStatus]);
@@ -240,7 +241,7 @@ export function AdminDashboard() {
               <input className="input md:col-span-2" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
               <select className="input" value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部分类</option>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select>
               <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoriesByCategory[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
-              <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="noimg">缺图片</option><option value="nostock">库存为0</option><option value="nosizestock">未分配尺码</option><option value="demo">测试商品</option></select>
+              <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="noimg">缺图片</option><option value="nostock">库存为0</option><option value="nosizestock">未分配尺码</option><option value="nodesc">缺描述</option><option value="demo">测试商品</option></select>
             </div>
             {/* Quick filter buttons */}
             <div className="mb-3 flex flex-wrap gap-1.5">
@@ -515,9 +516,11 @@ export function AdminDashboard() {
               <p className="mt-1 text-xs text-stone-400">将此 Feed 链接提交给 Skroutz，用于同步商品名称、价格、库存、图片和商品链接。</p>
               <div className="mt-4 flex items-center gap-2">
                 {feedStats.noImage === 0 && feedStats.noDesc === 0 && stats.noStock === 0 ? (
-                  <span className="inline-block rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">Feed 状态良好</span>
+                  <span className="inline-block rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">Feed 状态良好，可以提交给 Skroutz</span>
                 ) : (
-                  <span className="inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">Feed 有需要处理的问题</span>
+                  <span className="inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">
+                    Feed 有 {(() => { const issues: string[] = []; if (feedStats.noImage > 0) issues.push(`${feedStats.noImage} 个缺图片`); if (feedStats.noDesc > 0) issues.push(`${feedStats.noDesc} 个缺描述`); if (stats.noStock > 0) issues.push(`${stats.noStock} 个库存为0`); return issues.length; })()} 个问题：{(() => { const issues: string[] = []; if (feedStats.noImage > 0) issues.push(`${feedStats.noImage} 个缺图片`); if (feedStats.noDesc > 0) issues.push(`${feedStats.noDesc} 个缺描述`); if (stats.noStock > 0) issues.push(`${stats.noStock} 个库存为0`); return issues.join("，"); })()}
+                  </span>
                 )}
               </div>
             </div>
@@ -526,7 +529,7 @@ export function AdminDashboard() {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[{ label: "Feed 商品数", v: feedStats.total, color: "" }, { label: "缺图片", v: feedStats.noImage, color: feedStats.noImage > 0 ? "" : "" }, { label: "缺描述", v: feedStats.noDesc, color: "" }, { label: "库存为0", v: stats.noStock, color: "" }].map(s => (
                 <div key={s.label} className="rounded-xl border border-stone-100 bg-white p-5 text-center shadow-sm">
-                  <p className={`text-2xl font-black ${s.label === "缺图片" && s.v > 0 ? "text-amber-600" : s.label === "库存为0" && s.v > 0 ? "text-red-500" : "text-ink"}`}>{s.v}</p>
+                  <p className={`text-2xl font-black ${(s.label === "缺图片"||s.label==="缺描述") && s.v > 0 ? "text-amber-600" : s.label === "库存为0" && s.v > 0 ? "text-red-500" : "text-ink"}`}>{s.v}</p>
                   <p className="mt-1 text-xs font-bold text-stone-400">{s.label}</p>
                   {s.label === "缺图片" ? <p className="mt-1 text-[10px] text-stone-400">缺图片影响商品展示</p> : null}
                   {s.label === "缺描述" ? <p className="mt-1 text-[10px] text-stone-400">缺描述影响信息完整度</p> : null}
@@ -538,6 +541,7 @@ export function AdminDashboard() {
             {/* Feed link card */}
             <div className="rounded-xl border border-stone-100 bg-white p-5 shadow-sm">
               <h3 className="text-sm font-black text-ink">Feed 地址</h3>
+              <p className="mt-1 text-xs text-stone-400">将此链接复制到 Skroutz 商家后台，用于同步商品名称、价格、库存、图片和链接。</p>
               <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-stone-50 p-4">
                 <code className="flex-1 text-sm font-mono font-bold text-ink break-all">{typeof window !== "undefined" ? window.location.origin : ""}/feed.xml</code>
                 <button className="rounded-lg bg-ink px-4 py-2 text-xs font-bold text-white hover:bg-stone-800 transition" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/feed.xml`); toast("Feed 链接已复制"); }} type="button">复制链接</button>
@@ -550,7 +554,7 @@ export function AdminDashboard() {
               <h3 className="text-sm font-black text-ink">Feed 检查</h3>
               <p className="mt-1 text-xs text-stone-400">快速查看需要处理的商品，点击按钮跳转到商品列表并筛选。</p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {[{k:"noimg",l:"查看缺图片商品"},{k:"nosizestock",l:"查看未分尺码商品"},{k:"nostock",l:"查看库存为0商品"}].map(b => (
+                {[{k:"noimg",l:"查看缺图片商品"},{k:"nodesc",l:"查看缺描述商品"},{k:"nosizestock",l:"查看未分尺码商品"},{k:"nostock",l:"查看库存为0商品"}].map(b => (
                   <button key={b.k} className="rounded-lg border border-stone-200 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50 transition" onClick={() => { setFilterStatus(b.k); setTab("dashboard"); }} type="button">{b.l}</button>
                 ))}
               </div>
