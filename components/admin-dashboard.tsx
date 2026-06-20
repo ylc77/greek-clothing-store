@@ -62,8 +62,17 @@ function validatePreviewRow(row: CsvRow) {
   if (!Number.isFinite(vat)) errors.push("VAT 必须是数字");
   return errors;
 }
+function cleanImageUrls(raw: string, mainUrl: string): string {
+  const urls = raw.split(/[\r?\n,]+/).map(u => u.trim()).filter(u => u && u.length > 5 && u.startsWith("http"));
+  const main = mainUrl.trim();
+  // Dedup and remove main image URL from gallery
+  const seen = new Set<string>();
+  if (main) seen.add(main);
+  return urls.filter(u => { if (seen.has(u)) return false; seen.add(u); return true; }).join("\n");
+}
 function normalizeProduct(p: ProductFormData): ProductFormData {
-  return { ...p, sku: p.sku.trim(), name_cn: p.name_cn.trim(), name_gr: p.name_gr.trim(), name_en: p.name_en.trim(), description_cn: p.description_cn.trim(), description_gr: p.description_gr.trim(), description_en: p.description_en.trim(), subcategory: p.subcategory.trim(), price: Number(p.price), stock: Number(p.stock), sizes: p.sizes.trim(), image_url: p.image_url.trim(), image_urls: p.image_urls.split(/[\r?\n,]+/).map(u => u.trim()).filter(Boolean).join("\n"), brand: p.brand.trim(), barcode: p.barcode.trim(), vat: Number(p.vat), color: p.color.trim(), skroutz_url: p.skroutz_url.trim(), is_active: p.is_active };
+  const img = p.image_url.trim();
+  return { ...p, sku: p.sku.trim(), name_cn: p.name_cn.trim(), name_gr: p.name_gr.trim(), name_en: p.name_en.trim(), description_cn: p.description_cn.trim(), description_gr: p.description_gr.trim(), description_en: p.description_en.trim(), subcategory: p.subcategory.trim(), price: Number(p.price), stock: Number(p.stock), sizes: p.sizes.trim(), image_url: img, image_urls: cleanImageUrls(p.image_urls, img), brand: p.brand.trim(), barcode: p.barcode.trim(), vat: Number(p.vat), color: p.color.trim(), skroutz_url: p.skroutz_url.trim(), is_active: p.is_active };
 }
 function imageLines(v: string) { return v.split(/\r?\n/).map(s => s.trim()).filter(Boolean); }
 function imageOutputName(f: File) { return f.name.replace(/\.[^.]+$/, ".webp"); }
@@ -177,7 +186,7 @@ export function AdminDashboard() {
 
   /* ── Image upload ──────────────────────────────────────── */
   async function uploadImages(files: FileList | null, opts: ImageUploadOptions = {}) { setImageResults([]); if (!files || files.length === 0) return; if (opts.sku && !opts.mode) { toast("请选择上传类型。", "err"); return; } try { setLoading(true); const body = new FormData(); const optimized = await Promise.all(Array.from(files).map(compressImageForUpload)); optimized.forEach(f => body.append("images", f)); if (opts.sku) body.append("sku", opts.sku); if (opts.mode) body.append("mode", opts.mode); const r = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body }); const d = await readJson(r, "图片上传接口错误"); if (!r.ok) throw new Error(d.error || "图片上传失败"); setImageResults(d.results||[]); toast(`图片处理完成：成功 ${d.successCount}，失败 ${d.failureCount}`); syncFormAfterUpload(opts, d); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "图片上传失败", "err"); } finally { setLoading(false); } }
-  function syncFormAfterUpload(opts: ImageUploadOptions, d: Record<string, unknown>) { if (!editingId || form.sku !== opts.sku) return; const results = (d.results || []) as ApiResult[]; if (opts.mode === "main" && results.length > 0 && results[0].imageUrl) { setForm(c => ({ ...c, image_url: results[0].imageUrl! })); } else if (opts.mode === "gallery" && results.length > 0) { const newUrls = results.filter(r => r.ok && r.imageUrl).map(r => r.imageUrl!); if (newUrls.length > 0) { setForm(c => { const existing = imageLines(c.image_urls); const all = [...existing, ...newUrls]; return { ...c, image_urls: all.join("\n") }; }); } } }
+  function syncFormAfterUpload(opts: ImageUploadOptions, d: Record<string, unknown>) { if (!editingId || form.sku !== opts.sku) return; const results = (d.results || []) as ApiResult[]; if (opts.mode === "main" && results.length > 0 && results[0].imageUrl) { setForm(c => ({ ...c, image_url: results[0].imageUrl! })); } else if (opts.mode === "gallery" && results.length > 0) { const newUrls = results.filter(r => r.ok && r.imageUrl).map(r => r.imageUrl!); if (newUrls.length > 0) { setForm(c => { const existing = imageLines(c.image_urls); const seen = new Set([c.image_url.trim(), ...existing]); const toAdd = newUrls.filter(u => !seen.has(u)); return toAdd.length > 0 ? { ...c, image_urls: [...existing, ...toAdd].join("\n") } : c; }); } } }
   async function deleteImage(opts: ImageDeleteOptions) { const label = opts.kind === "main" ? "主图" : "这张多图"; if (!window.confirm(`确定删除${label}吗？`)) return; setLoading(true); try { const r = await fetch("/api/admin/images", { method: "DELETE", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify(opts) }); const d = await readJson(r, "删除图片接口错误"); if (!r.ok) throw new Error(d.error || "删除图片失败"); toast(`${label}已删除。`); await loadProducts(); if (editingId && form.sku === opts.sku) { setForm(c => { if (opts.kind === "main") return { ...c, image_url: "" }; const next = imageLines(c.image_urls).filter((_, i) => i !== opts.index); return { ...c, image_urls: next.join("\n") }; }); } } catch (er) { toast(er instanceof Error ? er.message : "删除图片失败", "err"); } finally { setLoading(false); } }
 
   /* ── Login gate ─────────────────────────────────────────── */
