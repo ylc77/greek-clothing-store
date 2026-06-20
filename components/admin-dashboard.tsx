@@ -92,7 +92,7 @@ export function AdminDashboard() {
 
   // Search / filter state
   const [search, setSearch] = useState(""); const [filterCat, setFilterCat] = useState(""); const [filterSub, setFilterSub] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all"); // all | active | inactive | noimg | nostock
+  const [filterStatus, setFilterStatus] = useState("all"); // all | active | inactive | noimg | nostock | demo
 
   const csvSummary = useMemo(() => {
     const valid = csvRows.filter(r => validatePreviewRow(r).length === 0).length;
@@ -116,6 +116,7 @@ export function AdminDashboard() {
     if (filterStatus === "inactive") list = list.filter(p => !p.is_active);
     if (filterStatus === "noimg") list = list.filter(p => !p.image_url);
     if (filterStatus === "nostock") list = list.filter(p => p.stock === 0);
+    if (filterStatus === "demo") list = list.filter(p => /TEST|DEMO/i.test(p.sku));
     return list;
   }, [products, search, filterCat, filterSub, filterStatus]);
 
@@ -223,29 +224,35 @@ export function AdminDashboard() {
               <input className="input md:col-span-2" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
               <select className="input" value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部分类</option>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select>
               <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoriesByCategory[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
-              <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="noimg">缺图片</option><option value="nostock">库存为0</option></select>
+              <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="noimg">缺图片</option><option value="nostock">库存为0</option><option value="demo">测试商品</option></select>
             </div>
 
             {/* Table */}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead><tr className="border-b border-stone-200 text-stone-500">
-                  <th className="py-3 pr-2 text-xs font-bold w-16">图片</th><th className="py-3 pr-2 text-xs font-bold">SKU</th><th className="py-3 pr-2 text-xs font-bold">商品名</th><th className="py-3 pr-2 text-xs font-bold">分类</th><th className="py-3 pr-2 text-xs font-bold">价格</th><th className="py-3 pr-2 text-xs font-bold">库存</th><th className="py-3 pr-2 text-xs font-bold">状态</th><th className="py-3 pr-2 text-xs font-bold w-28">操作</th>
+                  <th className="py-3 pr-2 text-[11px] font-bold w-14">图片</th><th className="py-3 pr-2 text-[11px] font-bold">SKU</th><th className="py-3 pr-2 text-[11px] font-bold">商品名</th><th className="py-3 pr-2 text-[11px] font-bold">分类</th><th className="py-3 pr-2 text-[11px] font-bold">价格</th><th className="py-3 pr-2 text-[11px] font-bold">库存</th><th className="py-3 pr-2 text-[11px] font-bold">状态</th><th className="py-3 pr-2 text-[11px] font-bold w-36">操作</th>
                 </tr></thead>
                 <tbody>
                   {filteredProducts.slice(0, 100).map(p => (
                     <tr className="border-b border-stone-50 hover:bg-stone-50/50" key={p.id}>
-                      <td className="py-2 pr-2">{p.image_url ? <img alt="" className="h-10 w-8 rounded object-cover" src={p.image_url} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} /> : <span className="text-[10px] text-stone-400">缺图</span>}</td>
-                      <td className="py-2 pr-2 font-mono text-xs font-bold text-ink">{p.sku}</td>
+                      <td className="py-2 pr-2">
+                        {p.image_url ? (
+                          <ImgThumb src={p.image_url} />
+                        ) : (
+                          <span className="inline-block rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-bold text-stone-400">缺图</span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-2 font-mono text-[11px] font-bold text-ink">{p.sku}</td>
                       <td className="py-2 pr-2"><p className="text-xs font-bold text-ink line-clamp-1">{p.name_cn || p.name_en || p.name_gr || "—"}</p><p className="text-[10px] text-stone-400 line-clamp-1">{p.name_en}</p></td>
-                      <td className="py-2 pr-2 text-xs text-stone-600">{p.category}/{p.subcategory}</td>
-                      <td className="py-2 pr-2 text-xs font-bold">€{Number(p.price).toFixed(2)}</td>
-                      <td className="py-2 pr-2 text-xs">{p.stock}</td>
-                      <td className="py-2 pr-2"><span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${p.is_active ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-500"}`}>{p.is_active ? "上架" : "下架"}</span></td>
+                      <td className="py-2 pr-2 text-[11px] text-stone-600">{p.category}/{p.subcategory}</td>
+                      <td className="py-2 pr-2 text-[11px] font-bold">€{Number(p.price).toFixed(2)}</td>
+                      <td className="py-2 pr-2 text-[11px]">{p.stock}</td>
+                      <td className="py-2 pr-2"><span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${p.is_active ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-500"}`}>{p.is_active ? "上架" : "下架"}</span></td>
                       <td className="py-2 pr-2"><div className="flex gap-1">
-                        <button className="rounded-md border border-stone-200 px-2 py-1 text-[10px] font-bold hover:bg-stone-100" onClick={() => startEdit(p)}>编辑</button>
-                        <button className="rounded-md border border-stone-200 px-2 py-1 text-[10px] font-bold hover:bg-stone-100" onClick={() => copyProduct(p)}>复制</button>
-                        <button className="rounded-md border border-red-100 px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-50" onClick={() => void deleteProduct(p)}>删除</button>
+                        <button className="rounded-md border border-stone-200 px-2.5 py-1.5 text-[11px] font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => startEdit(p)}>编辑</button>
+                        <button className="rounded-md border border-stone-200 px-2.5 py-1.5 text-[11px] font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => copyProduct(p)}>复制</button>
+                        <button className="rounded-md border border-red-100 px-2.5 py-1.5 text-[11px] font-bold whitespace-nowrap text-red-600 hover:bg-red-50" onClick={() => void deleteProduct(p)}>删除</button>
                       </div></td>
                     </tr>
                   ))}
@@ -393,6 +400,12 @@ function ImagePreview({ disabled, url, label, onDel }: { disabled: boolean; url:
       <div className="p-2"><p className="truncate text-xs font-bold text-stone-600" title={url}>{label}</p><button className="mt-1 rounded-md border border-red-200 px-3 py-1 text-xs font-bold text-red-700 disabled:opacity-50 hover:bg-red-50" disabled={disabled} onClick={onDel} type="button">删除</button></div>
     </div>
   );
+}
+
+function ImgThumb({ src }: { src: string }) {
+  const [ok, setOk] = useState(true);
+  if (!ok) return <span className="inline-block rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-bold text-stone-400">缺图</span>;
+  return <img alt="" className="h-11 w-9 rounded object-cover bg-stone-100" src={src} onError={() => setOk(false)} />;
 }
 
 function ResultTable({ results }: { results: ApiResult[] }) {
