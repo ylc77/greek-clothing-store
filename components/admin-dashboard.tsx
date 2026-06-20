@@ -25,7 +25,7 @@ const uploadImageWidth = 1200; const uploadImageHeight = 1500; const webpUploadQ
 const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_en: "", description_cn: "", description_gr: "", description_en: "", category: "men", subcategory: "tshirts", price: 0, stock: 0, sizes: "", image_url: "", image_urls: "", brand: "", barcode: "", vat: 24, color: "", skroutz_url: "", is_active: true };
 const csvFields = ["sku","name_cn","description_cn","name_en","description_en","name_gr","description_gr","category","subcategory","price","stock","sizes","size_stock","image_url","image_urls","brand","barcode","vat","color","skroutz_url","is_active"];
 const tabs: { key: Tab; label: string }[] = [
-  { key: "dashboard", label: "商品列表" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "skroutz", label: "Skroutz Feed" },
+  { key: "dashboard", label: "商品列表" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "批量图片上传" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
 
 /* ── Utilities ───────────────────────────────────────────── */
@@ -328,6 +328,37 @@ export function AdminDashboard() {
             {/* Image & links card */}
             <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-base font-black text-ink">图片与链接</h2>
+
+              {/* Inline upload — only when editing */}
+              {editingId ? (
+                <div className="mb-4 rounded-lg border border-stone-200 bg-stone-50 p-4">
+                  <h3 className="text-sm font-black text-ink">上传图片到当前商品</h3>
+                  <p className="mt-1 text-xs text-stone-500">直接上传主图或多图，自动写入商品字段。</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">
+                      上传主图
+                      <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" disabled={loading} onChange={e => { void uploadImages(e.target.files, { sku: form.sku, mode: "main" }); e.currentTarget.value = ""; }} type="file" />
+                    </label>
+                    <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">
+                      上传多图
+                      <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" disabled={loading} multiple onChange={e => { void uploadImages(e.target.files, { sku: form.sku, mode: "gallery" }); e.currentTarget.value = ""; }} type="file" />
+                    </label>
+                  </div>
+                  {/* Image previews */}
+                  <div className="mt-4 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+                    <div>
+                      <p className="mb-2 text-xs font-bold text-stone-600">主图</p>
+                      {form.image_url ? <ImagePreview disabled={loading} url={form.image_url} label="主图" onDel={() => void deleteImage({ sku: form.sku, kind: "main" })} /> : <div className="flex aspect-[4/5] items-center justify-center rounded-lg border border-dashed border-stone-300 bg-white text-xs text-stone-400">无主图</div>}
+                    </div>
+                    <div>
+                      <p className="mb-2 text-xs font-bold text-stone-600">多图</p>
+                      {imageLines(form.image_urls).length > 0 ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{imageLines(form.image_urls).map((u, i) => <ImagePreview key={`${u}-${i}`} disabled={loading} url={u} label={`多图 ${i + 1}`} onDel={() => void deleteImage({ sku: form.sku, kind: "gallery", index: i })} />)}</div> : <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-stone-300 bg-white text-xs text-stone-400">无多图</div>}
+                    </div>
+                  </div>
+                </div>
+              ) : <p className="mb-4 text-xs text-amber-700 bg-amber-50 rounded-lg p-3">请先保存商品，再上传图片。</p>}
+
+              {/* URL fields */}
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                 <Field label="主图 URL"><input className="input" value={form.image_url} onChange={e => updateField("image_url", e.target.value)} /></Field>
                 <Field label="Skroutz URL"><input className="input" placeholder="https://www.skroutz.gr/..." value={form.skroutz_url} onChange={e => updateField("skroutz_url", e.target.value)} /></Field>
@@ -337,17 +368,6 @@ export function AdminDashboard() {
                 <Field label="颜色"><input className="input" value={form.color} onChange={e => updateField("color", e.target.value)} /></Field>
               </div>
               <div className="mt-3"><Field label="多图 URL（一行一个，可用逗号分隔）"><textarea className="input min-h-24" value={form.image_urls} onChange={e => updateField("image_urls", e.target.value)} /></Field></div>
-
-              {editingId ? (
-                <div className="mt-4 rounded-lg border border-stone-200 bg-stone-50 p-4">
-                  <h3 className="text-sm font-black text-ink">当前图片</h3>
-                  <p className="mt-1 text-xs text-stone-500">删除会同步清理 Supabase Storage</p>
-                  <div className="mt-4 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
-                    <div><p className="mb-2 text-xs font-bold text-stone-600">主图</p>{form.image_url ? <ImagePreview disabled={loading} url={form.image_url} label="主图" onDel={() => void deleteImage({ sku: form.sku, kind: "main" })} /> : <div className="flex aspect-[4/5] items-center justify-center rounded-lg border border-dashed border-stone-300 bg-white text-xs text-stone-400">无主图</div>}</div>
-                    <div><p className="mb-2 text-xs font-bold text-stone-600">多图</p>{imageLines(form.image_urls).length > 0 ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{imageLines(form.image_urls).map((u, i) => <ImagePreview key={`${u}-${i}`} disabled={loading} url={u} label={`多图 ${i + 1}`} onDel={() => void deleteImage({ sku: form.sku, kind: "gallery", index: i })} />)}</div> : <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-stone-300 bg-white text-xs text-stone-400">无多图</div>}</div>
-                  </div>
-                </div>
-              ) : null}
             </section>
 
             <button className="rounded-lg bg-ink px-8 py-3 text-sm font-bold text-white hover:bg-stone-800 self-start" disabled={loading}>{editingId ? "保存修改" : "新增商品"}</button>
@@ -375,21 +395,26 @@ export function AdminDashboard() {
           </section>
         ) : null}
 
-        {/* ── TAB: Images ─────────────────────────────────── */}
+        {/* ── TAB: Bulk Images ──────────────────────────────── */}
         {tab === "images" ? (
           <section className="flex flex-col gap-5">
             <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
               <h2 className="mb-1 text-lg font-black text-ink">选择商品上传</h2>
-              <p className="mb-3 text-xs text-stone-500">不用改文件名，选商品即可上传主图或多图。</p>
+              <p className="mb-3 text-xs text-stone-500">用分类和搜索筛选商品，再上传主图或多图。</p>
+              <div className="mb-3 grid gap-2 md:grid-cols-4">
+                <input className="input" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
+                <select className="input" value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部分类</option>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select>
+                <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoriesByCategory[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
+              </div>
               <div className="grid gap-3 md:grid-cols-[minmax(200px,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
-                <label className="block"><span className="text-sm font-bold text-ink">商品</span><select className="input mt-2" value={selectedImageSku} onChange={e => setSelectedImageSku(e.target.value)}><option value="">选择商品 SKU</option>{products.map(p => <option key={p.id} value={p.sku}>{p.sku} - {p.name_cn || p.name_gr || p.name_en || "未命名"}</option>)}</select></label>
+                <label className="block"><span className="text-sm font-bold text-ink">商品</span><select className="input mt-2" value={selectedImageSku} onChange={e => setSelectedImageSku(e.target.value)}><option value="">选择商品 SKU</option>{filteredProducts.map(p => <option key={p.id} value={p.sku}>{p.sku} - {p.name_cn || p.name_gr || p.name_en || "未命名"} - {p.category}/{p.subcategory}</option>)}</select></label>
                 <label className="block"><span className="text-sm font-bold text-ink">上传主图</span><input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input mt-2" disabled={!selectedImageSku || loading} onChange={e => { void uploadImages(e.target.files, { sku: selectedImageSku, mode: "main" }); e.currentTarget.value = ""; }} type="file" /></label>
                 <label className="block"><span className="text-sm font-bold text-ink">上传多图</span><input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input mt-2" disabled={!selectedImageSku || loading} multiple onChange={e => { void uploadImages(e.target.files, { sku: selectedImageSku, mode: "gallery" }); e.currentTarget.value = ""; }} type="file" /></label>
               </div>
             </div>
             <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
               <h2 className="mb-1 text-lg font-black text-ink">按文件名批量上传</h2>
-              <p className="mb-3 text-xs text-stone-500">主图：SKU.jpg；多图：SKU-1.jpg、SKU-2.jpg</p>
+              <p className="mb-3 text-xs text-stone-500">主图文件名：SKU.jpg / SKU.png / SKU.webp。多图文件名：SKU-1.jpg、SKU-2.jpg。上传后自动匹配 SKU 并写入商品图片字段。</p>
               <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input" disabled={loading} multiple onChange={e => { void uploadImages(e.target.files); e.currentTarget.value = ""; }} type="file" />
             </div>
             {imageResults.length > 0 ? <ResultTable results={imageResults} /> : null}
