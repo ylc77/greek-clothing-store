@@ -15,6 +15,9 @@ export async function GET() {
   }
 
   const settings = await getBusinessSettings();
+  if (!settings.enable_skroutz) {
+    return new Response("Skroutz feed is disabled in store settings.", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  }
   const brandName = settings.business_name || "Fashion Boutique";
   const products = await getFeedProducts();
   const xml = buildSkroutzFeed(products, brandName);

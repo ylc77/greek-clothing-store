@@ -2,6 +2,7 @@ import {
   isProductCategory,
   isProductSubcategory,
   subcategoriesByCategory,
+  subcategoryList,
   type Product,
   type ProductFormData
 } from "./types";
@@ -137,7 +138,7 @@ export function validateProductPayload(payload: AdminProductPayload) {
           description_gr: stringValue(payload.description_gr),
           description_en: stringValue(payload.description_en),
           category,
-          subcategory: subcategory || subcategoriesByCategory[category][0],
+          subcategory: subcategory || subcategoryList[category][0],
           price,
           stock: Math.trunc(stock),
           sizes: stringValue(payload.sizes),
@@ -167,7 +168,7 @@ export function productForForm(product: Product): ProductFormData & { id: string
     description_gr: product.description_gr || "",
     description_en: product.description_en || "",
     category: product.category,
-    subcategory: product.subcategory || subcategoriesByCategory[product.category][0],
+    subcategory: product.subcategory || subcategoryList[product.category][0],
     price: Number(product.price),
     stock: Number(product.stock),
     sizes: product.sizes || "",

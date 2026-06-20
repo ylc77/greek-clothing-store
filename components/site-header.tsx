@@ -2,7 +2,7 @@ import Link from "next/link";
 import { LanguageSelector } from "@/components/language-selector";
 import { LogoImg } from "@/components/logo-img";
 import { categoryLabels, subcategoryLabels, text, withLanguage, type Language } from "@/lib/i18n";
-import { categories, subcategoriesByCategory, type ProductCategory } from "@/lib/types";
+import { categories, subcategoriesByCategory, subcategoryList, type ProductCategory } from "@/lib/types";
 import type { BusinessSettings } from "@/lib/settings";
 
 function categoryHref(category: ProductCategory, language: Language, subcategory?: string) {
@@ -57,7 +57,7 @@ export function SiteHeader({
                     {text[language].all} {categoryLabels[cat.slug][language]}
                   </Link>
                   <div className="my-1 border-t border-stone-100" />
-                  {subcategoriesByCategory[cat.slug].map((sub) => (
+                  {subcategoryList[cat.slug].map((sub) => (
                     <Link
                       className="block rounded-md px-3 py-2 text-sm text-stone-600 transition hover:bg-stone-100 hover:text-ink"
                       href={categoryHref(cat.slug, language, sub)}

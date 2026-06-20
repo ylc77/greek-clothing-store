@@ -1,12 +1,4 @@
-export type ProductCategory =
-  | "men"
-  | "women"
-  | "shoes"
-  | "bags"
-  | "luggage"
-  | "hats"
-  | "jewelry"
-  | "other";
+export type ProductCategory = string; // dynamic: categories managed via DB
 
 export type Category = {
   slug: ProductCategory;
@@ -32,16 +24,24 @@ export const subcategoriesByCategory = {
   hats: ["caps", "beanies"],
   jewelry: ["necklaces", "bracelets", "earrings", "rings"],
   other: ["accessories"]
-} as const satisfies Record<ProductCategory, readonly string[]>;
+} as const satisfies Record<string, readonly string[]>;
 
-export type ProductSubcategory = (typeof subcategoriesByCategory)[ProductCategory][number];
+// Mutable copy for dynamic category access (DB categories)
+export const subcategoryList: Record<string, string[]> = {};
+for (const [k, v] of Object.entries(subcategoriesByCategory)) {
+  subcategoryList[k] = [...v];
+}
+
+export type ProductSubcategory = string; // dynamic: subcategories managed via DB
 
 export function isProductCategory(value: string): value is ProductCategory {
-  return categories.some((category) => category.slug === value);
+  // Accept any non-empty string — categories come from DB now
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 export function isProductSubcategory(category: ProductCategory, value: string): value is ProductSubcategory {
-  return (subcategoriesByCategory[category] as readonly string[]).includes(value);
+  // Accept any non-empty string — subcategories come from DB now
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 export type Product = {

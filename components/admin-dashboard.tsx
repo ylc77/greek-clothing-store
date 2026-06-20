@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   categories,
   isProductCategory,
   isProductSubcategory,
   subcategoriesByCategory,
+  subcategoryList,
   type ProductCategory,
   type ProductFormData,
 } from "@/lib/types";
@@ -96,6 +97,7 @@ export function AdminDashboard() {
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [form, setForm] = useState<ProductFormData>(emptyProduct); const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false); const [translating, setTranslating] = useState(false);
+  const editingIdRef = useRef<string | null>(null); editingIdRef.current = editingId;
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]); const [csvResults, setCsvResults] = useState<ApiResult[]>([]);
   const [imageResults, setImageResults] = useState<ApiResult[]>([]); const [selectedImageSku, setSelectedImageSku] = useState("");
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -159,7 +161,7 @@ export function AdminDashboard() {
   useEffect(() => { if (activePassword) void loadProducts(); }, [activePassword]);
 
   function skuPrefix(cat: string, sub: string) { return `${cat || "x"}-${sub || "x"}-`; }
-  function updateField<K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) { setForm(c => { if (key === "category") { const nextCat = value as ProductCategory; const nextSub = subcategoriesByCategory[nextCat][0]; const prefix = skuPrefix(nextCat, nextSub); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, category: nextCat, subcategory: nextSub, sku: skuEmpty ? prefix : c.sku }; } if (key === "subcategory") { const prefix = skuPrefix(c.category, value as string); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, subcategory: value as string, sku: skuEmpty ? prefix : c.sku }; } return { ...c, [key]: value }; }); }
+  function updateField<K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) { setForm(c => { if (key === "category") { const nextCat = value as ProductCategory; const nextSub = subcategoryList[nextCat]?.[0] || ""; const prefix = skuPrefix(nextCat, nextSub); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, category: nextCat, subcategory: nextSub, sku: skuEmpty ? prefix : c.sku }; } if (key === "subcategory") { const prefix = skuPrefix(c.category, value as string); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, subcategory: value as string, sku: skuEmpty ? prefix : c.sku }; } return { ...c, [key]: value }; }); }
   function generateNextSku() { const prefix = skuPrefix(form.category, form.subcategory); const existing = products.filter(p => p.sku.startsWith(prefix)); let max = 0; for (const p of existing) { const rest = p.sku.slice(prefix.length); const n = parseInt(rest, 10); if (!isNaN(n) && n > max) max = n; } const next = String(max + 1).padStart(3, "0"); updateField("sku", prefix + next); toast(`SKU 已生成: ${prefix + next}`); }
   function loadSizeStock(p: AdminProduct) { const ss = (p as Record<string,unknown>).size_stock; if (ss && typeof ss === 'object' && !Array.isArray(ss)) { const rec: Record<string,number> = {}; for (const [k,v] of Object.entries(ss as Record<string,unknown>)) { if (typeof v === 'number') rec[k.toUpperCase()] = v; } setSizeStock(rec); } else { setSizeStock({}); } }
   function startEdit(p: AdminProduct) { setEditingId(p.id); setForm({ sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, barcode:p.barcode, vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active }); loadSizeStock(p); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
@@ -189,8 +191,8 @@ export function AdminDashboard() {
 
   /* ── Image upload ──────────────────────────────────────── */
   async function uploadImages(files: FileList | null, opts: ImageUploadOptions = {}) { setImageResults([]); if (!files || files.length === 0) return; if (opts.sku && !opts.mode) { toast("请选择上传类型。", "err"); return; } try { setLoading(true); const body = new FormData(); const optimized = await Promise.all(Array.from(files).map(compressImageForUpload)); optimized.forEach(f => body.append("images", f)); if (opts.sku) body.append("sku", opts.sku); if (opts.mode) body.append("mode", opts.mode); const r = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body }); const d = await readJson(r, "图片上传接口错误"); if (!r.ok) throw new Error(d.error || "图片上传失败"); setImageResults(d.results||[]); toast(`图片处理完成：成功 ${d.successCount}，失败 ${d.failureCount}`); syncFormAfterUpload(opts, d); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "图片上传失败", "err"); } finally { setLoading(false); } }
-  function syncFormAfterUpload(opts: ImageUploadOptions, d: Record<string, unknown>) { if (!editingId || form.sku !== opts.sku) return; const results = (d.results || []) as ApiResult[]; if (opts.mode === "main" && results.length > 0 && results[0].imageUrl) { setForm(c => ({ ...c, image_url: results[0].imageUrl! })); } else if (opts.mode === "gallery" && results.length > 0) { const newUrls = results.filter(r => r.ok && r.imageUrl).map(r => r.imageUrl!); if (newUrls.length > 0) { setForm(c => { const existing = imageLines(c.image_urls); const seen = new Set([c.image_url.trim(), ...existing]); const toAdd = newUrls.filter(u => !seen.has(u)); return toAdd.length > 0 ? { ...c, image_urls: [...existing, ...toAdd].join("\n") } : c; }); } } }
-  async function deleteImage(opts: ImageDeleteOptions) { const label = opts.kind === "main" ? "主图" : "这张多图"; if (!window.confirm(`确定删除${label}吗？`)) return; setLoading(true); try { const r = await fetch("/api/admin/images", { method: "DELETE", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify(opts) }); const d = await readJson(r, "删除图片接口错误"); if (!r.ok) throw new Error(d.error || "删除图片失败"); toast(`${label}已删除。`); await loadProducts(); if (editingId && form.sku === opts.sku) { setForm(c => { if (opts.kind === "main") return { ...c, image_url: "" }; const next = imageLines(c.image_urls).filter((_, i) => i !== opts.index); return { ...c, image_urls: next.join("\n") }; }); } } catch (er) { toast(er instanceof Error ? er.message : "删除图片失败", "err"); } finally { setLoading(false); } }
+  function syncFormAfterUpload(opts: ImageUploadOptions, d: Record<string, unknown>) { if (!editingIdRef.current || form.sku !== opts.sku) return; const results = (d.results || []) as ApiResult[]; if (opts.mode === "main" && results.length > 0 && results[0].imageUrl) { setForm(c => ({ ...c, image_url: results[0].imageUrl! })); } else if (opts.mode === "gallery" && results.length > 0) { const newUrls = results.filter(r => r.ok && r.imageUrl).map(r => r.imageUrl!); if (newUrls.length > 0) { setForm(c => { const existing = imageLines(c.image_urls); const seen = new Set([c.image_url.trim(), ...existing]); const toAdd = newUrls.filter(u => !seen.has(u)); return toAdd.length > 0 ? { ...c, image_urls: [...existing, ...toAdd].join("\n") } : c; }); } } }
+  async function deleteImage(opts: ImageDeleteOptions) { const label = opts.kind === "main" ? "主图" : "这张多图"; if (!window.confirm(`确定删除${label}吗？`)) return; setLoading(true); try { const r = await fetch("/api/admin/images", { method: "DELETE", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify(opts) }); const d = await readJson(r, "删除图片接口错误"); if (!r.ok) throw new Error(d.error || "删除图片失败"); toast(`${label}已删除。`); await loadProducts(); if (editingIdRef.current && form.sku === opts.sku) { setForm(c => { if (opts.kind === "main") return { ...c, image_url: "" }; const next = imageLines(c.image_urls).filter((_, i) => i !== opts.index); return { ...c, image_urls: next.join("\n") }; }); } } catch (er) { toast(er instanceof Error ? er.message : "删除图片失败", "err"); } finally { setLoading(false); } }
 
   /* ── Login gate ─────────────────────────────────────────── */
   if (!activePassword) {
@@ -253,7 +255,7 @@ export function AdminDashboard() {
             <div className="mb-4 grid gap-3 md:grid-cols-5">
               <input className="input md:col-span-2" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
               <select className="input" value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部分类</option>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select>
-              <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoriesByCategory[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
+              <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoryList[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
               <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="noimg">缺图片</option><option value="nostock">库存为0</option><option value="nosizestock">未分配尺码</option><option value="nodesc">缺描述</option><option value="demo">测试商品</option></select>
             </div>
             {/* Quick filter buttons */}
@@ -316,7 +318,7 @@ export function AdminDashboard() {
                   <p className="mt-1 text-[10px] text-stone-400">切换分类自动生成前缀: {skuPrefix(form.category, form.subcategory)}001</p>
                 </Field>
                 <Field label="分类"><select className="input" value={form.category} onChange={e => updateField("category", e.target.value as ProductCategory)}>{(dbCats.length > 0 ? dbCats : categories.map(c => ({slug:c.slug}))).map((c:Record<string,unknown>) => <option key={String(c.slug)} value={String(c.slug)}>{String(c.slug)}</option>)}</select></Field>
-                <Field label="二级分类"><select className="input" value={form.subcategory} onChange={e => updateField("subcategory", e.target.value)}>{(() => { if (dbSubs.length > 0) { const cat = dbCats.find(x => String(x.slug) === form.category); const list = cat ? dbSubs.filter(s => String(s.category_id) === String(cat.id)) : []; return list.map((s: Record<string, unknown>) => <option key={String(s.slug)} value={String(s.slug)}>{String(s.slug)}</option>); } if (form.category in subcategoriesByCategory) { return subcategoriesByCategory[form.category as ProductCategory].map(s => <option key={s} value={s}>{s}</option>); } return null; })()}</select></Field>
+                <Field label="二级分类"><select className="input" value={form.subcategory} onChange={e => updateField("subcategory", e.target.value)}>{(() => { if (dbSubs.length > 0) { const cat = dbCats.find(x => String(x.slug) === form.category); const list = cat ? dbSubs.filter(s => String(s.category_id) === String(cat.id)) : []; return list.map((s: Record<string, unknown>) => <option key={String(s.slug)} value={String(s.slug)}>{String(s.slug)}</option>); } if (form.category in subcategoryList) { return subcategoryList[form.category].map(s => <option key={s} value={s}>{s}</option>); } return null; })()}</select></Field>
                 <Field label="价格"><input className="input" min="0" step="0.01" type="number" value={form.price} onChange={e => updateField("price", Number(e.target.value))} /></Field>
                 <Field label="库存">
                   {Object.keys(sizeStock).length > 0 ? (
@@ -503,7 +505,7 @@ export function AdminDashboard() {
               <div className="mb-3 grid gap-2 md:grid-cols-4">
                 <input className="input" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
                 <select className="input" value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部分类</option>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select>
-                <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoriesByCategory[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
+                <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoryList[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
               </div>
               <div className="grid gap-3 md:grid-cols-[minmax(200px,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
                 <label className="block"><span className="text-sm font-bold text-ink">商品</span><select className="input mt-2" value={selectedImageSku} onChange={e => setSelectedImageSku(e.target.value)}><option value="">选择商品 SKU</option>{filteredProducts.map(p => <option key={p.id} value={p.sku}>{p.sku} - {p.name_cn || p.name_gr || p.name_en || "未命名"} - {p.category}/{p.subcategory}</option>)}</select></label>
@@ -627,6 +629,7 @@ function CategoriesManager({ activePassword, toast }: { activePassword: string; 
   function updateSub(idx: number, key: string, val: unknown) { setSubs(prev => { const n = [...prev]; n[idx] = { ...n[idx], [key]: val }; return n; }); }
   function addCat() { const newCat = { id: "", slug: "", name_cn: "", name_en: "", name_gr: "", image_url: "", sort_order: cats.length + 1, is_active: true }; setCats(prev => [...prev, newCat as Record<string, unknown>]); }
   function addSub(catId: string) { const newSub = { id: "", category_id: catId, slug: "", name_cn: "", name_en: "", name_gr: "", sort_order: subs.filter(s => s.category_id === catId).length + 1, is_active: true }; setSubs(prev => [...prev, newSub as Record<string, unknown>]); }
+  function removeSub(idx: number) { const s = subs[idx]; const id = String(s.id||""); const slug = String(s.slug||""); if (!window.confirm(`删除二级分类 ${slug}?`)) return; setSubs(prev => prev.filter(x => String(x.id||"") !== id || String(x.slug||"") !== slug)); }
   function removeCat(idx: number) { const c = cats[idx]; const slug = String(c.slug||""); const id = String(c.id||""); if (slug && !window.confirm(`删除分类 ${slug}?`)) return; setCats(prev => prev.filter(x => String(x.id||"") !== id || String(x.slug||"") !== slug)); }
 
   async function save() { setLoading(true); try { await fetch("/api/admin/categories", { method: "PUT", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ categories: cats, subcategories: subs }) }); toast("分类已保存"); load(); } catch { toast("保存失败", "err"); } finally { setLoading(false); } }
@@ -671,7 +674,7 @@ function CategoriesManager({ activePassword, toast }: { activePassword: string; 
             </div>
             {isOpen && catSubs.length > 0 ? (
               <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-                <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-1.5 px-2 text-[11px] font-bold">slug</th><th className="py-1.5 px-2 text-[11px] font-bold">中文</th><th className="py-1.5 px-2 text-[11px] font-bold">English</th><th className="py-1.5 px-2 text-[11px] font-bold">Ελληνικά</th><th className="py-1.5 px-2 text-[11px] font-bold w-12">排序</th><th className="py-1.5 px-2 text-[11px] font-bold w-10">启用</th></tr></thead>
+                <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-1.5 px-2 text-[11px] font-bold">slug</th><th className="py-1.5 px-2 text-[11px] font-bold">中文</th><th className="py-1.5 px-2 text-[11px] font-bold">English</th><th className="py-1.5 px-2 text-[11px] font-bold">Ελληνικά</th><th className="py-1.5 px-2 text-[11px] font-bold w-12">排序</th><th className="py-1.5 px-2 text-[11px] font-bold w-10">启用</th><th className="py-1.5 px-2 text-[11px] font-bold w-10">删除</th></tr></thead>
                 <tbody>
                   {catSubs.map((s, si) => { const gi = subs.findIndex(x => x === s); return (
                     <tr key={gi} className="border-t border-stone-50">
@@ -681,6 +684,7 @@ function CategoriesManager({ activePassword, toast }: { activePassword: string; 
                       <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-[11px]" value={String(s.name_gr||"")} onChange={e => updateSub(gi, "name_gr", e.target.value)} /></td>
                       <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-[11px] text-center" type="number" value={Number(s.sort_order||0)} onChange={e => updateSub(gi, "sort_order", parseInt(e.target.value)||0)} /></td>
                       <td className="py-1 px-2 text-center"><input type="checkbox" checked={s.is_active !== false} onChange={e => updateSub(gi, "is_active", e.target.checked)} /></td>
+                      <td className="py-1 px-2 text-center"><button className="text-[11px] font-bold text-red-400 hover:text-red-600" onClick={() => removeSub(gi)} type="button">×</button></td>
                     </tr>
                   );})}
                 </tbody>
