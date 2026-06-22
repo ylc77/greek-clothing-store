@@ -89,7 +89,7 @@ export async function getFeedProducts(): Promise<Product[]> {
   const { data } = await supabase
     .from("products")
     .select("*")
-    .eq("is_active", true)
+    .neq("is_active", false)
     .gte("stock", 0)
     .order("created_at", { ascending: false });
   const products = (data || []) as Product[];

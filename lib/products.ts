@@ -33,7 +33,7 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
   const { data, error } = await supabase
     .from("products")
     .select("*")
-    .eq("is_active", true)
+    .neq("is_active", false)
     .gte("stock", 0)
     .order("created_at", { ascending: false })
     .limit(limit * 2); // fetch extra to account for test product filtering
@@ -76,7 +76,7 @@ export async function getProductsByCategory(
     .from("products")
     .select("*")
     .eq("category", category)
-    .eq("is_active", true)
+    .neq("is_active", false)
     .gte("stock", 0)
     .order("created_at", { ascending: false })
     .limit(200);
@@ -129,7 +129,7 @@ export async function getCategoryImages(): Promise<Record<string, string>> {
   const { data } = await supabase
     .from("products")
     .select("category, image_url")
-    .eq("is_active", true)
+    .neq("is_active", false)
     .gte("stock", 0)
     .not("image_url", "is", null)
     .neq("image_url", "")
