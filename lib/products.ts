@@ -75,14 +75,14 @@ export async function getProductsByCategory(
   let query = supabase
     .from("products")
     .select("*")
-    .eq("category", category)
+    .ilike("category", category)
     .neq("is_active", false)
     .gte("stock", 0)
     .order("created_at", { ascending: false })
     .limit(200);
 
   if (subcategory && isProductSubcategory(category, subcategory)) {
-    query = query.eq("subcategory", subcategory);
+    query = query.ilike("subcategory", subcategory);
   }
 
   const { data, error } = await query;
