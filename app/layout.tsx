@@ -1,3 +1,4 @@
+import { ChatLauncher } from "@/components/chat-launcher";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
@@ -34,7 +35,10 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <ChatLauncher />
+      </body>
     </html>
   );
 }

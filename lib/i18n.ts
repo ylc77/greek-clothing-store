@@ -169,7 +169,11 @@ export const text = {
     inStockLabel: "Σε απόθεμα",
     outOfStockLabel: "Εκτός αποθέματος",
     brand: "Μάρκα",
-    ean: "EAN"
+    ean: "EAN",
+    aiAssistant: "AI Βοηθός",
+    aiPlaceholder: "Ρωτήστε με για προϊόντα, μεγέθη...",
+    aiThinking: "Σκέφτομαι...",
+    aiGreeting: "Γεια σας! Είμαι ο βοηθός αγορών. Μπορώ να σας βοηθήσω να βρείτε προϊόντα ή να προτείνω μεγέθη."
   },
   en: {
     eyebrow: "Athens boutique",
@@ -254,6 +258,10 @@ export const text = {
     inStockLabel: "In stock",
     outOfStockLabel: "Out of stock",
     brand: "Brand",
-    ean: "EAN"
+    ean: "EAN",
+    aiAssistant: "AI Assistant",
+    aiPlaceholder: "Ask about products, sizes...",
+    aiThinking: "Thinking...",
+    aiGreeting: "Hi! I'm your shopping assistant. I can help you find products or recommend sizes."
   }
 };
