@@ -101,4 +101,9 @@ export type ProductFormData = {
   color: string;
   skroutz_url: string;
   is_active: boolean;
+  fit_type: string;
+  material: string;
+  ai_keywords: string;
+  style_tags: string;
+  size_chart: string;
 };

@@ -38,12 +38,20 @@ export type AdminProductPayload = {
   category_path_en?: unknown;
   category_path_gr?: unknown;
   is_active?: unknown;
+  fit_type?: unknown;
+  ai_keywords?: unknown;
+  style_tags?: unknown;
+  size_chart?: unknown;
 };
 
-export type ProductMutation = Omit<ProductFormData, "category" | "image_urls"> & {
+export type ProductMutation = Omit<ProductFormData, "category" | "image_urls" | "ai_keywords" | "style_tags" | "size_chart" | "fit_type"> & {
   category: Product["category"];
   image_urls: string[];
   size_stock?: Record<string, number>;
+  ai_keywords?: string[];
+  style_tags?: string[];
+  size_chart?: Record<string, unknown>;
+  fit_type?: string;
 };
 
 function stringValue(value: unknown) {
@@ -62,6 +70,17 @@ function numberValue(value: unknown) {
   return NaN;
 }
 
+function parseStringArray(value: unknown): string[] | undefined {
+  if (Array.isArray(value)) { const arr = value.filter((v): v is string => typeof v === "string" && v.trim().length > 0); return arr.length > 0 ? arr : undefined; }
+  if (typeof value === "string" && value.trim()) { const arr = value.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); return arr.length > 0 ? arr : undefined; }
+  return undefined;
+}
+function parseSizeChart(value: unknown): Record<string, unknown> | undefined {
+  if (!value) return undefined;
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value === "string" && value.trim()) { try { return JSON.parse(value.trim()); } catch { return undefined; } }
+  return undefined;
+}
 function parseSizeStock(value: unknown): Record<string, number> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const rec: Record<string, number> = {};
@@ -151,6 +170,11 @@ export function validateProductPayload(payload: AdminProductPayload) {
           skroutz_url: stringValue(payload.skroutz_url),
           is_active: payload.is_active === false ? false : true,
           size_stock: parseSizeStock(payload.size_stock),
+          fit_type: stringValue(payload.fit_type || "regular"),
+          material: stringValue(payload.material),
+          ai_keywords: parseStringArray(payload.ai_keywords),
+          style_tags: parseStringArray(payload.style_tags),
+          size_chart: parseSizeChart(payload.size_chart),
         }
       : null;
 
@@ -181,5 +205,10 @@ export function productForForm(product: Product): ProductFormData & { id: string
     skroutz_url: product.skroutz_url || "",
     is_active: product.is_active !== false,
     size_stock: (product as Record<string, unknown>).size_stock as Record<string, number> | null | undefined,
+    fit_type: String((product as Record<string, unknown>).fit_type || "regular"),
+    material: product.material || "",
+    ai_keywords: Array.isArray((product as Record<string, unknown>).ai_keywords) ? ((product as Record<string, unknown>).ai_keywords as string[]).join(", ") : String((product as Record<string, unknown>).ai_keywords || ""),
+    style_tags: Array.isArray((product as Record<string, unknown>).style_tags) ? ((product as Record<string, unknown>).style_tags as string[]).join(", ") : String((product as Record<string, unknown>).style_tags || ""),
+    size_chart: typeof (product as Record<string, unknown>).size_chart === "object" ? JSON.stringify((product as Record<string, unknown>).size_chart) : String((product as Record<string, unknown>).size_chart || ""),
   };
 }
