@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SafeImage } from "@/components/safe-image";
 import { text, type Language } from "@/lib/i18n";
 
 type ProductImageGalleryProps = {
@@ -34,7 +35,7 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
   return (
     <div className="grid gap-3">
       <div className="relative overflow-hidden rounded-md border border-stone-200 bg-white">
-        <img alt={alt} className="aspect-[4/5] w-full object-cover" src={images[activeIndex]} />
+        <SafeImage alt={alt} className="aspect-[4/5] w-full object-cover" src={images[activeIndex]} />
 
         {hasMultipleImages ? (
           <>
@@ -73,7 +74,7 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
               onClick={() => setActiveIndex(index)}
               type="button"
             >
-              <img alt={`${alt} ${index + 1}`} className="h-full w-full object-cover" src={imageUrl} />
+              <SafeImage alt={`${alt} ${index + 1}`} className="h-full w-full object-cover" src={imageUrl} />
             </button>
           ))}
         </div>

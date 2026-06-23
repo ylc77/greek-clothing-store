@@ -131,7 +131,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                     {/* gradient overlay for text readability */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
                     <p className="absolute bottom-0 left-0 right-0 p-4 text-base font-bold tracking-wide text-white sm:text-lg">
-                      {categoryLabels[cat.slug][language]}
+                      {categoryLabels[cat.slug]?.[language] || cat.slug}
                     </p>
                   </div>
                 </Link>

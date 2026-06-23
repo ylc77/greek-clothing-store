@@ -63,7 +63,7 @@ export function SiteHeader({
                       href={categoryHref(cat.slug, language, sub)}
                       key={sub}
                     >
-                      {subcategoryLabels[sub][language]}
+                      {subcategoryLabels[sub]?.[language] || sub}
                     </Link>
                   ))}
                 </div>

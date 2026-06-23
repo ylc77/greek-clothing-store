@@ -69,7 +69,7 @@ export async function CategoryPage({
           >
             {t.all}
           </Link>
-          {subcategoryList[category].map((subcategory) => (
+          {(subcategoryList[category] || []).map((subcategory) => (
             <Link
               className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black transition ${
                 activeSubcategory === subcategory
