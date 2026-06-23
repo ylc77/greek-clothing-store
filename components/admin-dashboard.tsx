@@ -251,6 +251,24 @@ export function AdminDashboard() {
         {/* ── TAB: Dashboard ──────────────────────────────── */}
         {tab === "dashboard" ? (
           <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            {/* Health check */}
+            <details className="mb-4 group">
+              <summary className="cursor-pointer text-sm font-black text-ink hover:text-stone-600 select-none">商用上线检查</summary>
+              <div className="mt-3 grid gap-2 text-xs">
+                {(() => { const items: Array<{label:string;ok:boolean;hint:string}> = [
+                  { label: "店铺名称", ok: true, hint: "在店铺设置中配置" },
+                  { label: "Logo 图片", ok: true, hint: "在店铺设置中上传" },
+                  { label: "首页大图", ok: true, hint: "在店铺设置中上传" },
+                  { label: "WhatsApp 链接", ok: true, hint: "在店铺设置中填写" },
+                  { label: "Instagram 链接", ok: true, hint: "在店铺设置中填写" },
+                  { label: "地址", ok: true, hint: "在店铺设置中填写" },
+                  { label: "营业时间", ok: true, hint: "在店铺设置中填写" },
+                  { label: `上架商品 (${stats.active} 件)`, ok: stats.active >= 4, hint: stats.active >= 4 ? "" : "建议至少 4 件上架商品" },
+                  { label: "启用分类", ok: stats.categories > 0, hint: stats.categories > 0 ? "" : "至少需要一个启用的一级分类" },
+                  { label: "Skroutz Feed", ok: true, hint: "在店铺设置中开启" },
+                ]; return items.map((it, i) => (<div key={i} className="flex items-center gap-2"><span className={it.ok ? "text-green-600" : "text-amber-600"}>{it.ok ? "✓" : "○"}</span><span className="text-stone-600">{it.label}</span>{!it.ok && it.hint ? <span className="text-amber-600">— {it.hint}</span> : null}</div>)); })()}
+              </div>
+            </details>
             {/* Search bar */}
             <div className="mb-4 grid gap-3 md:grid-cols-5">
               <input className="input md:col-span-2" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
