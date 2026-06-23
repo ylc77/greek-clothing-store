@@ -59,7 +59,7 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
     : [];
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 flex flex-col w-[calc(100vw-32px)] max-w-[380px] h-[520px] max-h-[calc(100vh-100px)] rounded-2xl border border-stone-200 bg-white shadow-2xl">
+    <div className="fixed bottom-6 right-6 z-50 flex flex-col w-[calc(100vw-24px)] max-w-[440px] h-[620px] max-h-[calc(100vh-48px)] rounded-2xl border border-stone-200 bg-white shadow-2xl">
       {/* Header */}
       <div className="flex items-center justify-between rounded-t-2xl bg-ink px-4 py-3 text-white">
         <span className="text-sm font-black">{t.aiAssistant}</span>
@@ -84,7 +84,7 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
             </div>
             {m.products?.map(p => (
               <Link key={p.sku} href={p.url} className="mt-2 flex gap-3 rounded-xl border border-stone-100 bg-white p-3 hover:shadow-sm transition block">
-                {p.image_url ? <img alt="" className="h-16 w-12 rounded-lg object-cover" src={p.image_url} /> : null}
+                {p.image_url ? <img alt="" className="h-20 w-14 rounded-lg object-cover" src={p.image_url} /> : null}
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-bold text-ink line-clamp-1">{productName(p)}</p>
                   <p className="text-xs text-stone-500">€{p.price.toFixed(2)} · {p.sizes || "—"}</p>
@@ -98,13 +98,8 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
         <div ref={bottomRef} />
       </div>
 
-      {/* WhatsApp fallback */}
-      <div className="px-4 py-1.5 text-center text-[10px] text-stone-400 border-t border-stone-100">
-        {t.aiNeedHelp}
-      </div>
-
       {/* Input */}
-      <div className="px-4 py-3">
+      <div className="px-4 py-3 border-t border-stone-100">
         <form className="flex gap-2" onSubmit={e => { e.preventDefault(); sendMessage(); }}>
           <input
             className="flex-1 rounded-full border border-stone-200 px-4 py-2 text-sm outline-none focus:border-violet-400"
@@ -115,9 +110,7 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
           />
           <button className="shrink-0 rounded-full bg-violet-600 px-4 py-2 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50" disabled={loading || !input.trim()} type="submit">→</button>
         </form>
-        <p className="mt-1.5 text-[10px] text-stone-400 text-center">
-          {language === "el" ? "Μόνο προϊόντα που υπάρχουν στο κατάστημα" : "Only products available in-store"}
-        </p>
+        <p className="mt-1.5 text-[10px] text-stone-400 text-center">{t.aiNeedHelp}</p>
       </div>
     </div>
   );
