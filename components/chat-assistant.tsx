@@ -12,7 +12,9 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(() => { try { return localStorage.getItem("ai_chat_size") === "expanded"; } catch { return false; } });
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
   const hasGreeted = useRef(false);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
@@ -53,17 +55,33 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
   }
 
   function productName(p: AiProduct) { return language === "el" ? (p.name_gr || p.name_en) : (p.name_en || p.name_gr); }
+  function toggleExpand() { setExpanded(prev => { const next = !prev; try { localStorage.setItem("ai_chat_size", next ? "expanded" : "compact"); } catch {} return next; }); }
 
   const quickActions: string[] = productContext
     ? [t.aiWhatSize, t.aiSimilar, t.aiSummer, t.aiInStore]
     : [];
 
+  const isWide = expanded && !isMobile;
+  const winW = isWide ? "max-w-[640px] w-[calc(100vw-24px)]" : "max-w-[440px] w-[calc(100vw-24px)]";
+  const winH = isWide ? "h-[760px]" : "h-[620px]";
+
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col w-[calc(100vw-24px)] max-w-[440px] h-[620px] max-h-[calc(100vh-48px)] rounded-2xl border border-stone-200 bg-white shadow-2xl">
+    <div className={`fixed bottom-6 right-6 z-50 flex flex-col ${winW} ${winH} max-h-[calc(100vh-48px)] rounded-2xl border border-stone-200 bg-white shadow-2xl`}>
       {/* Header */}
       <div className="flex items-center justify-between rounded-t-2xl bg-ink px-4 py-3 text-white">
         <span className="text-sm font-black">{t.aiAssistant}</span>
-        <button className="text-white/70 hover:text-white" onClick={onClose} type="button">✕</button>
+        <div className="flex items-center gap-1">
+          {!isMobile ? (
+            <button className="text-white/60 hover:text-white px-1" onClick={toggleExpand} type="button" title={expanded ? "缩小" : "放大"}>
+              {expanded ? (
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1" /><line x1="9" y1="4" x2="9" y2="2" /><line x1="15" y1="4" x2="15" y2="2" /><line x1="9" y1="20" x2="9" y2="22" /><line x1="15" y1="20" x2="15" y2="22" /></svg>
+              ) : (
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
+              )}
+            </button>
+          ) : null}
+          <button className="text-white/70 hover:text-white" onClick={onClose} type="button">✕</button>
+        </div>
       </div>
 
       {/* Quick actions */}
@@ -84,11 +102,11 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
             </div>
             {m.products?.map(p => (
               <Link key={p.sku} href={p.url} className="mt-2 flex gap-3 rounded-xl border border-stone-100 bg-white p-3 hover:shadow-sm transition block">
-                {p.image_url ? <img alt="" className="h-20 w-14 rounded-lg object-cover" src={p.image_url} /> : null}
+                {p.image_url ? <img alt="" className={`rounded-lg object-cover ${isWide ? "h-24 w-16" : "h-20 w-14"}`} src={p.image_url} /> : null}
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-ink line-clamp-1">{productName(p)}</p>
-                  <p className="text-xs text-stone-500">€{p.price.toFixed(2)} · {p.sizes || "—"}</p>
-                  {p.reason ? <p className="text-[10px] text-stone-400 mt-1 line-clamp-2">{p.reason}</p> : null}
+                  <p className={`font-bold text-ink line-clamp-1 ${isWide ? "text-sm" : "text-xs"}`}>{productName(p)}</p>
+                  <p className={`text-stone-500 ${isWide ? "text-xs" : "text-xs"}`}>€{p.price.toFixed(2)} · {p.sizes || "—"}</p>
+                  {p.reason ? <p className={`text-stone-400 mt-1 line-clamp-2 ${isWide ? "text-[11px]" : "text-[10px]"}`}>{p.reason}</p> : null}
                 </div>
               </Link>
             ))}
