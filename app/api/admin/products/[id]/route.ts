@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid, productForForm, validateProductPayload } from "@/lib/admin-products";
-import { removeProductStorageImages } from "@/lib/storage-images";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { Product } from "@/lib/types";
 
@@ -79,11 +78,12 @@ export async function DELETE(request: NextRequest, context: ProductRouteContext)
     return NextResponse.json({ error: productError.message }, { status: 500 });
   }
 
-  if (product) {
-    await removeProductStorageImages(supabase, product as Pick<Product, "sku" | "image_url" | "image_urls">);
-  }
-
-  const { error } = await supabase.from("products").delete().eq("id", id);
+  // Soft delete: set is_active=false, keep storage images
+  const { error } = await supabase
+    .from("products")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .update({ is_active: false } as any)
+    .eq("id", id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
