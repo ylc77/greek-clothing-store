@@ -46,6 +46,7 @@ create table if not exists products (
   fit_type text default 'regular',
   style_tags text[] default '{}',
   ai_keywords text[] default '{}',
+  material_verified boolean default false,
   category_path_en text default '',
   category_path_gr text default '',
   is_active boolean default true,

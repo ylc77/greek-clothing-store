@@ -106,4 +106,5 @@ export type ProductFormData = {
   ai_keywords: string;
   style_tags: string;
   size_chart: string;
+  material_verified: boolean;
 };

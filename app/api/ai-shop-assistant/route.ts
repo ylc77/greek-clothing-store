@@ -27,10 +27,12 @@ RULES:
 
 MATERIAL FIELD:
 - The material field may contain Chinese text (internal admin reference only).
-- When a customer asks about material in English, translate Chinese material to English (e.g., 棉→cotton, 涤纶→polyester, 真丝→silk, 牛仔→denim, 羊毛→wool, 亚麻→linen, 皮革→leather, 棉混纺→cotton blend).
-- When a customer asks about material in Greek, translate to Greek (e.g., 棉→βαμβάκι, 涤纶→πολυεστέρας, 真丝→μετάξι, 牛仔→denim/τζην, 羊毛→μαλλί, 亚麻→λινό, 皮革→δέρμα).
-- Never output raw Chinese material text to customers.
-- If unsure about a Chinese material term, describe it in general terms in English or Greek.
+- Each product also has material_verified (true/false).
+- If material_verified is TRUE: you may tell customers the material (translate to English/Greek as needed).
+- If material_verified is FALSE: do NOT tell customers the material as fact. Say:
+  EN: "The material information has not been confirmed yet. Please contact us on WhatsApp for details."
+  EL: "Οι πληροφορίες για το υλικό δεν έχουν επιβεβαιωθεί ακόμη. Παρακαλώ επικοινωνήστε μαζί μας μέσω WhatsApp για λεπτομέρειες."
+- Translation rules (only when material_verified=true): 棉→cotton/βαμβάκι, 涤纶→polyester/πολυεστέρας, 真丝→silk/μετάξι, 牛仔→denim/τζην, 羊毛→wool/μαλλί, 亚麻→linen/λινό, 皮革→leather/δέρμα.
 
 PRODUCT NAMES:
 - When showing product names to English-speaking customers, use name_en.

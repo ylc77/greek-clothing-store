@@ -42,6 +42,7 @@ export type AdminProductPayload = {
   ai_keywords?: unknown;
   style_tags?: unknown;
   size_chart?: unknown;
+  material_verified?: unknown;
 };
 
 export type ProductMutation = Omit<ProductFormData, "category" | "image_urls" | "ai_keywords" | "style_tags" | "size_chart" | "fit_type"> & {
@@ -175,6 +176,7 @@ export function validateProductPayload(payload: AdminProductPayload) {
           ai_keywords: parseStringArray(payload.ai_keywords),
           style_tags: parseStringArray(payload.style_tags),
           size_chart: parseSizeChart(payload.size_chart),
+          material_verified: payload.material_verified === true,
         }
       : null;
 
@@ -210,5 +212,6 @@ export function productForForm(product: Product): ProductFormData & { id: string
     ai_keywords: Array.isArray((product as Record<string, unknown>).ai_keywords) ? ((product as Record<string, unknown>).ai_keywords as string[]).join(", ") : String((product as Record<string, unknown>).ai_keywords || ""),
     style_tags: Array.isArray((product as Record<string, unknown>).style_tags) ? ((product as Record<string, unknown>).style_tags as string[]).join(", ") : String((product as Record<string, unknown>).style_tags || ""),
     size_chart: typeof (product as Record<string, unknown>).size_chart === "object" ? JSON.stringify((product as Record<string, unknown>).size_chart) : String((product as Record<string, unknown>).size_chart || ""),
+    material_verified: (product as Record<string, unknown>).material_verified === true,
   };
 }
