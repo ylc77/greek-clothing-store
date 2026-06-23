@@ -30,7 +30,7 @@ export type BusinessSettings = {
 
 const defaults: BusinessSettings = {
   id: crypto.randomUUID ? crypto.randomUUID() : "00000000-0000-0000-0000-000000000000",
-  business_name: "Fashion Boutique",
+  business_name: "Online Store",
   logo_url: "",
   hero_image_url: "",
   description_cn: "",

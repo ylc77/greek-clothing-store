@@ -231,6 +231,29 @@ export default async function ProductPage({
           </div>
         </div>
       </section>
+
+      {/* Product JSON-LD */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Product",
+            name: productName(product, language),
+            description: productDescription(product, language) || productName(product, language),
+            sku: product.sku,
+            image: product.image_url || undefined,
+            offers: {
+              "@type": "Offer",
+              price: Number(product.price).toFixed(2),
+              priceCurrency: "EUR",
+              availability: stockQty > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+              url: `${siteUrl()}/product/${encodeURIComponent(product.sku)}`,
+            },
+            brand: product.brand ? { "@type": "Brand", name: product.brand.trim() } : undefined,
+          }),
+        }}
+      />
     </main>
   );
 }

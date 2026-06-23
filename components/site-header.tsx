@@ -20,7 +20,7 @@ export function SiteHeader({
   language: Language;
   settings?: BusinessSettings;
 }) {
-  const siteName = settings?.business_name || "Fashion Boutique";
+  const siteName = settings?.business_name || "Online Store";
   const instagramLink = settings?.instagram || "";
   const logoUrl = settings?.logo_url || "";
 
