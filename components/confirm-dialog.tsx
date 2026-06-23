@@ -12,6 +12,10 @@ type ConfirmDialogProps = {
   loading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  prompt?: boolean;
+  promptValue?: string;
+  promptPlaceholder?: string;
+  onPromptChange?: (value: string) => void;
 };
 
 export function ConfirmDialog({
@@ -24,6 +28,10 @@ export function ConfirmDialog({
   loading = false,
   onConfirm,
   onCancel,
+  prompt = false,
+  promptValue = "",
+  promptPlaceholder = "",
+  onPromptChange,
 }: ConfirmDialogProps) {
   if (!open) return null;
 
@@ -41,6 +49,14 @@ export function ConfirmDialog({
       <div className="relative w-full max-w-[420px] rounded-xl bg-white shadow-2xl p-6 z-10 animate-[dialogIn_0.2s_ease-out]">
         <h3 className="text-base font-black text-ink">{title}</h3>
         <div className="mt-3 text-sm leading-6 text-stone-600">{description}</div>
+        {prompt ? (
+          <input
+            className="mt-3 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
+            placeholder={promptPlaceholder}
+            value={promptValue}
+            onChange={e => onPromptChange?.(e.target.value)}
+          />
+        ) : null}
         <div className="mt-5 flex gap-3 justify-end">
           <button
             className="rounded-lg border border-stone-200 px-5 py-2.5 text-sm font-bold text-ink hover:bg-stone-50 disabled:opacity-50"
