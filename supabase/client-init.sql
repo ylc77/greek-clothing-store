@@ -44,6 +44,7 @@ create table if not exists products (
   availability text default '',
   size_chart jsonb default '{}'::jsonb,
   fit_type text default 'regular',
+  style_tags text[] default '{}',
   ai_keywords text[] default '{}',
   category_path_en text default '',
   category_path_gr text default '',
