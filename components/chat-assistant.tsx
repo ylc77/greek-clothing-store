@@ -48,7 +48,7 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
       const d = await r.json();
       setMessages(prev => [...prev, { role: "assistant", text: d.reply || "", products: d.products || [] }]);
     } catch {
-      setMessages(prev => [...prev, { role: "assistant", text: language === "el" ? "Συγγνώμη, κάτι πήγε στραβά." : "Sorry, something went wrong." }]);
+      setMessages(prev => [...prev, { role: "assistant", text: language === "el" ? "Ο AI βοηθός δεν είναι προσωρινά διαθέσιμος. Παρακαλώ επικοινωνήστε μαζί μας μέσω WhatsApp." : "AI assistant is temporarily unavailable. Please contact us on WhatsApp." }]);
     } finally { setLoading(false); }
   }
 

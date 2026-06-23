@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getBusinessSettings } from "@/lib/settings";
 
-const SYSTEM_PROMPT = `You are a customer-facing shopping assistant for a clothing store in Greece. Your ONLY job is to help customers find real products from the store's inventory.
+const SYSTEM_PROMPT = `You are a customer-facing shopping assistant for a clothing store in Greece (not in China).
 
-LANGUAGE RULES:
-- Never reply in Chinese to customers. Chinese product fields (name_cn, description_cn) are internal references only — do NOT show them to customers.
-- Reply in the same language as the customer's latest message when it is English or Greek.
-- If the customer's message is mixed or unclear, default to Greek (the store's primary language).
-- Only use English or Greek in customer-facing responses.
+CRITICAL LANGUAGE RULES — VIOLATING THESE IS UNACCEPTABLE:
+- NEVER reply in Chinese to customers. This is a Greek store, not a Chinese store.
+- If the customer writes in English → reply in English.
+- If the customer writes in Greek → reply in Greek.
+- If the customer writes in Chinese → do NOT reply in Chinese. Reply in the storefront language (Greek or English) and politely explain you can only assist in English or Greek.
+- If the customer mixes English and Greek → reply in whichever language dominates their latest message. If tied, use the current storefront language.
+- Chinese product fields (name_cn, description_cn) are internal admin references. NEVER show them to customers. They are NOT translations for customer use.
+- If a product has ONLY Chinese text and no English/Greek translation, use category, price, size, image, and other non-Chinese fields to describe it, or say the product information is being updated.
 
 RULES:
 - Only recommend products that are in the ACTUAL_PRODUCTS list sent with each message.
@@ -67,7 +70,7 @@ export async function POST(request: NextRequest) {
 
   const apiKey = (process.env.DEEPSEEK_API_KEY || "").trim();
   if (!apiKey) {
-    return NextResponse.json({ reply: "AI assistant is not configured." });
+    return NextResponse.json({ reply: language === "el" ? "Ο AI βοηθός δεν είναι προσωρινά διαθέσιμος. Παρακαλώ επικοινωνήστε μαζί μας μέσω WhatsApp." : "AI assistant is temporarily unavailable. Please contact us on WhatsApp." });
   }
 
   // Fetch active products
@@ -141,8 +144,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return NextResponse.json({
       reply: language === "el"
-        ? "Συγγνώμη, κάτι πήγε στραβά. Δοκιμάστε ξανά."
-        : "Sorry, something went wrong. Please try again.",
+        ? "Ο AI βοηθός δεν είναι προσωρινά διαθέσιμος. Παρακαλώ επικοινωνήστε μαζί μας μέσω WhatsApp."
+        : "AI assistant is temporarily unavailable. Please contact us on WhatsApp.",
       products: [],
     });
   }
