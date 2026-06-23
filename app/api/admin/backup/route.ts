@@ -26,6 +26,8 @@ const csvFields = [
   "color",
   "skroutz_url",
   "is_active",
+  "ai_keywords",
+  "style_tags",
 ];
 
 function csvCell(value: unknown) {

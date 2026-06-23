@@ -23,9 +23,11 @@ type ProductActionsProps = {
 };
 
 function buildWhatsAppUrl({ baseUrl, text }: { baseUrl: string; text: string }) {
-  const url = new URL(baseUrl);
-  url.search = new URLSearchParams({ text }).toString();
-  return url.toString();
+  try {
+    const url = new URL(baseUrl);
+    url.search = new URLSearchParams({ text }).toString();
+    return url.toString();
+  } catch { return "#"; }
 }
 
 function buildSkroutzUrl(skroutzUrl: string | null | undefined, productNameEn: string, sku: string) {
