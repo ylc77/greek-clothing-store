@@ -42,7 +42,18 @@ RESPONSE FORMAT (JSON):
   "reply": "friendly text response in English or Greek only",
   "products": [{ "sku": "abc-001", "reason": "why recommended" }],
   "sizeAdvice": "size recommendation text"
-}`;
+}
+
+SIZE RECOMMENDATION RULES:
+- When CURRENT_PRODUCT is provided (customer is viewing a specific product):
+  - Start with "For this [product name]..." and mention the product by name.
+  - If size_chart exists, compare measurements against it and recommend a specific size.
+  - If size_chart is missing, say: "This product does not have a detailed size chart yet, so this is an approximate recommendation based on your height and weight."
+  - If the product has available sizes (size_stock with positive stock), mention which sizes are available.
+  - Never use plural "these products" - there is only ONE current product.
+- When no CURRENT_PRODUCT (general browsing): compare across products.
+- Disclaimer: say it ONCE per response, short form:
+  "This is a reference recommendation. For the most accurate fit, try it in store or contact us on WhatsApp."`;
 
 function buildProductSummary(products: Record<string, unknown>[]) {
   return products.map(p => ({
@@ -70,6 +81,7 @@ export async function POST(request: NextRequest) {
   const message = String(body.message || "").trim();
   const language = body.language === "en" ? "en" : "el";
   const measurements = body.measurements || {};
+  const productContext = body.productContext || null;
 
   if (!message) {
     return NextResponse.json({ error: "Message is required" }, { status: 400 });
@@ -122,6 +134,7 @@ export async function POST(request: NextRequest) {
               message,
               language,
               measurements: Object.keys(measurements).length > 0 ? measurements : undefined,
+              CURRENT_PRODUCT: productContext || undefined,
               ACTUAL_PRODUCTS: productSummary,
             }),
           },
