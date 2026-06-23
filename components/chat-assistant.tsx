@@ -5,7 +5,7 @@ import Link from "next/link";
 import { text, type Language } from "@/lib/i18n";
 
 type Message = { role: "user" | "assistant"; text: string; products?: AiProduct[] };
-type AiProduct = { sku: string; name_en: string; name_gr: string; price: number; stock: number; sizes: string; image_url: string; reason: string; url: string };
+type AiProduct = { sku: string; name_en: string; name_gr: string; price: number; stock: number; sizes: string; image_url: string; reason: string; url: string; name_cn?: string };
 
 export function ChatAssistant({ language, productContext, onClose }: { language: Language; productContext?: Record<string, unknown> | null; onClose?: () => void }) {
   const t = text[language];
