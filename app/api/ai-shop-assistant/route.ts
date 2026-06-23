@@ -49,35 +49,27 @@ RESPONSE FORMAT (JSON):
 SIZE RECOMMENDATION RULES — TIERED BY DATA AVAILABILITY:
 
 PRIORITY 1 — size_chart exists on CURRENT_PRODUCT:
-- Compare customer measurements (bust, waist, hip, height, weight) against the size_chart.
-- Recommend the closest matching size. If between sizes, suggest the larger one for comfort.
+- Compare customer measurements against the size_chart and recommend the closest size.
+- Always mention available sizes: "Available sizes are [S, M, L, XL]." (from size_stock keys or sizes field).
 - Say: "Based on the size chart for this [product name], I recommend size [X]."
-- Mention which sizes are currently in stock (use size_stock).
 
 PRIORITY 2 — No size_chart, but available_sizes exist:
-- Use height, weight, fit_type, and category to give an approximate recommendation.
-- Say: "This product does not have a detailed size chart yet, so this is an approximate recommendation based on your height and weight. I suggest size [X]."
-- For clothing (tops, shirts, dresses, jackets, hoodies, trousers, jeans, shorts, skirts): use height+weight to estimate S/M/L/XL.
-- For shoes: if no foot_length provided, ask "What is your foot length in cm?" Do NOT guess shoe size.
-- For bags, hats, jewelry, luggage, accessories: these are usually One Size — just confirm the product is one-size.
+- Always mention available sizes first: "For the [product name], available sizes are [S, M, L, XL]."
+- Estimate from height+weight+fit_type+category. Say: "Based on your height [X]cm and weight [Y]kg, I recommend size [Z] for a [fit_type] fit."
+- Then add ONE sentence: "This is an approximate recommendation because this product does not have a detailed size chart yet."
+- For shoes: if no foot_length provided, ask "What is your foot length in cm?"
+- For bags/hats/jewelry/luggage/accessories: say "This product is One Size."
 
-PRIORITY 3 — No size_chart AND no available_sizes:
-- Say: "Size information is not available for this product yet. Please contact us on WhatsApp or visit the store for sizing help."
-- Do NOT guess or invent sizes.
-
-CATEGORY-SPECIFIC RULES:
-- clothing (tops/dresses/shirts/jackets/hoodies/trousers/jeans/shorts/skirts): estimate S/M/L/XL from height+weight. Use fit_type (slim→size up, loose→size down).
-- shoes: require foot_length_cm. Without it, ask for foot length. Do not guess from height alone.
-- bags/hats/jewelry/luggage/accessories: these are One Size. Do not suggest S/M/L.
-- If the product is marked One Size or has only one size in size_stock, say "This product is One Size."
+PRIORITY 3 — No sizes at all:
+- "Size information is not available for this product yet. Please contact us on WhatsApp or visit the store."
 
 WHEN CURRENT_PRODUCT IS PROVIDED:
 - Always start with "For this [product name]..." and mention the specific product.
 - Never say "most tops" or "bottoms" — talk about the specific product only.
-- Never use plural "these products" when only one product is in context.
 
-DISCLAIMER — say ONCE per response, maximum one sentence:
-"This is only a size recommendation. For the most accurate fit, please contact us on WhatsApp or try it in store."`;
+WHATSAPP MENTION:
+- The chat panel already has a WhatsApp contact footer. Do NOT repeat WhatsApp in your reply unless the user explicitly asks how to contact the store.
+- Keep the disclaimer short and WhatsApp-free: "This is only a size recommendation. For the most accurate fit, try it in store."`;
 
 function buildProductSummary(products: Record<string, unknown>[]) {
   return products.map(p => ({
