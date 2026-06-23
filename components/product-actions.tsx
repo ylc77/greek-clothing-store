@@ -14,6 +14,12 @@ type ProductActionsProps = {
   skroutzUrl?: string | null;
   language?: Language;
   whatsappUrl?: string;
+  category?: string;
+  subcategory?: string;
+  price?: number;
+  imageUrl?: string;
+  sizeChart?: Record<string, unknown> | null;
+  fitType?: string;
 };
 
 function buildWhatsAppUrl({ baseUrl, text }: { baseUrl: string; text: string }) {
@@ -29,7 +35,7 @@ function buildSkroutzUrl(skroutzUrl: string | null | undefined, productNameEn: s
   return url.toString();
 }
 
-export function ProductActions({ productName, productNameEn, sku, sizes, sizeStock, stock, skroutzUrl, language, whatsappUrl }: ProductActionsProps) {
+export function ProductActions({ productName, productNameEn, sku, sizes, sizeStock, stock, skroutzUrl, language, whatsappUrl, category, subcategory, price, imageUrl, sizeChart, fitType }: ProductActionsProps) {
   const waUrl = whatsappUrl || "#";
   const t = text[language || "el"];
   const sizeOptions = useMemo(() => { debugSizeStock("ProductActions", sizeStock, sizes); return getSizeOptions({ sizes, stock, size_stock: sizeStock }); }, [sizes, stock, sizeStock]);
@@ -122,7 +128,7 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
       ) : null}
 
       {/* AI Assistant button */}
-      <button className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-6 py-3 text-sm font-bold text-violet-700 transition hover:bg-violet-100 hover:border-violet-300" onClick={() => { window.dispatchEvent(new CustomEvent("openAiChat", { detail: { product: { sku, productName, productNameEn, sizes, sizeStock, skroutzUrl } } })); }} type="button">{t.askAi}</button>
+      <button className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-6 py-3 text-sm font-bold text-violet-700 transition hover:bg-violet-100 hover:border-violet-300" onClick={() => { window.dispatchEvent(new CustomEvent("openAiChat", { detail: { product: { sku, productName, productNameEn, sizes, sizeStock, stock, category, subcategory, price, imageUrl, sizeChart, fitType } } })); }} type="button">{t.askAi}</button>
 
       {hasWhatsApp ? (
         <button className={`mt-2 inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-6 py-3 text-sm font-bold text-ink transition hover:border-ink hover:bg-stone-50 ${!hasSkroutz ? "py-3.5 shadow-sm" : ""}`} onClick={askWhatsApp} type="button">{t.whatsappContact}</button>

@@ -205,6 +205,12 @@ export default async function ProductPage({
                 stock={Number(product.stock)}
                 skroutzUrl={product.skroutz_url}
                 language={language}
+                category={product.category}
+                subcategory={product.subcategory || undefined}
+                price={Number(product.price)}
+                imageUrl={product.image_url || undefined}
+                sizeChart={safeSizeStock}
+                fitType={(product as Record<string, unknown>).fit_type as string || "regular"}
                 whatsappUrl={settings.whatsapp || undefined}
               />
             </div>
