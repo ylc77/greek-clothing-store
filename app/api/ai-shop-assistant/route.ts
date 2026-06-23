@@ -19,11 +19,14 @@ RULES:
 - If no matching products exist, say so politely and suggest browsing categories.
 - For size recommendations, use the MEASUREMENTS and SIZE_CHART data.
 - If measurements are incomplete, ask for the missing fields (height, weight, bust, waist, hip).
-- Always add: "Size recommendation is a reference only. Visit our store to try on."
 - Greet in English or Greek based on the user's language.
-- Keep responses concise (2-4 sentences + product cards when relevant).
 - Do NOT discuss: politics, health advice, delivery shipping, returns policy, payments, or anything not about this store's products.
 - If asked about prices: all prices are in EUR and include VAT.
+
+OUTPUT LENGTH LIMITS:
+- Keep replies to 2-5 sentences maximum.
+- Recommend at most 3 products per response.
+- For size advice: recommend 1 primary size + at most 1 alternative.
 
 MATERIAL FIELD:
 - The material field may contain Chinese text (internal admin reference only).
@@ -92,6 +95,56 @@ function buildProductSummary(products: Record<string, unknown>[]) {
   }));
 }
 
+// ── Rate limiter (in-memory, per IP) ──────────────────────
+const rateLimitMap = new Map<string, number[]>();
+const RATE_LIMIT = 10; // max requests per minute
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const timestamps = (rateLimitMap.get(ip) || []).filter(t => now - t < 60000);
+  if (timestamps.length >= RATE_LIMIT) return false;
+  timestamps.push(now);
+  rateLimitMap.set(ip, timestamps.slice(-20));
+  return true;
+}
+
+// ── Local fast replies (no API call needed) ────────────────
+const localReplies: Record<string, Record<string, string>> = {
+  en: {
+    "hello": "Hello! I'm your shopping assistant. How can I help you today?",
+    "hi": "Hi there! Looking for something specific, or need a size recommendation?",
+    "hey": "Hey! I can help you find products or recommend sizes. What are you looking for?",
+    "can you speak chinese": "I'm sorry, I can only assist in English or Greek. How can I help you?",
+    "do you speak chinese": "I'm sorry, I can only assist in English or Greek. How can I help you?",
+    "what is your store name": "This is an AI assistant for our fashion boutique. You can find our store name at the top of the page or in the store info section.",
+    "store name": "Our store name is shown at the top of the website. You can also find it on Google Maps and social media.",
+    "contact": "You can contact us via WhatsApp using the button on this page, or visit our store in Athens.",
+    "whatsapp": "You can reach us on WhatsApp! Click the WhatsApp button on the product page or use the link in the footer.",
+  },
+  el: {
+    "hello": "Γεια σας! Είμαι ο βοηθός αγορών σας. Πώς μπορώ να σας βοηθήσω σήμερα;",
+    "hi": "Γεια! Ψάχνετε κάτι συγκεκριμένο ή χρειάζεστε βοήθεια με το μέγεθος;",
+    "hey": "Γεια! Μπορώ να σας βοηθήσω να βρείτε προϊόντα ή να προτείνω μεγέθη. Τι ψάχνετε;",
+    "can you speak chinese": "Λυπάμαι, μπορώ να βοηθήσω μόνο στα Αγγλικά ή στα Ελληνικά. Πώς μπορώ να σας βοηθήσω;",
+    "do you speak chinese": "Λυπάμαι, μπορώ να βοηθήσω μόνο στα Αγγλικά ή στα Ελληνικά. Πώς μπορώ να σας βοηθήσω;",
+    "what is your store name": "Αυτός είναι ένας βοηθός AI για την μπουτίκ μας. Μπορείτε να βρείτε το όνομα του καταστήματος στην κορυφή της σελίδας.",
+    "store name": "Το όνομα του καταστήματός μας εμφανίζεται στην κορυφή της ιστοσελίδας.",
+    "contact": "Μπορείτε να επικοινωνήσετε μαζί μας μέσω WhatsApp χρησιμοποιώντας το κουμπί σε αυτή τη σελίδα ή να επισκεφθείτε το κατάστημά μας στην Αθήνα.",
+    "whatsapp": "Μπορείτε να επικοινωνήσετε μαζί μας στο WhatsApp! Χρησιμοποιήστε το κουμπί WhatsApp στη σελίδα του προϊόντος.",
+  },
+};
+
+function getLocalReply(message: string, lang: string): string | null {
+  const key = message.toLowerCase().replace(/[!?.,]/g, "").trim();
+  const replies = localReplies[lang] || localReplies.en;
+  // Exact match first
+  if (replies[key]) return replies[key];
+  // Contains match
+  for (const [k, v] of Object.entries(replies)) {
+    if (key.includes(k) || k.includes(key)) return v;
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const message = String(body.message || "").trim();
@@ -103,21 +156,34 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Message is required" }, { status: 400 });
   }
 
+  // Rate limit check
+  const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
+  if (!checkRateLimit(ip)) {
+    return NextResponse.json({ reply: language === "el" ? "Στέλνετε μηνύματα πολύ γρήγορα. Παρακαλώ δοκιμάστε ξανά αργότερα." : "You are sending messages too quickly. Please try again later." });
+  }
+
+  // Local fast replies
+  const localReply = getLocalReply(message, language);
+  if (localReply) {
+    return NextResponse.json({ reply: localReply, products: [] });
+  }
+
   const apiKey = (process.env.DEEPSEEK_API_KEY || "").trim();
   if (!apiKey) {
     return NextResponse.json({ reply: language === "el" ? "Ο AI βοηθός δεν είναι προσωρινά διαθέσιμος. Παρακαλώ επικοινωνήστε μαζί μας μέσω WhatsApp." : "AI assistant is temporarily unavailable. Please contact us on WhatsApp." });
   }
 
-  // Fetch active products
+  // Fetch products: if product context, send only current product; else limit to 20
   const supabase = getSupabaseClient();
+  const limit = productContext ? 20 : 20; // always limit to 20
   const { data } = supabase
-    ? await supabase
+    ? await (supabase as any)
         .from("products")
-        .select("*")
+        .select("sku, name_en, name_gr, category, subcategory, price, stock, sizes, size_stock, size_chart, fit_type, material, material_verified, ai_keywords, image_url, color, brand")
         .neq("is_active", false)
         .gte("stock", 0)
         .order("created_at", { ascending: false })
-        .limit(80)
+        .limit(limit)
     : { data: null };
 
   const allProducts = (data || []) as Record<string, unknown>[];
