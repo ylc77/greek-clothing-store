@@ -63,10 +63,6 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
     window.open(buildWhatsAppUrl({ baseUrl: waUrl, text: textContent }), "_blank", "noopener,noreferrer");
   }
   function viewOnSkroutz() { window.open(buildSkroutzUrl(skroutzUrl, productNameEn, sku), "_blank", "noopener,noreferrer"); }
-  function checkInStore() {
-    const checkText = t.whatsappCheckStore.replace("{name}", productName).replace("{sku}", sku) + "\n" + window.location.href;
-    window.open(buildWhatsAppUrl({ baseUrl: waUrl, text: checkText }), "_blank", "noopener,noreferrer");
-  }
 
   return (
     <div>
@@ -111,7 +107,7 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
       {sizeGuideOpen ? <div className="mb-4 rounded-md border border-stone-200 bg-stone-50 p-4 text-sm leading-6 text-stone-700">{t.sizeGuideHelp}</div> : null}
       {message ? <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">{message}</p> : null}
 
-      {/* BUTTONS: Skroutz first, WhatsApp second, Check in store third */}
+      {/* BUTTONS: Skroutz, AI Assistant, WhatsApp */}
       {hasSkroutz ? (
         allOut ? (
           <button className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-stone-200 px-6 py-3.5 text-sm font-black text-stone-400 cursor-not-allowed" disabled type="button">
@@ -133,8 +129,6 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
       {hasWhatsApp ? (
         <button className={`mt-2 inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-6 py-3 text-sm font-bold text-ink transition hover:border-ink hover:bg-stone-50 ${!hasSkroutz ? "py-3.5 shadow-sm" : ""}`} onClick={askWhatsApp} type="button">{t.whatsappContact}</button>
       ) : null}
-
-      <button className="mt-2 inline-flex w-full items-center justify-center rounded-full border border-stone-200 bg-white px-6 py-2.5 text-xs font-bold text-stone-500 transition hover:border-stone-300 hover:text-ink" onClick={checkInStore} type="button">{t.checkStore}</button>
     </div>
   );
 }
