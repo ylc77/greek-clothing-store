@@ -11,6 +11,7 @@ import {
   type ProductFormData,
 } from "@/lib/types";
 import { effectiveStock } from "@/lib/products";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/components/admin-toast";
 
 /* ── Types ───────────────────────────────────────────────── */
@@ -102,6 +103,7 @@ export function AdminDashboard() {
   const [imageResults, setImageResults] = useState<ApiResult[]>([]); const [selectedImageSku, setSelectedImageSku] = useState("");
   const [tab, setTab] = useState<Tab>("dashboard");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirm, setConfirm] = useState<{ open: boolean; title: string; desc: string; confirmText: string; variant: "danger"|"success"|"default"; action: () => void }>({ open: false, title: "", desc: "", confirmText: "确认", variant: "default", action: () => {} });
   const [newMainFile, setNewMainFile] = useState<File | null>(null); const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
   const [sizeStock, setSizeStock] = useState<Record<string, number>>({});
   const [showSizeSummary, setShowSizeSummary] = useState(false);
@@ -184,13 +186,16 @@ export function AdminDashboard() {
 
   /* ── Submit / Delete ──────────────────────────────────── */
   async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!form.sku.trim()) { toast("请填写 SKU", "err"); return; } if (!form.name_cn.trim() && !form.name_en.trim() && !form.name_gr.trim()) { toast("请至少填写一个语言的商品名", "err"); return; } if (!form.image_url && !newMainFile && !window.confirm("商品没有图片，是否继续保存？")) return; setLoading(true); const p = normalizeProduct(form); const sizeKeys = Object.keys(sizeStock); const hasSizeStock = sizeKeys.length > 0; const totalStock = sizeKeys.reduce((sum, k) => sum + (sizeStock[k] || 0), 0); const payload = hasSizeStock ? { ...(p as Record<string,unknown>), sizes: sortSizeKeys(sizeKeys).join(","), size_stock: sizeStock, stock: totalStock } : p; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { const saved = await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); if (!editingId && (newMainFile || newGalleryFiles.length > 0)) { const sku = saved?.product?.sku || form.sku; try { if (newMainFile) { const cm = await compressImageForUpload(newMainFile); const fd = new FormData(); fd.append("images", cm); fd.append("sku", sku); fd.append("mode", "main"); await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); } if (newGalleryFiles.length > 0) { const cg = await Promise.all(newGalleryFiles.map(compressImageForUpload)); const fd = new FormData(); cg.forEach(f => fd.append("images", f)); fd.append("sku", sku); fd.append("mode", "gallery"); await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); } toast("图片已上传"); } catch { toast("商品已保存，图片上传失败", "err"); } setNewMainFile(null); setNewGalleryFiles([]); } setForm(emptyProduct); setEditingId(null); setSizeStock({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
-  async function deleteProduct(p: AdminProduct) { if (!window.confirm(`确认下架商品 ${p.sku}？\n\n下架后商品将不会在前台显示，但数据会保留，之后可以恢复上架。`)) return; setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "DELETE" }); toast("商品已下架"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "下架失败", "err"); } finally { setLoading(false); } }
-  async function restoreProduct(p: AdminProduct) { if (!window.confirm(`恢复上架商品 ${p.sku}？`)) return; setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "PUT", body: JSON.stringify({ ...p, is_active: true }) }); toast("商品已恢复上架"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "恢复失败", "err"); } finally { setLoading(false); } }
+  function confirmDeleteProduct(p: AdminProduct) { setConfirm({ open: true, title: "确认下架商品？", desc: `下架 ${p.sku} 后商品将不会在前台显示，但数据会保留，之后可以恢复上架。`, confirmText: "确认下架", variant: "danger", action: () => executeDelete(p) }); }
+  async function executeDelete(p: AdminProduct) { setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "DELETE" }); toast("商品已下架"); setConfirm(c => ({ ...c, open: false })); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "下架失败", "err"); } finally { setLoading(false); } }
+  function confirmRestoreProduct(p: AdminProduct) { setConfirm({ open: true, title: "确认恢复上架？", desc: `恢复上架 ${p.sku} 后商品会重新在前台显示。`, confirmText: "确认恢复", variant: "success", action: () => executeRestore(p) }); }
+  async function executeRestore(p: AdminProduct) { setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "PUT", body: JSON.stringify({ ...p, is_active: true }) }); toast("商品已恢复上架"); setConfirm(c => ({ ...c, open: false })); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "恢复失败", "err"); } finally { setLoading(false); } }
   async function permanentDelete(p: AdminProduct) { const input = window.prompt(`永久删除商品 ${p.sku}？\n\n此操作不可恢复！请输入 DELETE 确认：`); if (input !== "DELETE") { if (input !== null) toast("输入错误，已取消", "err"); return; } setLoading(true); try { await api(`/api/admin/products/${p.id}/permanent`, { method: "DELETE" }); toast("商品已永久删除"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "删除失败", "err"); } finally { setLoading(false); } }
 
   function toggleSelect(id: string) { setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }
   function selectAll() { if (selectedIds.size === filteredProducts.slice(0, 100).length) { setSelectedIds(new Set()); } else { setSelectedIds(new Set(filteredProducts.slice(0, 100).map(p => p.id))); } }
-  async function batchUpdateStatus(isActive: boolean) { const ids = Array.from(selectedIds); if (ids.length === 0) { toast("请先选择商品", "err"); return; } const label = isActive ? "恢复上架" : "下架"; const msg = isActive ? "确认恢复上架选中的 X 个商品？恢复后商品会重新在前台显示。" : "确认下架选中的 X 个商品？下架后前台不再显示，但数据会保留，可后续恢复上架。"; if (!window.confirm(msg.replace("X", String(ids.length)))) return; setLoading(true); try { const r = await fetch("/api/admin/products/bulk", { method: "PUT", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ ids, is_active: isActive }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "批量操作失败"); toast(`已${label} ${ids.length} 个商品`); setSelectedIds(new Set()); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : `批量${label}失败`, "err"); } finally { setLoading(false); } }
+  function confirmBatch(isActive: boolean) { const ids = Array.from(selectedIds); if (ids.length === 0) { toast("请先选择商品", "err"); return; } setConfirm({ open: true, title: isActive ? "确认批量恢复上架？" : "确认批量下架？", desc: isActive ? `你将恢复上架选中的 ${ids.length} 个商品。恢复后商品会重新在前台显示。` : `你将下架选中的 ${ids.length} 个商品。下架后商品不会在前台显示，但数据会保留，可后续恢复上架。`, confirmText: isActive ? "确认恢复" : "确认下架", variant: isActive ? "success" : "danger", action: () => executeBatch(isActive, ids) }); }
+  async function executeBatch(isActive: boolean, ids: string[]) { const label = isActive ? "恢复上架" : "下架"; setLoading(true); setConfirm(c => ({ ...c, open: true, confirmText: "处理中..." })); try { const r = await fetch("/api/admin/products/bulk", { method: "PUT", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ ids, is_active: isActive }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "批量操作失败"); toast(`已${label} ${ids.length} 个商品`); setSelectedIds(new Set()); } catch (er) { toast(er instanceof Error ? er.message : `批量${label}失败`, "err"); } finally { setLoading(false); setConfirm({ open: false, title: "", desc: "", confirmText: "", variant: "default", action: () => {} }); } }
 
   /* ── CSV ──────────────────────────────────────────────── */
   async function handleCsv(f: File | null) { setCsvResults([]); if (!f) { setCsvRows([]); return; } setCsvRows(parseCsv(await f.text())); }
@@ -295,8 +300,8 @@ export function AdminDashboard() {
             {selectedIds.size > 0 ? (
               <div className="mb-3 flex items-center gap-2 rounded-lg bg-stone-50 px-4 py-2 text-sm">
                 <span className="text-xs font-bold text-stone-600">已选择 {selectedIds.size} 个商品</span>
-                <button className="rounded-lg border border-red-100 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => void batchUpdateStatus(false)}>批量下架</button>
-                <button className="rounded-lg border border-green-100 px-3 py-1.5 text-xs font-bold text-green-700 hover:bg-green-50" onClick={() => void batchUpdateStatus(true)}>批量恢复上架</button>
+                <button className="rounded-lg border border-red-100 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => confirmBatch(false)}>批量下架</button>
+                <button className="rounded-lg border border-green-100 px-3 py-1.5 text-xs font-bold text-green-700 hover:bg-green-50" onClick={() => confirmBatch(true)}>批量恢复上架</button>
                 <button className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-bold text-stone-400 hover:bg-stone-100" onClick={() => setSelectedIds(new Set())}>取消选择</button>
               </div>
             ) : null}
@@ -329,10 +334,10 @@ export function AdminDashboard() {
                         <button className="rounded-md border border-stone-200 px-3 py-1.5 text-xs font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => startEdit(p)}>编辑</button>
                         <button className="rounded-md border border-stone-200 px-3 py-1.5 text-xs font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => copyProduct(p)}>复制</button>
                         {p.is_active ? (
-                          <button className="rounded-md border border-red-100 px-3 py-1.5 text-xs font-bold whitespace-nowrap text-red-600 hover:bg-red-50" onClick={() => void deleteProduct(p)}>下架</button>
+                          <button className="rounded-md border border-red-100 px-3 py-1.5 text-xs font-bold whitespace-nowrap text-red-600 hover:bg-red-50" onClick={() => confirmDeleteProduct(p)}>下架</button>
                         ) : (
                           <>
-                            <button className="rounded-md border border-green-100 px-3 py-1.5 text-xs font-bold whitespace-nowrap text-green-700 hover:bg-green-50" onClick={() => void restoreProduct(p)}>恢复上架</button>
+                            <button className="rounded-md border border-green-100 px-3 py-1.5 text-xs font-bold whitespace-nowrap text-green-700 hover:bg-green-50" onClick={() => confirmRestoreProduct(p)}>恢复上架</button>
                             <button className="rounded-md border border-red-100 px-3 py-1.5 text-xs font-bold whitespace-nowrap text-red-400 hover:bg-red-50" onClick={() => void permanentDelete(p)}>永久删除</button>
                           </>
                         )}
@@ -636,6 +641,18 @@ export function AdminDashboard() {
         ) : null}
 
       </div>
+
+      {/* Confirm dialog for batch operations */}
+      <ConfirmDialog
+        open={confirm.open}
+        title={confirm.title}
+        description={confirm.desc}
+        confirmText={confirm.confirmText}
+        variant={confirm.variant}
+        loading={loading}
+        onConfirm={confirm.action}
+        onCancel={() => setConfirm({ open: false, title: "", desc: "", confirmText: "", variant: "default", action: () => {} })}
+      />
     </main>
   );
 }
