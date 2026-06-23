@@ -235,7 +235,7 @@ export function AdminDashboard() {
     <main className="min-h-screen bg-paper">
       <div className="mx-auto max-w-[96rem] px-4 py-6 sm:px-6 lg:px-8">
         {/* ── Top bar ────────────────────────────────────── */}
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-4">
+        <header className="mb-6 flex flex-col gap-3 border-b border-stone-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-black text-ink">商品管理后台</h1>
             <p className="text-xs text-stone-400">管理商品、图片、库存、CSV 导入和 Skroutz Feed</p>
@@ -303,7 +303,7 @@ export function AdminDashboard() {
 
             {/* Batch actions */}
             {selectedIds.size > 0 ? (
-              <div className="mb-3 flex items-center gap-2 rounded-lg bg-stone-50 px-4 py-2 text-sm">
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-stone-50 px-4 py-2 text-sm">
                 <span className="text-xs font-bold text-stone-600">已选择 {selectedIds.size} 个商品</span>
                 <button className="rounded-lg border border-red-100 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => confirmBatch(false)}>批量下架</button>
                 <button className="rounded-lg border border-green-100 px-3 py-1.5 text-xs font-bold text-green-700 hover:bg-green-50" onClick={() => confirmBatch(true)}>批量恢复上架</button>
@@ -515,7 +515,7 @@ export function AdminDashboard() {
             </section>
 
             {/* Save buttons — sticky at bottom */}
-            <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-200 bg-white/95 backdrop-blur p-4 shadow-md z-10">
+            <div className="sticky bottom-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-stone-200 bg-white/95 backdrop-blur p-4 shadow-md z-10">
               <div className="flex flex-wrap gap-3">
                 <button className="rounded-lg bg-ink px-10 py-3 text-sm font-bold text-white hover:bg-stone-800 shadow-sm" disabled={loading} type="submit">{editingId ? "保存修改" : "新增商品"}</button>
                 {editingId ? <button className="rounded-lg border border-stone-200 px-6 py-3 text-sm font-bold text-ink hover:bg-stone-50" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setTab("dashboard"); }} type="button">取消编辑</button> : null}
