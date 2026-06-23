@@ -122,8 +122,11 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
       ) : null}
 
       {hasWhatsApp ? (
-        <button className={`mt-2 inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-6 py-3 text-sm font-bold text-ink transition hover:border-ink hover:bg-stone-50 ${!hasSkroutz ? "py-3.5 shadow-sm" : ""}`} onClick={askWhatsApp} type="button">{t.askWhatsApp}</button>
+        <button className={`mt-2 inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-6 py-3 text-sm font-bold text-ink transition hover:border-ink hover:bg-stone-50 ${!hasSkroutz ? "py-3.5 shadow-sm" : ""}`} onClick={askWhatsApp} type="button">{t.whatsappContact}</button>
       ) : null}
+
+      {/* AI Assistant button */}
+      <button className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-6 py-3 text-sm font-bold text-violet-700 transition hover:bg-violet-100 hover:border-violet-300" onClick={() => { window.dispatchEvent(new CustomEvent("openAiChat", { detail: { product: { sku, productName, productNameEn, sizes, sizeStock, skroutzUrl } } })); }} type="button">{t.askAi}</button>
 
       <button className="mt-2 inline-flex w-full items-center justify-center rounded-full border border-stone-200 bg-white px-6 py-2.5 text-xs font-bold text-stone-500 transition hover:border-stone-300 hover:text-ink" onClick={checkInStore} type="button">{t.checkStore}</button>
     </div>

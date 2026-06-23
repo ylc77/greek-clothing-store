@@ -173,7 +173,14 @@ export const text = {
     aiAssistant: "AI Βοηθός",
     aiPlaceholder: "Ρωτήστε με για προϊόντα, μεγέθη...",
     aiThinking: "Σκέφτομαι...",
-    aiGreeting: "Γεια σας! Είμαι ο βοηθός αγορών. Μπορώ να σας βοηθήσω να βρείτε προϊόντα ή να προτείνω μεγέθη."
+    aiGreeting: "Γεια σας! Είμαι ο βοηθός αγορών. Μπορώ να σας βοηθήσω να βρείτε προϊόντα ή να προτείνω μεγέθη.",
+    askAi: "Ρώτησε τον AI βοηθό",
+    whatsappContact: "Επικοινωνία μέσω WhatsApp",
+    aiNeedHelp: "Χρειάζεστε περισσότερη βοήθεια; Επικοινωνήστε μαζί μας στο WhatsApp.",
+    aiWhatSize: "Τι μέγεθος να επιλέξω;",
+    aiSimilar: "Υπάρχουν παρόμοια προϊόντα;",
+    aiSummer: "Είναι κατάλληλο για καλοκαίρι;",
+    aiInStore: "Είναι διαθέσιμο στο κατάστημα;"
   },
   en: {
     eyebrow: "Athens boutique",
@@ -262,6 +269,13 @@ export const text = {
     aiAssistant: "AI Assistant",
     aiPlaceholder: "Ask about products, sizes...",
     aiThinking: "Thinking...",
-    aiGreeting: "Hi! I'm your shopping assistant. I can help you find products or recommend sizes."
+    aiGreeting: "Hi! I'm your shopping assistant. I can help you find products or recommend sizes.",
+    askAi: "Ask AI Assistant",
+    whatsappContact: "Contact store on WhatsApp",
+    aiNeedHelp: "Need more help? Contact us on WhatsApp.",
+    aiWhatSize: "What size should I choose?",
+    aiSimilar: "Do you have similar products?",
+    aiSummer: "Is this suitable for summer?",
+    aiInStore: "Is it available in store?"
   }
 };
