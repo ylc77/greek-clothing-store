@@ -27,6 +27,51 @@ export function productDescription(product: Product, language: Language) {
     : product.description_gr || product.description_en || product.description_cn || "";
 }
 
+/** Convert Chinese/English material text to the target language */
+export function getLocalizedMaterial(material: string | null | undefined, language: Language, verified?: boolean | null): string | null {
+  if (!material || !material.trim()) return null;
+  if (verified !== true) return null; // not confirmed, don't show
+  const raw = material.trim();
+  const mapping: Record<string, { en: string; el: string }> = {
+    "棉": { en: "Cotton", el: "Βαμβάκι" },
+    "纯棉": { en: "100% Cotton", el: "100% Βαμβάκι" },
+    "涤纶": { en: "Polyester", el: "Πολυεστέρας" },
+    "聚酯纤维": { en: "Polyester", el: "Πολυεστέρας" },
+    "牛仔": { en: "Denim", el: "Τζιν" },
+    "皮革": { en: "Leather", el: "Δέρμα" },
+    "真皮": { en: "Leather", el: "Δέρμα" },
+    "人造革": { en: "PU Leather", el: "Συνθετικό Δέρμα PU" },
+    "羊毛": { en: "Wool", el: "Μαλλί" },
+    "亚麻": { en: "Linen", el: "Λινό" },
+    "丝绸": { en: "Silk", el: "Μετάξι" },
+    "真丝": { en: "Silk", el: "Μετάξι" },
+  };
+  // Check raw value for Chinese chars
+  const hasChinese = /[一-鿿]/.test(raw);
+  if (hasChinese) {
+    // Try to match Chinese segments
+    for (const [cn, vals] of Object.entries(mapping)) {
+      if (raw.includes(cn)) {
+        const replaced = raw.replace(cn, language === "en" ? vals.en : vals.el);
+        // Remove remaining Chinese characters
+        const cleaned = replaced.replace(/[一-鿿]+/g, "").replace(/\s+/g, " ").trim();
+        return cleaned || (language === "en" ? "Cotton" : "Βαμβάκι");
+      }
+    }
+    // Unrecognized Chinese — hide
+    return null;
+  }
+  // Already English text — translate to Greek if needed
+  if (language === "el") {
+    const enLower = raw.toLowerCase();
+    for (const [, vals] of Object.entries(mapping)) {
+      if (enLower.includes(vals.en.toLowerCase())) return raw.replace(new RegExp(vals.en, "i"), vals.el);
+    }
+    return raw; // return as-is if no mapping
+  }
+  return raw; // English, already fine
+}
+
 /** Convert English day names in opening hours to Greek */
 export function localizeHours(hours: unknown, language: Language): string {
   const h = typeof hours === "string" ? hours : "";

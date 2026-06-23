@@ -7,6 +7,7 @@ import { SiteHeader } from "@/components/site-header";
 import {
   categoryLabels,
   getLanguage,
+  getLocalizedMaterial,
   productDescription,
   productName,
   subcategoryLabels,
@@ -136,7 +137,7 @@ export default async function ProductPage({
       : null,
     isReal(product.brand) ? { label: t.brand, value: product.brand!.trim() } : null,
     isReal(ean) ? { label: t.ean, value: ean } : null,
-    isReal(product.material) ? { label: t.material, value: product.material!.trim() } : null,
+    isReal(product.material) ? { label: t.material, value: getLocalizedMaterial(product.material, language, (product as Record<string, unknown>).material_verified as boolean) || (language === "el" ? "—" : "—") } : null,
     isReal(product.fit) ? { label: t.fit, value: product.fit!.trim() } : null,
     isReal(product.season) ? { label: t.season, value: product.season!.trim() } : null,
   ].filter(Boolean) as { label: string; value: string }[];
