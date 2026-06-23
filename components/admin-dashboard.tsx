@@ -98,6 +98,7 @@ export function AdminDashboard() {
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [form, setForm] = useState<ProductFormData>(emptyProduct); const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false); const [translating, setTranslating] = useState(false);
+  const [aiMetaLoading, setAiMetaLoading] = useState(false);
   const editingIdRef = useRef<string | null>(null); editingIdRef.current = editingId;
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]); const [csvResults, setCsvResults] = useState<ApiResult[]>([]);
   const [imageResults, setImageResults] = useState<ApiResult[]>([]); const [selectedImageSku, setSelectedImageSku] = useState("");
@@ -183,6 +184,7 @@ export function AdminDashboard() {
     doTranslate();
   }
   async function doTranslate() { setTranslating(true); try { const d = await api("/api/admin/translate", { method: "POST", body: JSON.stringify({ name_cn: form.name_cn, description_cn: form.description_cn }) }) as TranslationResult; setForm(c => ({ ...c, name_gr: d.name_gr, description_gr: d.description_gr, name_en: d.name_en, description_en: d.description_en })); toast("翻译已生成，请检查后再保存。"); } catch (e) { toast(e instanceof Error ? e.message : "自动翻译失败", "err"); } finally { setTranslating(false); } }
+  async function generateAiMeta() { setAiMetaLoading(true); try { const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ product: { name_cn: form.name_cn, name_en: form.name_en, name_gr: form.name_gr, description_en: form.description_en, category: form.category, subcategory: form.subcategory, price: form.price, sizes: form.sizes } }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "生成失败"); setForm(c => ({ ...c, fit_type: d.fit_type || c.fit_type, material: d.material || c.material, ai_keywords: d.ai_keywords || c.ai_keywords, style_tags: d.style_tags || c.style_tags })); toast("AI 导购信息已生成，请检查后再保存。"); } catch (e) { toast(e instanceof Error ? e.message : "AI 生成失败", "err"); } finally { setAiMetaLoading(false); } }
 
   /* ── Submit / Delete ──────────────────────────────────── */
   async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!form.sku.trim()) { toast("请填写 SKU", "err"); return; } if (!form.name_cn.trim() && !form.name_en.trim() && !form.name_gr.trim()) { toast("请至少填写一个语言的商品名", "err"); return; } if (form.size_chart.trim()) { try { JSON.parse(form.size_chart.trim()); } catch { toast("尺码表 JSON 格式不正确，请检查", "err"); return; } }
@@ -461,7 +463,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
             {/* AI 导购信息 card */}
             <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-black text-ink">AI 导购信息</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-black text-ink">AI 导购信息</h2>
+                <button className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiMetaLoading || !form.name_cn.trim() && !form.name_en.trim()} onClick={() => void generateAiMeta()} type="button">{aiMetaLoading ? "生成中..." : "自动生成 AI 导购信息"}</button>
+              </div>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                 <Field label="版型">
                   <select className="input" value={form.fit_type} onChange={e => updateField("fit_type", e.target.value)}>
@@ -483,6 +488,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mt-3">
                 <Field label="尺码表 (JSON)">
                   <textarea className="input min-h-28 font-mono text-xs" value={form.size_chart} onChange={e => updateField("size_chart", e.target.value)} placeholder={`{"S":{"bust":"80-84","waist":"62-66","shoulder":"36-38","length":"58-60"},"M":{"bust":"84-88","waist":"66-70","shoulder":"38-40","length":"60-62"},"L":{"bust":"88-94","waist":"70-76","shoulder":"40-42","length":"62-64"}}`} />
+                  <p className="mt-1 text-[10px] text-stone-400">尺码表建议根据实际商品人工填写，避免推荐不准确。</p>
                 </Field>
               </div>
             </section>
