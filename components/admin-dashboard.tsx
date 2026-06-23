@@ -101,6 +101,7 @@ export function AdminDashboard() {
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]); const [csvResults, setCsvResults] = useState<ApiResult[]>([]);
   const [imageResults, setImageResults] = useState<ApiResult[]>([]); const [selectedImageSku, setSelectedImageSku] = useState("");
   const [tab, setTab] = useState<Tab>("dashboard");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [newMainFile, setNewMainFile] = useState<File | null>(null); const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
   const [sizeStock, setSizeStock] = useState<Record<string, number>>({});
   const [showSizeSummary, setShowSizeSummary] = useState(false);
@@ -186,6 +187,10 @@ export function AdminDashboard() {
   async function deleteProduct(p: AdminProduct) { if (!window.confirm(`确认下架商品 ${p.sku}？\n\n下架后商品将不会在前台显示，但数据会保留，之后可以恢复上架。`)) return; setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "DELETE" }); toast("商品已下架"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "下架失败", "err"); } finally { setLoading(false); } }
   async function restoreProduct(p: AdminProduct) { if (!window.confirm(`恢复上架商品 ${p.sku}？`)) return; setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "PUT", body: JSON.stringify({ ...p, is_active: true }) }); toast("商品已恢复上架"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "恢复失败", "err"); } finally { setLoading(false); } }
   async function permanentDelete(p: AdminProduct) { const input = window.prompt(`永久删除商品 ${p.sku}？\n\n此操作不可恢复！请输入 DELETE 确认：`); if (input !== "DELETE") { if (input !== null) toast("输入错误，已取消", "err"); return; } setLoading(true); try { await api(`/api/admin/products/${p.id}/permanent`, { method: "DELETE" }); toast("商品已永久删除"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "删除失败", "err"); } finally { setLoading(false); } }
+
+  function toggleSelect(id: string) { setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }
+  function selectAll() { if (selectedIds.size === filteredProducts.slice(0, 100).length) { setSelectedIds(new Set()); } else { setSelectedIds(new Set(filteredProducts.slice(0, 100).map(p => p.id))); } }
+  async function batchUpdateStatus(isActive: boolean) { const ids = Array.from(selectedIds); if (ids.length === 0) { toast("请先选择商品", "err"); return; } const label = isActive ? "恢复上架" : "下架"; const msg = isActive ? "确认恢复上架选中的 X 个商品？恢复后商品会重新在前台显示。" : "确认下架选中的 X 个商品？下架后前台不再显示，但数据会保留，可后续恢复上架。"; if (!window.confirm(msg.replace("X", String(ids.length)))) return; setLoading(true); try { const r = await fetch("/api/admin/products/bulk", { method: "PUT", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ ids, is_active: isActive }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "批量操作失败"); toast(`已${label} ${ids.length} 个商品`); setSelectedIds(new Set()); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : `批量${label}失败`, "err"); } finally { setLoading(false); } }
 
   /* ── CSV ──────────────────────────────────────────────── */
   async function handleCsv(f: File | null) { setCsvResults([]); if (!f) { setCsvRows([]); return; } setCsvRows(parseCsv(await f.text())); }
@@ -286,15 +291,27 @@ export function AdminDashboard() {
               {filterStatus !== "all" ? <button className="rounded-full px-3.5 py-1.5 text-xs font-bold text-stone-400 hover:text-ink" onClick={() => setFilterStatus("all")} type="button">清除筛选</button> : null}
             </div>
 
+            {/* Batch actions */}
+            {selectedIds.size > 0 ? (
+              <div className="mb-3 flex items-center gap-2 rounded-lg bg-stone-50 px-4 py-2 text-sm">
+                <span className="text-xs font-bold text-stone-600">已选择 {selectedIds.size} 个商品</span>
+                <button className="rounded-lg border border-red-100 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => void batchUpdateStatus(false)}>批量下架</button>
+                <button className="rounded-lg border border-green-100 px-3 py-1.5 text-xs font-bold text-green-700 hover:bg-green-50" onClick={() => void batchUpdateStatus(true)}>批量恢复上架</button>
+                <button className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-bold text-stone-400 hover:bg-stone-100" onClick={() => setSelectedIds(new Set())}>取消选择</button>
+              </div>
+            ) : null}
+
             {/* Table */}
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead><tr className="bg-stone-50/80 text-stone-400">
+                  <th className="py-2.5 pr-3 text-xs font-bold w-8"><input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === filteredProducts.slice(0, 100).length} onChange={selectAll} /></th>
                   <th className="py-2.5 pr-3 text-xs font-bold w-14">图片</th><th className="py-2.5 pr-3 text-xs font-bold">SKU</th><th className="py-2.5 pr-3 text-xs font-bold">商品名</th><th className="py-2.5 pr-3 text-xs font-bold">分类</th><th className="py-2.5 pr-3 text-xs font-bold">价格</th><th className="py-2.5 pr-3 text-xs font-bold">库存</th><th className="py-2.5 pr-3 text-xs font-bold">状态</th><th className="py-2.5 pr-3 text-xs font-bold w-40">操作</th>
                 </tr></thead>
                 <tbody>
                   {filteredProducts.slice(0, 100).map(p => (
                     <tr className="border-b border-stone-50 hover:bg-stone-50/70 transition-colors" key={p.id}>
+                      <td className="py-2 pr-3 align-middle"><input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} /></td>
                       <td className="py-2 pr-3 align-middle">
                         {p.image_url ? (
                           <ImgThumb src={p.image_url} />
