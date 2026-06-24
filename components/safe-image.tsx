@@ -8,13 +8,19 @@ type SafeImageProps = {
   className?: string;
   loading?: "lazy" | "eager";
   fallback?: React.ReactNode;
+  /** Secondary image URL to try if primary src fails (e.g. JPG → SVG fallback). */
+  fallbackSrc?: string;
 };
 
 /** Renders an img with onError fallback. If src is empty, shows a refined placeholder. */
-export function SafeImage({ src, alt, className, loading, fallback }: SafeImageProps) {
-  const [failed, setFailed] = useState(false);
+export function SafeImage({ src, alt, className, loading, fallback, fallbackSrc }: SafeImageProps) {
+  const [failStage, setFailStage] = useState(0);
+  // 0 = trying primary src; 1 = trying fallbackSrc; 2 = show placeholder
 
-  if (!src || failed) {
+  const effectiveSrc = failStage === 1 && fallbackSrc ? fallbackSrc : src;
+  const failed = failStage >= 2 || !effectiveSrc;
+
+  if (failed) {
     if (fallback) return <>{fallback}</>;
     return (
       <div className="flex h-full w-full items-center justify-center bg-[#f3efe8]">
@@ -34,13 +40,21 @@ export function SafeImage({ src, alt, className, loading, fallback }: SafeImageP
     );
   }
 
+  function handleError() {
+    if (failStage === 0 && fallbackSrc) {
+      setFailStage(1); // try fallbackSrc next
+    } else {
+      setFailStage(2); // both failed → show placeholder
+    }
+  }
+
   return (
     <img
       alt={alt}
       className={className}
       loading={loading}
-      src={src}
-      onError={() => setFailed(true)}
+      src={effectiveSrc}
+      onError={handleError}
     />
   );
 }

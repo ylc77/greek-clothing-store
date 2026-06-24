@@ -120,14 +120,14 @@ export async function getProductBySku(sku: string): Promise<{ product: Product |
 
 /** Static category cover images — independent of product uploads. */
 const CATEGORY_COVER_MAP: Record<string, string> = {
-  men: "/images/category/men.svg",
-  women: "/images/category/women.svg",
-  shoes: "/images/category/shoes.svg",
-  bags: "/images/category/bags.svg",
-  luggage: "/images/category/luggage.svg",
-  hats: "/images/category/hats.svg",
-  jewelry: "/images/category/jewelry.svg",
-  other: "/images/category/other.svg",
+  men: "/images/category/men.jpg",
+  women: "/images/category/women.jpg",
+  shoes: "/images/category/shoes.jpg",
+  bags: "/images/category/bags.jpg",
+  luggage: "/images/category/luggage.jpg",
+  hats: "/images/category/hats.jpg",
+  jewelry: "/images/category/jewelry.jpg",
+  other: "/images/category/other.jpg",
 };
 
 export function getCategoryImages(): Record<string, string> {

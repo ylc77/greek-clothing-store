@@ -115,6 +115,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
             {categories.map((cat) => {
               const img = categoryImages[cat.slug];
+              const fallbackImg = img.replace(/\.jpg$/, ".svg");
               return (
                 <Link
                   key={cat.slug}
@@ -125,6 +126,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                     <SafeImage
                       alt={categoryLabels[cat.slug][language]}
                       className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"
+                      fallbackSrc={fallbackImg}
                       loading="lazy"
                       src={img}
                     />
