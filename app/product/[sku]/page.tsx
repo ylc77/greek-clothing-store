@@ -146,7 +146,7 @@ export default async function ProductPage({
     <main className="min-h-screen bg-paper">
       <SiteHeader language={language} settings={settings} />
 
-      <section className="mx-auto max-w-6xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <section className="mx-auto max-w-7xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
         {/* Breadcrumb */}
         <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold text-stone-400 sm:text-sm">
           <Link className="hover:text-ink" href={withLanguage("/", language)}>
@@ -161,7 +161,7 @@ export default async function ProductPage({
         </div>
 
         {/* Main layout */}
-        <div className="grid gap-6 lg:grid-cols-[54fr_46fr] lg:gap-10">
+        <div className="grid gap-6 lg:grid-cols-[58fr_42fr] lg:gap-12">
           {/* Left: image gallery */}
           <div>
             <ProductImageGallery

@@ -26,16 +26,40 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
   if (!hasImages) {
     const t = text[(language || "el") as Language];
     return (
-      <div className="flex aspect-[4/5] items-center justify-center rounded-md border border-dashed border-stone-300 bg-[#f8f6f1] text-sm text-stone-500">
+      <div className="flex min-h-[320px] items-center justify-center rounded-md border border-dashed border-stone-300 bg-[#f5f5f3] text-sm text-stone-500 md:min-h-[680px]">
         {t.noImage}
       </div>
     );
   }
 
   return (
-    <div className="grid gap-3">
-      <div className="relative overflow-hidden rounded-md border border-stone-200 bg-[#f8f6f1]">
-        <SafeImage alt={alt} className="aspect-[4/5] w-full object-contain" src={images[activeIndex]} />
+    <div className="flex flex-col gap-3 md:flex-row md:gap-4">
+      {/* Thumbnails — vertical on desktop (left), horizontal on mobile (below) */}
+      {hasMultipleImages ? (
+        <div className="order-2 flex gap-2 overflow-x-auto pb-1 md:order-1 md:flex-col md:overflow-y-auto md:overflow-x-hidden md:pb-0 md:w-20 md:shrink-0 md:max-h-[680px]">
+          {images.map((imageUrl, index) => (
+            <button
+              aria-label={`Show image ${index + 1}`}
+              className={`h-20 w-16 shrink-0 snap-start overflow-hidden rounded-md border bg-white transition md:h-24 md:w-20 ${
+                activeIndex === index ? "border-ink ring-2 ring-ink/15" : "border-stone-200 hover:border-stone-400"
+              }`}
+              key={`${imageUrl}-${index}`}
+              onClick={() => setActiveIndex(index)}
+              type="button"
+            >
+              <SafeImage alt={`${alt} ${index + 1}`} className="h-full w-full object-cover" src={imageUrl} />
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Main image */}
+      <div className="relative order-1 flex-1 overflow-hidden rounded-md border border-stone-200 bg-[#f5f5f3] min-h-[320px] md:min-h-[680px] md:order-2">
+        <SafeImage
+          alt={alt}
+          className="h-full w-full object-contain object-center"
+          src={images[activeIndex]}
+        />
 
         {hasMultipleImages ? (
           <>
@@ -61,24 +85,6 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
           </>
         ) : null}
       </div>
-
-      {hasMultipleImages ? (
-        <div className="flex snap-x gap-3 overflow-x-auto pb-1">
-          {images.map((imageUrl, index) => (
-            <button
-              aria-label={`Show image ${index + 1}`}
-              className={`h-20 w-16 shrink-0 snap-start overflow-hidden rounded-md border bg-white ${
-                activeIndex === index ? "border-ink ring-2 ring-ink/15" : "border-stone-200"
-              }`}
-              key={`${imageUrl}-${index}`}
-              onClick={() => setActiveIndex(index)}
-              type="button"
-            >
-              <SafeImage alt={`${alt} ${index + 1}`} className="h-full w-full object-cover" src={imageUrl} />
-            </button>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
