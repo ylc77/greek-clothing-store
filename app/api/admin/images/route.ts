@@ -286,13 +286,11 @@ export async function POST(request: NextRequest) {
 
     const baseMsg = galleryIndex === null ? "Main image" : "Gallery image";
     const dimMsg = imgW > 0 && imgH > 0 ? `${imgW}×${imgH}` : "";
-    const compliant = (imgW >= 1000 || imgH >= 1000) && sizeWarning == null;
-    const complianceMsg = baseMsg === "Main image" ? (compliant ? "符合 Skroutz" : "不符合 Skroutz") : "";
     results.push({
       fileName,
       sku,
       ok: true,
-      message: [baseMsg, dimMsg, complianceMsg, sizeWarning].filter(Boolean).join(" · "),
+      message: [baseMsg, dimMsg, sizeWarning].filter(Boolean).join(" · "),
       imageUrl
     });
   }

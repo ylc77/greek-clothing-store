@@ -136,7 +136,6 @@ export function AdminDashboard() {
     total: products.filter(p => p.is_active && effectiveStock(p) >= 0).length,
     noImage: products.filter(p => p.is_active && effectiveStock(p) >= 0 && !p.image_url).length,
     noDesc: products.filter(p => p.is_active && effectiveStock(p) >= 0 && !p.description_en && !p.description_gr).length,
-    lowRes: products.filter(p => p.is_active && effectiveStock(p) >= 0 && p.image_url && (Number((p as Record<string,unknown>).image_width) || 0) < 1000 && (Number((p as Record<string,unknown>).image_height) || 0) < 1000).length,
   }), [products]);
 
   /* ── API helper ───────────────────────────────────────── */
@@ -635,12 +634,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
             {/* Stats */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[{ label: "Feed 商品数", v: feedStats.total, color: "" }, { label: "缺图片", v: feedStats.noImage, color: feedStats.noImage > 0 ? "" : "" }, { label: "低分辨率", v: feedStats.lowRes, color: feedStats.lowRes > 0 ? "" : "" }, { label: "缺描述", v: feedStats.noDesc, color: "" }, { label: "库存为0", v: stats.noStock, color: "" }].map(s => (
+              {[{ label: "Feed 商品数", v: feedStats.total, color: "" }, { label: "缺图片", v: feedStats.noImage, color: feedStats.noImage > 0 ? "" : "" }, { label: "缺描述", v: feedStats.noDesc, color: "" }, { label: "库存为0", v: stats.noStock, color: "" }].map(s => (
                 <div key={s.label} className="rounded-xl border border-stone-100 bg-white p-5 text-center shadow-sm">
                   <p className={`text-2xl font-black ${(s.label === "缺图片"||s.label==="缺描述") && s.v > 0 ? "text-amber-600" : s.label === "库存为0" && s.v > 0 ? "text-red-500" : "text-ink"}`}>{s.v}</p>
                   <p className="mt-1 text-xs font-bold text-stone-400">{s.label}</p>
                   {s.label === "缺图片" ? <p className="mt-1 text-[10px] text-stone-400">缺图片影响商品展示</p> : null}
-                  {s.label === "低分辨率" && s.v > 0 ? <p className="mt-1 text-[10px] text-stone-400">主图宽高均 &lt; 1000px 不符合 Skroutz</p> : null}
                   {s.label === "缺描述" ? <p className="mt-1 text-[10px] text-stone-400">缺描述影响信息完整度</p> : null}
                   {s.label === "库存为0" ? <p className="mt-1 text-[10px] text-stone-400">库存为0可能无法售卖</p> : null}
                 </div>
