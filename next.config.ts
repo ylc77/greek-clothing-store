@@ -1,8 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Keep sharp as external so its native .so files survive Vercel's output tracing
+  // Keep sharp and its @img native deps external — @vercel/nft doesn't trace dlopen()'d .so files
   serverExternalPackages: ["sharp"],
+  outputFileTracingIncludes: {
+    "/api/admin/images": ["./node_modules/@img/**/*"],
+  },
   images: {
     remotePatterns: [
       {
