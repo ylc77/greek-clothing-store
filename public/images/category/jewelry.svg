@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+  <rect width="800" height="1000" fill="#f5efe0"/>
+  <g transform="translate(400,420)" fill="none" stroke="#c8982a" stroke-width="2.5">
+    <circle cx="0" cy="-40" r="25" fill="#c8982a" fill-opacity="0.2"/>
+    <path d="M0-15v30c0 20-30 40-30 40s-30-20-30-40v-30"/>
+    <path d="M0 15v20c0 15 25 30 25 30s25-15 25-30v-20"/>
+    <path d="M-50-20c-30-40-70-30-70-30s10 40 30 50"/>
+    <path d="M50-20c30-40 70-30 70-30s-10 40-30 50"/>
+    <circle cx="-60" cy="60" r="10"/>
+    <circle cx="60" cy="60" r="10"/>
+    <circle cx="0" cy="80" r="12"/>
+  </g>
+  <text x="400" y="620" text-anchor="middle" font-family="system-ui,sans-serif" font-size="24" font-weight="700" fill="#c8982a" letter-spacing="6">JEWELRY</text>
+</svg>

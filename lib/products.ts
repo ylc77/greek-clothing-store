@@ -118,32 +118,18 @@ export async function getProductBySku(sku: string): Promise<{ product: Product |
   return { product: data ? mapProduct(data as Product) : null, error: null };
 }
 
-/** Fetch one product image per category (for category card backgrounds). */
-export async function getCategoryImages(): Promise<Record<string, string>> {
-  const supabase = getSupabaseClient();
-  const images: Record<string, string> = {};
+/** Static category cover images — independent of product uploads. */
+const CATEGORY_COVER_MAP: Record<string, string> = {
+  men: "/images/category/men.svg",
+  women: "/images/category/women.svg",
+  shoes: "/images/category/shoes.svg",
+  bags: "/images/category/bags.svg",
+  luggage: "/images/category/luggage.svg",
+  hats: "/images/category/hats.svg",
+  jewelry: "/images/category/jewelry.svg",
+  other: "/images/category/other.svg",
+};
 
-  if (!supabase) return images;
-
-  // Fetch latest active product with image per category using one query
-  const { data } = await supabase
-    .from("products")
-    .select("category, image_url")
-    .neq("is_active", false)
-    .gte("stock", 0)
-    .not("image_url", "is", null)
-    .neq("image_url", "")
-    .order("created_at", { ascending: false })
-    .limit(50);
-
-  if (data) {
-    for (const row of data) {
-      const cat = String(row.category);
-      if (!images[cat] && row.image_url) {
-        images[cat] = String(row.image_url);
-      }
-    }
-  }
-
-  return images;
+export function getCategoryImages(): Record<string, string> {
+  return { ...CATEGORY_COVER_MAP };
 }

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+  <rect width="800" height="1000" fill="#e8ecf1"/>
+  <g transform="translate(400,420)" fill="none" stroke="#5a6c7d" stroke-width="2.5">
+    <circle cx="0" cy="-80" r="45"/>
+    <path d="M-60 20v240h120V20c-60-80-60-80-60-80s0 0-60 80z"/>
+    <line x1="-100" y1="260" x2="100" y2="260" stroke-width="3"/>
+  </g>
+  <text x="400" y="620" text-anchor="middle" font-family="system-ui,sans-serif" font-size="24" font-weight="700" fill="#5a6c7d" letter-spacing="6">MEN</text>
+</svg>

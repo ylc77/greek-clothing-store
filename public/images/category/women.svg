@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+  <rect width="800" height="1000" fill="#f5e8ec"/>
+  <g transform="translate(400,420)" fill="none" stroke="#9b6b7d" stroke-width="2.5">
+    <circle cx="0" cy="-90" r="35"/>
+    <path d="M-40-55l-80 200h80l20-100 20 100h80l-80-200"/>
+    <path d="M-20 145v180h40V145"/>
+  </g>
+  <text x="400" y="660" text-anchor="middle" font-family="system-ui,sans-serif" font-size="24" font-weight="700" fill="#9b6b7d" letter-spacing="6">WOMEN</text>
+</svg>
