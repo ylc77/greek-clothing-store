@@ -121,7 +121,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                   className="group relative overflow-hidden rounded-xl border border-stone-100 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-stone-900/5"
                   href={withLanguage(`/${cat.slug}`, language)}
                 >
-                  <div className="relative flex aspect-[4/5] items-center justify-center overflow-hidden bg-[#f3efe8]">
+                  <div className="relative flex aspect-[3/4] items-center justify-center overflow-hidden bg-[#f3efe8]">
                     <SafeImage
                       alt={categoryLabels[cat.slug][language]}
                       className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"

@@ -18,7 +18,7 @@ export function ProductCard({ product, language }: { product: Product; language:
       <div className="relative overflow-hidden bg-[#f3efe8]">
         <SafeImage
           alt={name}
-          className="aspect-[4/5] w-full object-cover transition duration-500 group-hover:scale-[1.04]"
+          className="aspect-[3/4] w-full object-cover object-center transition duration-500 group-hover:scale-[1.04]"
           loading="lazy"
           src={product.image_url}
         />

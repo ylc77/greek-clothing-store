@@ -16,6 +16,9 @@ const webpContentType = "image/webp";
 const SKROUTZ_MIN_PX = 1000;
 const SKROUTZ_MAX_PX = 1600;
 const WEBP_QUALITY = 82;
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+const HEIC_PATTERN = /\.hei[cf]s?$/i;
+const HEIC_MIME_PATTERN = /^image\/hei[cf]s?$/i;
 
 type ImageResult = {
   fileName: string;
@@ -41,6 +44,25 @@ function stringValue(value: FormDataEntryValue | null) {
 }
 
 async function toOptimizedWebp(file: File): Promise<{ buffer: Buffer; width: number; height: number; warning?: string }> {
+  // Reject HEIC/HEIF early with a clear message
+  const fileNameLower = file.name.toLowerCase();
+  if (
+    HEIC_PATTERN.test(file.name) ||
+    HEIC_PATTERN.test(fileNameLower) ||
+    HEIC_MIME_PATTERN.test(file.type)
+  ) {
+    throw new Error(
+      "暂不支持 HEIC/HEIF 格式。请在 iPhone 设置 → 相机 → 格式 → 选择「最兼容」(JPG)，或将照片先转换为 JPG/PNG 后再上传。"
+    );
+  }
+
+  // Reject oversized files
+  if (file.size > MAX_FILE_BYTES) {
+    throw new Error(
+      `文件大小 ${(file.size / 1024 / 1024).toFixed(1)}MB 超过上限（${MAX_FILE_BYTES / 1024 / 1024}MB），请压缩后再上传。`
+    );
+  }
+
   const input = Buffer.from(await file.arrayBuffer());
   const { default: sharp } = await import("sharp");
   const meta = await sharp(input).metadata();
@@ -92,7 +114,9 @@ async function toOptimizedWebp(file: File): Promise<{ buffer: Buffer; width: num
     if (file.type === webpContentType || file.name.toLowerCase().endsWith(".webp")) {
       return { buffer: input, width: srcW, height: srcH, warning };
     }
-    throw error;
+    // Surface the underlying error so the caller can show it to the user
+    const reason = error instanceof Error ? error.message : "Unknown processing error";
+    throw new Error(`图片处理失败：${reason}`);
   }
 }
 
@@ -222,8 +246,9 @@ export async function POST(request: NextRequest) {
     try {
       const result = await toOptimizedWebp(file);
       webpBuffer = result.buffer; imgW = result.width; imgH = result.height; sizeWarning = result.warning;
-    } catch {
-      results.push({ fileName, sku, ok: false, message: "Image could not be converted to WebP" });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown conversion error";
+      results.push({ fileName, sku, ok: false, message: reason });
       continue;
     }
 
@@ -241,17 +266,18 @@ export async function POST(request: NextRequest) {
 
     const { data: publicUrlData } = supabase.storage.from(productImagesBucket).getPublicUrl(storagePath);
     const imageUrl = withCacheVersion(publicUrlData.publicUrl);
-    const updatePayload =
+    const updatePayload: Record<string, unknown> =
       galleryIndex === null
-        ? { image_url: imageUrl }
+        ? { image_url: imageUrl, image_width: imgW, image_height: imgH }
         : {
             image_urls: (() => {
               const imageUrls = Array.isArray(product.image_urls) ? [...product.image_urls] : [];
               imageUrls[galleryIndex] = imageUrl;
               return imageUrls.filter(Boolean);
-            })()
+            })() as unknown as string[]
           };
-    const { error: updateError } = await supabase.from("products").update(updatePayload).eq("sku", sku);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: updateError } = await (supabase as any).from("products").update(updatePayload).eq("sku", sku);
 
     if (updateError) {
       results.push({ fileName, sku, ok: false, message: updateError.message });
@@ -260,11 +286,13 @@ export async function POST(request: NextRequest) {
 
     const baseMsg = galleryIndex === null ? "Main image" : "Gallery image";
     const dimMsg = imgW > 0 && imgH > 0 ? `${imgW}×${imgH}` : "";
+    const compliant = (imgW >= 1000 || imgH >= 1000) && sizeWarning == null;
+    const complianceMsg = baseMsg === "Main image" ? (compliant ? "符合 Skroutz" : "不符合 Skroutz") : "";
     results.push({
       fileName,
       sku,
       ok: true,
-      message: [baseMsg, dimMsg, sizeWarning].filter(Boolean).join(" · "),
+      message: [baseMsg, dimMsg, complianceMsg, sizeWarning].filter(Boolean).join(" · "),
       imageUrl
     });
   }

@@ -26,7 +26,7 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
   if (!hasImages) {
     const t = text[(language || "el") as Language];
     return (
-      <div className="flex aspect-[4/5] items-center justify-center rounded-md border border-dashed border-stone-300 bg-white text-sm text-stone-500">
+      <div className="flex aspect-[4/5] items-center justify-center rounded-md border border-dashed border-stone-300 bg-[#f3efe8] text-sm text-stone-500">
         {t.noImage}
       </div>
     );
@@ -34,8 +34,8 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
 
   return (
     <div className="grid gap-3">
-      <div className="relative overflow-hidden rounded-md border border-stone-200 bg-white">
-        <SafeImage alt={alt} className="aspect-[4/5] w-full object-cover" src={images[activeIndex]} />
+      <div className="relative overflow-hidden rounded-md border border-stone-200 bg-[#f3efe8]">
+        <SafeImage alt={alt} className="aspect-[4/5] w-full object-contain" src={images[activeIndex]} />
 
         {hasMultipleImages ? (
           <>
