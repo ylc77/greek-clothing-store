@@ -605,7 +605,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <section className="flex flex-col gap-5">
             <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
               <h2 className="mb-1 text-lg font-black text-ink">选择商品上传</h2>
-              <p className="mb-3 text-xs text-stone-500">用分类和搜索筛选商品，再上传主图或多图。</p>
+              <p className="mb-3 text-xs text-stone-500">用分类和搜索筛选商品，再上传主图或多图。Skroutz 建议图片最长边 1000-1600px。</p>
               <div className="mb-3 grid gap-2 md:grid-cols-4">
                 <input className="input" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
                 <select className="input" value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部分类</option>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select>

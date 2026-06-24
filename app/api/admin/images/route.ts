@@ -13,8 +13,9 @@ export const runtime = "nodejs";
 const imageNamePattern = /^(.+)\.(jpe?g|png|webp)$/i;
 const galleryImageNamePattern = /^(.+)-([1-9]\d*)\.(jpe?g|png|webp)$/i;
 const webpContentType = "image/webp";
-const outputWidth = 1200;
-const outputHeight = 1500;
+const SKROUTZ_MIN_PX = 1000;
+const SKROUTZ_MAX_PX = 1600;
+const WEBP_QUALITY = 82;
 
 type ImageResult = {
   fileName: string;
@@ -39,41 +40,58 @@ function stringValue(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-async function toOptimizedWebp(file: File) {
+async function toOptimizedWebp(file: File): Promise<{ buffer: Buffer; width: number; height: number; warning?: string }> {
   const input = Buffer.from(await file.arrayBuffer());
+  const { default: sharp } = await import("sharp");
+  const meta = await sharp(input).metadata();
+  const srcW = meta.width || 0;
+  const srcH = meta.height || 0;
+  const maxEdge = Math.max(srcW, srcH);
+  let warning: string | undefined;
 
-  if (file.type === webpContentType || file.name.toLowerCase().endsWith(".webp")) {
-    return input;
+  // Skroutz check: both sides < 1000px
+  if (srcW > 0 && srcH > 0 && srcW < SKROUTZ_MIN_PX && srcH < SKROUTZ_MIN_PX) {
+    warning = `图片尺寸 ${srcW}x${srcH} 不满足 Skroutz 最低要求（至少一边 ≥ ${SKROUTZ_MIN_PX}px）`;
   }
 
-  const { default: sharp } = await import("sharp");
+  // Determine target dimensions
+  let targetW = srcW;
+  let targetH = srcH;
+
+  if (maxEdge > SKROUTZ_MAX_PX) {
+    // Downscale: max edge to 1600, keep aspect ratio
+    const ratio = SKROUTZ_MAX_PX / maxEdge;
+    targetW = Math.round(srcW * ratio);
+    targetH = Math.round(srcH * ratio);
+  }
+  // If maxEdge between 1000-1600: keep original (just convert to WebP)
+  // If maxEdge < 1000: keep original, don't upscale (warning already set)
+
+  if (file.type === webpContentType || file.name.toLowerCase().endsWith(".webp")) {
+    if (maxEdge > SKROUTZ_MAX_PX) {
+      // Even for WebP input, downscale if too large
+      return { buffer: await sharp(input).resize({ width: targetW, height: targetH, fit: "inside", withoutEnlargement: true }).webp({ quality: WEBP_QUALITY }).toBuffer(), width: targetW, height: targetH, warning };
+    }
+    return { buffer: input, width: srcW, height: srcH, warning };
+  }
 
   try {
-    // Read metadata to check Skroutz minimum size
-    const meta = await sharp(input).metadata();
-    const w = meta.width || 0;
-    const h = meta.height || 0;
-
-    if (w > 0 && h > 0 && w < 1000 && h < 1000) {
-      throw new Error(`图片尺寸 ${w}x${h} 不满足 Skroutz 最低要求（至少一边 ≥ 1000px）`);
-    }
-
-    // Resize to WebP — only downscale, never upscale
-    return await sharp(input)
+    const buffer = await sharp(input)
       .rotate()
       .resize({
-        width: Math.min(w || outputWidth, outputWidth),
-        height: Math.min(h || outputHeight, outputHeight),
+        width: targetW > 0 ? targetW : undefined,
+        height: targetH > 0 ? targetH : undefined,
         fit: "inside",
         withoutEnlargement: true,
       })
-      .webp({ quality: 82 })
+      .webp({ quality: WEBP_QUALITY })
       .toBuffer();
+    return { buffer, width: targetW, height: targetH, warning };
   } catch (error) {
+    // Fallback for WebP that can't be re-encoded
     if (file.type === webpContentType || file.name.toLowerCase().endsWith(".webp")) {
-      return input;
+      return { buffer: input, width: srcW, height: srcH, warning };
     }
-
     throw error;
   }
 }
@@ -200,9 +218,10 @@ export async function POST(request: NextRequest) {
         ? Number(galleryMatch[2]) - 1
         : null;
 
-    let webpBuffer: Buffer;
+    let webpBuffer: Buffer; let imgW = 0; let imgH = 0; let sizeWarning: string | undefined;
     try {
-      webpBuffer = await toOptimizedWebp(file);
+      const result = await toOptimizedWebp(file);
+      webpBuffer = result.buffer; imgW = result.width; imgH = result.height; sizeWarning = result.warning;
     } catch {
       results.push({ fileName, sku, ok: false, message: "Image could not be converted to WebP" });
       continue;
@@ -239,14 +258,13 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
+    const baseMsg = galleryIndex === null ? "Main image" : "Gallery image";
+    const dimMsg = imgW > 0 && imgH > 0 ? `${imgW}×${imgH}` : "";
     results.push({
       fileName,
       sku,
       ok: true,
-      message:
-        galleryIndex === null
-          ? "Converted to WebP and linked as main image"
-          : "Converted to WebP and linked as gallery image",
+      message: [baseMsg, dimMsg, sizeWarning].filter(Boolean).join(" · "),
       imageUrl
     });
   }
