@@ -516,6 +516,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="mb-4 rounded-lg border border-stone-200 bg-stone-50 p-4">
                   <h3 className="text-sm font-black text-ink">上传图片到当前商品</h3>
                   <p className="mt-1 text-xs text-stone-500">直接上传主图或多图，自动写入商品字段。</p>
+                  <p className="mt-1 text-[10px] text-amber-700">Skroutz 要求图片至少一边 ≥ 1000px，建议 1200×1200 以上。</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">
                       上传主图

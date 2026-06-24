@@ -49,13 +49,23 @@ async function toOptimizedWebp(file: File) {
   const { default: sharp } = await import("sharp");
 
   try {
+    // Read metadata to check Skroutz minimum size
+    const meta = await sharp(input).metadata();
+    const w = meta.width || 0;
+    const h = meta.height || 0;
+
+    if (w > 0 && h > 0 && w < 1000 && h < 1000) {
+      throw new Error(`图片尺寸 ${w}x${h} 不满足 Skroutz 最低要求（至少一边 ≥ 1000px）`);
+    }
+
+    // Resize to WebP — only downscale, never upscale
     return await sharp(input)
       .rotate()
       .resize({
-        width: outputWidth,
-        height: outputHeight,
-        fit: "cover",
-        position: "centre"
+        width: Math.min(w || outputWidth, outputWidth),
+        height: Math.min(h || outputHeight, outputHeight),
+        fit: "inside",
+        withoutEnlargement: true,
       })
       .webp({ quality: 82 })
       .toBuffer();
