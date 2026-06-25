@@ -13,6 +13,18 @@ function xmlEscape(value: string) {
     .replace(/'/g, "&apos;");
 }
 
+function isPublicSku(sku: string) {
+  const normalizedSku = sku.trim().toUpperCase();
+  return !(
+    normalizedSku === "TEST" ||
+    normalizedSku.startsWith("TEST-") ||
+    normalizedSku.startsWith("TEST_") ||
+    normalizedSku === "DEMO" ||
+    normalizedSku.startsWith("DEMO-") ||
+    normalizedSku.startsWith("DEMO_")
+  );
+}
+
 function urlEntry(href: string, lastmod: string, changefreq: string, priority: string, alternates?: Array<{ lang: string; href: string }>) {
   const altTags = alternates
     ? alternates
@@ -66,12 +78,13 @@ export async function GET() {
     const { data } = await supabase
       .from("products")
       .select("sku, created_at, updated_at")
-      .eq("is_active", true)
+      .or("is_active.is.null,is_active.eq.true")
       .gte("stock", 0)
       .order("created_at", { ascending: false });
 
     if (data) {
       for (const product of data) {
+        if (!isPublicSku(product.sku)) continue;
         const productUrl = `${base}/product/${encodeURIComponent(product.sku)}`;
         const lastmod = (product.updated_at || product.created_at)
           ? String(product.updated_at || product.created_at).split("T")[0]

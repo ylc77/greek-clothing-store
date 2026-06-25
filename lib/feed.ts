@@ -56,11 +56,11 @@ export function productUrl(product: Product) {
 }
 
 export function feedName(product: Product) {
-  return product.name_en || product.name_gr || product.name_cn || product.sku;
+  return product.name_gr || product.name_en || product.name_cn || product.sku;
 }
 
 export function feedDescription(product: Product) {
-  return product.description_en || product.description_gr || product.description_cn || feedName(product);
+  return product.description_gr || product.description_en || product.description_cn || feedName(product);
 }
 
 export function feedCategory(product: Product) {
@@ -80,6 +80,16 @@ export function getProductImages(product: Product): string[] {
     .map(u => u.trim())
     .filter(Boolean);
   return Array.from(new Set([...fromUrls, ...fromExtra])).filter(u => u !== product.image_url);
+}
+
+function isAbsoluteHttpUrl(value: string | null | undefined) {
+  if (!value) return false;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
 /* ── Data fetching ─────────────────────────────────────────── */
@@ -108,16 +118,22 @@ export async function getFeedProducts(): Promise<Product[]> {
 
 /* ── Feed builder: Skroutz / MyWebstore ───────────────────── */
 export function buildSkroutzFeed(products: Product[], brandName: string): string {
-  const rows = products.map(product => {
+  const eligibleProducts = products.filter(product => (
+    getTotalStock(product) > 0 &&
+    isAbsoluteHttpUrl(product.image_url)
+  ));
+
+  const rows = eligibleProducts.map(product => {
     const stockQty = getTotalStock(product);
     const image = product.image_url?.trim() || "";
-    const imageTag = image ? `      <image>${xmlEscape(image)}</image>\n` : "";
+    const imageTag = `      <image>${xmlEscape(image)}</image>\n`;
     const extras = getProductImages(product).slice(0, 15)
+      .filter(isAbsoluteHttpUrl)
       .map(u => `      <additional_imageurl>${xmlEscape(u)}</additional_imageurl>`)
       .join("\n");
     const mpn = product.mpn?.trim() || product.sku;
     const ean = product.ean?.trim() || product.barcode?.trim() || "";
-    const availability = product.availability?.trim() || (stockQty > 0 ? "In stock" : "Available from 1 to 3 days");
+    const availability = product.availability?.trim() || "In stock";
 
     return `    <product>
       <id>${xmlEscape(product.sku)}</id>
