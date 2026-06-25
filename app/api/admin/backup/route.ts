@@ -18,6 +18,7 @@ const csvFields = [
   "price",
   "stock",
   "sizes",
+  "size_stock",
   "image_url",
   "image_urls",
   "brand",
@@ -32,9 +33,22 @@ const csvFields = [
 
 function csvCell(value: unknown) {
   if (value === null || value === undefined) return '""';
-  const str = Array.isArray(value)
-    ? value.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean).join(",")
-    : String(value);
+
+  let str: string;
+  if (Array.isArray(value)) {
+    str = value
+      .filter((v): v is string => typeof v === "string")
+      .map((v) => v.trim())
+      .filter(Boolean)
+      .join(",");
+  } else if (typeof value === "object") {
+    str = Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `${key}:${Number(item) || 0}`)
+      .join(",");
+  } else {
+    str = String(value);
+  }
+
   return `"${str.replace(/"/g, '""')}"`;
 }
 
@@ -54,15 +68,11 @@ export async function GET(request: NextRequest) {
     .order("created_at", { ascending: false });
 
   const products = (data || []) as Product[];
-
   const rows = products.map((p) =>
-    csvFields.map((f) => {
-      const val = (p as Record<string, unknown>)[f];
-      return csvCell(val);
-    }).join(",")
+    csvFields.map((field) => csvCell((p as Record<string, unknown>)[field])).join(","),
   );
 
-  const csv = "﻿" + csvFields.join(",") + "\n" + rows.join("\n") + "\n";
+  const csv = "\uFEFF" + csvFields.join(",") + "\n" + rows.join("\n") + "\n";
 
   return new Response(csv, {
     headers: {

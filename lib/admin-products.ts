@@ -109,6 +109,10 @@ function imageUrlsValue(value: unknown) {
   return [];
 }
 
+function defaultSubcategory(category: string) {
+  return subcategoryList[category]?.[0] || "";
+}
+
 export function adminPasswordIsValid(password: string | null) {
   const expected = process.env.ADMIN_PASSWORD;
   return Boolean(expected && password && password === expected);
@@ -158,7 +162,7 @@ export function validateProductPayload(payload: AdminProductPayload) {
           description_gr: stringValue(payload.description_gr),
           description_en: stringValue(payload.description_en),
           category,
-          subcategory: subcategory || subcategoryList[category][0],
+          subcategory: subcategory || defaultSubcategory(category),
           price,
           stock: Math.trunc(stock),
           sizes: stringValue(payload.sizes),
@@ -194,7 +198,7 @@ export function productForForm(product: Product): ProductFormData & { id: string
     description_gr: product.description_gr || "",
     description_en: product.description_en || "",
     category: product.category,
-    subcategory: product.subcategory || subcategoryList[product.category][0],
+    subcategory: product.subcategory || defaultSubcategory(product.category),
     price: Number(product.price),
     stock: Number(product.stock),
     sizes: product.sizes || "",
