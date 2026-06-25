@@ -71,7 +71,7 @@ alter table products enable row level security;
 drop policy if exists "Public read products" on products;
 create policy "Public read products" on products
   for select
-  using (true);
+  using (is_active is distinct from false);
 
 drop policy if exists "Block anon insert products" on products;
 create policy "Block anon insert products" on products

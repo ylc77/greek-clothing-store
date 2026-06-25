@@ -37,5 +37,6 @@ patch 文件应遵守：
 - `2026-06-23-add-ai-assistant-fields.sql`：为 AI 导购补充 `size_chart`、`fit_type`、`style_tags`、`ai_keywords`。
 - `2026-06-24-add-material-verified.sql`：为 AI 导购补充 `material_verified`。
 - `2026-06-24-add-image-dimensions.sql`：为图片合规检查补充 `image_width`、`image_height`。
+- `2026-06-25-restrict-public-product-read.sql`：限制公开 Supabase API 只读取上架商品，后台 service role 不受影响。
 
-以上字段已经合并进 `supabase/client-init.sql`，新客户不需要单独执行这些 patch。
+以上字段和策略已经合并进 `supabase/client-init.sql`，新客户不需要单独执行这些 patch。
