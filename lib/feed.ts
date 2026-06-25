@@ -89,15 +89,20 @@ export async function getFeedProducts(): Promise<Product[]> {
   const { data } = await supabase
     .from("products")
     .select("*")
-    .neq("is_active", false)
+    .or("is_active.is.null,is_active.eq.true")
     .gte("stock", 0)
     .order("created_at", { ascending: false });
   const products = (data || []) as Product[];
-  // Filter out test products from feed
   return products.filter(p => {
-    if (/(?:^|[_-])test(?:[_-]|$)/i.test(p.sku)) return false;
-    if (/(?:^|[_-])demo(?:[_-]|$)/i.test(p.sku)) return false;
-    return true;
+    const sku = p.sku.trim().toUpperCase();
+    return !(
+      sku === "TEST" ||
+      sku.startsWith("TEST-") ||
+      sku.startsWith("TEST_") ||
+      sku === "DEMO" ||
+      sku.startsWith("DEMO-") ||
+      sku.startsWith("DEMO_")
+    );
   });
 }
 

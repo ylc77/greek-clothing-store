@@ -14,7 +14,6 @@ export function ProductCard({ product, language }: { product: Product; language:
       className="group flex flex-col overflow-hidden rounded-xl border border-stone-100 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-stone-900/5"
       href={withLanguage(`/product/${encodeURIComponent(product.sku)}`, language)}
     >
-      {/* Image */}
       <div className="relative overflow-hidden bg-[#f3efe8]">
         <SafeImage
           alt={name}
@@ -24,7 +23,6 @@ export function ProductCard({ product, language }: { product: Product; language:
         />
       </div>
 
-      {/* Info */}
       <div className="flex flex-1 flex-col justify-between gap-2 p-4">
         <p className="line-clamp-2 text-sm font-bold leading-5 text-ink">
           {name}

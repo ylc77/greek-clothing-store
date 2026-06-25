@@ -1,47 +1,61 @@
-# Fashion Boutique — 服装店商品展示网站
+# Fashion Boutique 商品展示网站
 
-可复制给不同商家的服装店商品展示网站模板。适合雅典本地 boutique、女装店、男装店、鞋店、包包店、配饰店使用。
+可复用的服装店商品展示网站模板，适合女装、男装、鞋子、包包、行李箱、帽子、首饰和配饰类商店。
 
 ## 功能
 
-- 多语言前台（英语 / 希腊语），后台固定中文
+- 前台多语言：希腊语 / 英语
+- 后台中文商品管理
 - 商品展示：首页、分类页、商品详情页
-- 尺码库存：每尺码独立库存，售罄自动置灰
-- 图片上传：Supabase Storage，自动 WebP 压缩
-- 分类管理：一级/二级分类后台可编辑
-- CSV 批量导入导出商品
-- 自动翻译：DeepSeek API 中→英/希
-- Skroutz Feed：`/feed.xml` 对接希腊电商平台
-- 店铺设置：店名、Logo、联系方式、营业时间等后台配置
+- 一级分类和二级分类管理
+- 商品多图、主图上传、WebP 压缩
+- 尺码和尺码库存
+- CSV 批量导入 / 导出
+- DeepSeek API 自动翻译：中文到英文、希腊语
+- AI 导购助手
+- Skroutz XML Feed：`/feed.xml`
+- 店铺设置：店名、Logo、横幅图、联系方式、社交链接等
 
 ## 技术栈
 
-Next.js 15 + TypeScript + Supabase + Vercel + DeepSeek API
+Next.js 15 + React 19 + TypeScript + Tailwind CSS + Supabase + Sharp + Vercel + DeepSeek API
 
 ## 快速开始
 
 ```bash
 npm install
-cp .env.example .env.local   # 填写你的 Supabase 和 DeepSeek 密钥
-npm run dev                   # http://localhost:3000
+cp .env.example .env.local
+npm run dev
+```
+
+本地访问：
+
+```txt
+http://localhost:3000
+http://localhost:3000/admin
+http://localhost:3000/feed.xml
 ```
 
 ## 新客户部署
 
-1. 在 Supabase SQL Editor 执行 `supabase/client-init.sql`
-2. （可选）执行 `supabase/demo-products.sql` 填充演示商品
-3. 部署到 Vercel，配置环境变量
-4. 访问 `/admin` 配置店铺信息
+1. 在 Supabase SQL Editor 执行 `supabase/client-init.sql`。
+2. 可选：执行 `supabase/demo-products.sql` 填充演示商品。
+3. 在 `.env.local` 和 Vercel 环境变量中填写 Supabase、后台密码、DeepSeek 等配置。
+4. 运行 `npm run build` 确认项目可构建。
+5. 部署到 Vercel。
+6. 访问 `/admin` 配置店铺信息和商品。
 
-详见 [docs/deploy-client-zh.md](docs/deploy-client-zh.md)
+## 老客户数据库升级
 
-## 文档
+已有真实数据的客户不要直接重新执行 `supabase/client-init.sql`。
 
-| 文档 | 读者 |
-|------|------|
-| [部署说明](docs/deploy-client-zh.md) | 开发者 |
-| [后台使用说明](docs/client-guide-zh.md) | 商家 |
-| [维护说明](docs/maintenance-zh.md) | 开发者 |
+老客户升级时，只执行 `supabase/patches/` 目录下尚未执行过的补丁文件。每个 patch 都应使用 `alter table ... add column if not exists`、`create index if not exists` 等安全写法。
+
+当前 SQL 文件用途：
+
+- `supabase/client-init.sql`：新客户完整初始化。
+- `supabase/demo-products.sql`：可选演示商品。
+- `supabase/patches/*.sql`：老客户增量升级。
 
 ## 环境变量
 
@@ -52,10 +66,36 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 ADMIN_PASSWORD=
 SUPABASE_SERVICE_ROLE_KEY=
 DEEPSEEK_API_KEY=
+DEEPSEEK_TRANSLATION_MODEL=deepseek-chat
 ```
+
+说明：
+
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` 用于前台读取公开商品和店铺数据。
+- `SUPABASE_SERVICE_ROLE_KEY` 只用于服务端后台 API，不能暴露到浏览器。
+- `DEEPSEEK_API_KEY` 用于后台自动翻译和 AI 导购助手。
+
+## 常用命令
+
+```bash
+npm run dev
+npm run typecheck
+npm run build
+```
+
+当前项目没有 `lint` script。
+
+## 文档
+
+- [部署说明](docs/deploy-client-zh.md)
+- [后台使用说明](docs/client-guide-zh.md)
+- [维护说明](docs/maintenance-zh.md)
 
 ## 维护规则
 
-- 新客户：`supabase/client-init.sql` 一键初始化
-- 老客户升级：`supabase/patches/` 下的 SQL 补丁
-- 数据库改动必须同时更新 patch 和 client-init.sql
+- 新客户：执行 `supabase/client-init.sql`。
+- 老客户：只执行 `supabase/patches/` 下的增量 patch。
+- 每次新增数据库字段时，同时更新：
+  - `supabase/client-init.sql`
+  - `supabase/patches/`
+  - `.env.example` 或文档（如果涉及环境变量）

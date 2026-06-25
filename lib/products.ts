@@ -11,6 +11,22 @@ import { getTotalStock } from "@/lib/product-stock";
 /** @deprecated Use getTotalStock from lib/product-stock.ts instead */
 export const effectiveStock = getTotalStock;
 
+function normalizeSlug(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function isClearlyTestProduct(product: Product) {
+  const sku = product.sku.trim().toUpperCase();
+  return (
+    sku === "TEST" ||
+    sku.startsWith("TEST-") ||
+    sku.startsWith("TEST_") ||
+    sku === "DEMO" ||
+    sku.startsWith("DEMO-") ||
+    sku.startsWith("DEMO_")
+  );
+}
+
 function mapProduct(product: Product): Product {
   return {
     ...product,
@@ -33,7 +49,7 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
   const { data, error } = await supabase
     .from("products")
     .select("*")
-    .neq("is_active", false)
+    .or("is_active.is.null,is_active.eq.true")
     .gte("stock", 0)
     .order("created_at", { ascending: false })
     .limit(limit * 2); // fetch extra to account for test product filtering
@@ -42,20 +58,7 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
     return { products: [], error: error.message };
   }
 
-  // Filter out test products: SKU or name looks like test data
-  const filtered = (data || []).filter(
-    (p: Product) => {
-      if (/(?:^|[_-])test(?:[_-]|$)/i.test(p.sku)) return false;
-      if (/(?:^|[_-])demo(?:[_-]|$)/i.test(p.sku)) return false;
-      // Filter out products whose only name is numeric (like "111")
-      const gr = (p.name_gr || "").trim();
-      const en = (p.name_en || "").trim();
-      const cn = (p.name_cn || "").trim();
-      const anyName = [gr, en, cn].filter(Boolean);
-      if (anyName.length > 0 && anyName.every(n => /^[\d\s.-]+$/.test(n))) return false;
-      return true;
-    },
-  );
+  const filtered = (data || []).filter((p: Product) => !isClearlyTestProduct(p));
 
   return { products: filtered.slice(0, limit).map(mapProduct), error: null };
 }
@@ -72,17 +75,20 @@ export async function getProductsByCategory(
     };
   }
 
+  const normalizedCategory = normalizeSlug(category);
+  const normalizedSubcategory = subcategory ? normalizeSlug(subcategory) : undefined;
+
   let query = supabase
     .from("products")
     .select("*")
-    .ilike("category", category)
-    .neq("is_active", false)
+    .ilike("category", normalizedCategory)
+    .or("is_active.is.null,is_active.eq.true")
     .gte("stock", 0)
     .order("created_at", { ascending: false })
     .limit(200);
 
-  if (subcategory && isProductSubcategory(category, subcategory)) {
-    query = query.ilike("subcategory", subcategory);
+  if (normalizedSubcategory && isProductSubcategory(normalizedCategory, normalizedSubcategory)) {
+    query = query.ilike("subcategory", normalizedSubcategory);
   }
 
   const { data, error } = await query;
@@ -91,11 +97,7 @@ export async function getProductsByCategory(
     return { products: [], error: error.message };
   }
 
-  const filtered = (data || []).filter((p: Product) => {
-    if (/(?:^|[_-])test(?:[_-]|$)/i.test(p.sku)) return false;
-    if (/(?:^|[_-])demo(?:[_-]|$)/i.test(p.sku)) return false;
-    return true;
-  });
+  const filtered = (data || []).filter((p: Product) => !isClearlyTestProduct(p));
 
   return { products: filtered.map(mapProduct), error: null };
 }
@@ -109,7 +111,12 @@ export async function getProductBySku(sku: string): Promise<{ product: Product |
     };
   }
 
-  const { data, error } = await supabase.from("products").select("*").eq("sku", sku).maybeSingle();
+  const { data, error } = await supabase
+    .from("products")
+    .select("*")
+    .eq("sku", sku)
+    .or("is_active.is.null,is_active.eq.true")
+    .maybeSingle();
 
   if (error) {
     return { product: null, error: error.message };

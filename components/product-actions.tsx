@@ -45,7 +45,9 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [message, setMessage] = useState("");
 
+  const totalStock = Number(stock) || 0;
   const allOut = sizeOptions.length > 0 && sizeOptions.every(s => s.disabled);
+  const outOfStock = totalStock <= 0 || allOut;
   const hasSkroutz = Boolean(skroutzUrl?.trim());
   const hasWhatsApp = Boolean(whatsappUrl?.trim());
 
@@ -102,7 +104,7 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
               );
             })}
           </div>
-          {allOut ? <p className="mt-3 text-xs font-bold text-red-500">{t.outOfStockLabel}</p> : null}
+          {outOfStock ? <p className="mt-3 text-xs font-bold text-red-500">{t.outOfStockLabel}</p> : null}
         </div>
       ) : null}
 
@@ -111,7 +113,7 @@ export function ProductActions({ productName, productNameEn, sku, sizes, sizeSto
 
       {/* BUTTONS: Skroutz, AI Assistant, WhatsApp */}
       {hasSkroutz ? (
-        allOut ? (
+        outOfStock ? (
           <button className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-stone-200 px-6 py-3.5 text-sm font-black text-stone-400 cursor-not-allowed" disabled type="button">
             <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" /></svg>
             {t.viewSkroutz} ({t.outOfStockLabel})

@@ -4,7 +4,7 @@ import { SiteHeader } from "@/components/site-header";
 import { subcategoryLabels, text, withLanguage } from "@/lib/i18n";
 import { getProductsByCategory } from "@/lib/products";
 import type { BusinessSettings } from "@/lib/settings";
-import { isProductSubcategory, subcategoriesByCategory, subcategoryList, type ProductCategory } from "@/lib/types";
+import { isProductSubcategory, subcategoryList, type ProductCategory } from "@/lib/types";
 import type { Language } from "@/lib/i18n";
 
 function categoryHref(category: ProductCategory, language: Language, subcategory?: string) {
@@ -41,6 +41,14 @@ export async function CategoryPage({
       ? selectedSubcategory
       : undefined;
   const { products, error } = await getProductsByCategory(category, activeSubcategory);
+  const subcategories = Array.from(
+    new Set([
+      ...(subcategoryList[category] || []),
+      ...products
+        .map((product) => product.subcategory?.trim().toLowerCase())
+        .filter((value): value is string => Boolean(value)),
+    ]),
+  );
 
   return (
     <main className="min-h-screen bg-paper">
@@ -69,7 +77,7 @@ export async function CategoryPage({
           >
             {t.all}
           </Link>
-          {(subcategoryList[category] || []).map((subcategory) => (
+          {subcategories.map((subcategory) => (
             <Link
               className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black transition ${
                 activeSubcategory === subcategory
@@ -79,7 +87,7 @@ export async function CategoryPage({
               href={categoryHref(category, language, subcategory)}
               key={subcategory}
             >
-              {subcategoryLabels[subcategory][language]}
+              {subcategoryLabels[subcategory]?.[language] || subcategory}
             </Link>
           ))}
         </nav>
