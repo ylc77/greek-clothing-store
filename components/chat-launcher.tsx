@@ -1,22 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { ChatAssistant } from "@/components/chat-assistant";
 import type { Language } from "@/lib/i18n";
 
 export function ChatLauncher() {
-  const [lang, setLang] = useState<Language>("el");
   const [visible, setVisible] = useState(true);
   const [open, setOpen] = useState(false);
   const [productCtx, setProductCtx] = useState<Record<string, unknown> | null>(null);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const lang: Language = searchParams.get("lang") === "en" ? "en" : "el";
 
   useEffect(() => {
-    try {
-      const url = new URL(window.location.href);
-      if (url.pathname.startsWith("/admin")) { setVisible(false); return; }
-      setLang(url.searchParams.get("lang") === "en" ? "en" : "el");
-    } catch { /* keep default */ }
+    setVisible(!pathname.startsWith("/admin"));
+  }, [pathname]);
 
+  useEffect(() => {
     // Listen for product-context open events
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail || {};

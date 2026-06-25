@@ -200,6 +200,7 @@ export default async function ProductPage({
               <ProductActions
                 productName={productName(product, language)}
                 productNameEn={product.name_en || product.name_cn || product.sku}
+                productNameGr={product.name_gr || product.name_en || product.name_cn || product.sku}
                 sku={product.sku}
                 sizes={product.sizes}
                 sizeStock={safeSizeStock}

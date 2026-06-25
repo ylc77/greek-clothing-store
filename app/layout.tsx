@@ -1,6 +1,6 @@
 import { ChatLauncher } from "@/components/chat-launcher";
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -37,7 +37,9 @@ export default function RootLayout({
       </head>
       <body>
         {children}
-        <ChatLauncher />
+        <Suspense fallback={null}>
+          <ChatLauncher />
+        </Suspense>
       </body>
     </html>
   );

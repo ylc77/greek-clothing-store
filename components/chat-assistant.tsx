@@ -13,10 +13,30 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const previousLanguageRef = useRef(language);
   const [expanded, setExpanded] = useState(() => { try { return !!productContext || localStorage.getItem("ai_chat_size") === "expanded"; } catch { return !!productContext; } });
   const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  useEffect(() => {
+    const previousLanguage = previousLanguageRef.current;
+    if (previousLanguage === language) return;
+
+    const oldGreeting = text[previousLanguage].aiGreeting;
+    setMessages((prev) => {
+      if (prev.length === 0) {
+        return [{ role: "assistant", text: t.aiGreeting }];
+      }
+
+      if (prev.length === 1 && prev[0].role === "assistant" && prev[0].text === oldGreeting) {
+        return [{ role: "assistant", text: t.aiGreeting }];
+      }
+
+      return prev;
+    });
+    previousLanguageRef.current = language;
+  }, [language, t.aiGreeting]);
 
   async function sendMessage(msg?: string) {
     const text = msg || input.trim();
@@ -77,7 +97,11 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
           {productContext.imageUrl ? <img alt="" className="h-16 w-12 rounded-lg object-cover" src={String(productContext.imageUrl)} /> : null}
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-bold text-violet-600 uppercase">{t.aiProductLabel}</p>
-            <p className="text-xs font-bold text-ink line-clamp-1 mt-0.5">{String(productContext.productName || "")}</p>
+            <p className="text-xs font-bold text-ink line-clamp-1 mt-0.5">
+              {language === "en"
+                ? String(productContext.productNameEn || productContext.productName || "")
+                : String(productContext.productNameGr || productContext.productName || productContext.productNameEn || "")}
+            </p>
             <p className="text-[11px] text-stone-500 mt-0.5">€{Number(productContext.price || 0).toFixed(2)} · {String(productContext.sizes || "—")} · {Number(productContext.stock || 0) > 0 ? (language === "el" ? "Σε απόθεμα" : "In stock") : (language === "el" ? "Εξαντλημένο" : "Out of stock")}</p>
           </div>
         </div>
