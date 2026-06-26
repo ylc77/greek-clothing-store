@@ -550,7 +550,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </section>
 
             {/* Save buttons — sticky at bottom */}
-            <div className="sticky bottom-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-stone-200 bg-white/95 backdrop-blur p-4 shadow-md z-10">
+            <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-xl border border-stone-200 bg-white/95 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 shadow-md backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:p-4">
               <div className="flex flex-wrap gap-3">
                 <button className="rounded-lg bg-ink px-10 py-3 text-sm font-bold text-white hover:bg-stone-800 shadow-sm" disabled={loading} type="submit">{editingId ? "保存修改" : "新增商品"}</button>
                 {editingId ? <button className="rounded-lg border border-stone-200 px-6 py-3 text-sm font-bold text-ink hover:bg-stone-50" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setTab("dashboard"); }} type="button">取消编辑</button> : null}
@@ -748,11 +748,11 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
           <tbody>
             {cats.map((c, i) => (
               <tr key={i} className="border-t border-stone-50">
-                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs font-mono" value={String(c.slug||"")} onChange={e => updateCat(i, "slug", e.target.value.replace(/[^a-z0-9-]/g,"").toLowerCase())} /></td>
-                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs" value={String(c.name_cn||"")} onChange={e => updateCat(i, "name_cn", e.target.value)} /></td>
-                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs" value={String(c.name_en||"")} onChange={e => updateCat(i, "name_en", e.target.value)} /></td>
-                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs" value={String(c.name_gr||"")} onChange={e => updateCat(i, "name_gr", e.target.value)} /></td>
-                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-xs text-center" type="number" value={Number(c.sort_order||0)} onChange={e => updateCat(i, "sort_order", parseInt(e.target.value)||0)} /></td>
+                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base font-mono sm:text-xs" value={String(c.slug||"")} onChange={e => updateCat(i, "slug", e.target.value.replace(/[^a-z0-9-]/g,"").toLowerCase())} /></td>
+                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base sm:text-xs" value={String(c.name_cn||"")} onChange={e => updateCat(i, "name_cn", e.target.value)} /></td>
+                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base sm:text-xs" value={String(c.name_en||"")} onChange={e => updateCat(i, "name_en", e.target.value)} /></td>
+                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base sm:text-xs" value={String(c.name_gr||"")} onChange={e => updateCat(i, "name_gr", e.target.value)} /></td>
+                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-center text-base sm:text-xs" type="number" value={Number(c.sort_order||0)} onChange={e => updateCat(i, "sort_order", parseInt(e.target.value)||0)} /></td>
                 <td className="py-1.5 px-2 text-center"><input type="checkbox" checked={c.is_active !== false} onChange={e => updateCat(i, "is_active", e.target.checked)} /></td>
                 <td className="py-1.5 px-2 text-center"><button className="text-xs font-bold text-red-400 hover:text-red-600" onClick={() => removeCat(i)} type="button">×</button></td>
               </tr>
@@ -779,11 +779,11 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
                 <tbody>
                   {catSubs.map((s, si) => { const gi = subs.findIndex(x => x === s); return (
                     <tr key={gi} className="border-t border-stone-50">
-                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-[11px] font-mono" value={String(s.slug||"")} onChange={e => updateSub(gi, "slug", e.target.value.replace(/[^a-z0-9_-]/g,"").toLowerCase())} /></td>
-                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-[11px]" value={String(s.name_cn||"")} onChange={e => updateSub(gi, "name_cn", e.target.value)} /></td>
-                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-[11px]" value={String(s.name_en||"")} onChange={e => updateSub(gi, "name_en", e.target.value)} /></td>
-                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-[11px]" value={String(s.name_gr||"")} onChange={e => updateSub(gi, "name_gr", e.target.value)} /></td>
-                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-[11px] text-center" type="number" value={Number(s.sort_order||0)} onChange={e => updateSub(gi, "sort_order", parseInt(e.target.value)||0)} /></td>
+                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-base font-mono sm:text-[11px]" value={String(s.slug||"")} onChange={e => updateSub(gi, "slug", e.target.value.replace(/[^a-z0-9_-]/g,"").toLowerCase())} /></td>
+                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-base sm:text-[11px]" value={String(s.name_cn||"")} onChange={e => updateSub(gi, "name_cn", e.target.value)} /></td>
+                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-base sm:text-[11px]" value={String(s.name_en||"")} onChange={e => updateSub(gi, "name_en", e.target.value)} /></td>
+                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-base sm:text-[11px]" value={String(s.name_gr||"")} onChange={e => updateSub(gi, "name_gr", e.target.value)} /></td>
+                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-center text-base sm:text-[11px]" type="number" value={Number(s.sort_order||0)} onChange={e => updateSub(gi, "sort_order", parseInt(e.target.value)||0)} /></td>
                       <td className="py-1 px-2 text-center"><input type="checkbox" checked={s.is_active !== false} onChange={e => updateSub(gi, "is_active", e.target.checked)} /></td>
                       <td className="py-1 px-2 text-center"><button className="text-[11px] font-bold text-red-400 hover:text-red-600" onClick={() => removeSub(gi)} type="button">×</button></td>
                     </tr>

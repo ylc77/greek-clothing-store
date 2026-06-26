@@ -29,11 +29,11 @@ export function SiteHeader({
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
         {/* Left: Logo + brand name */}
         <Link
-          className="flex items-center gap-2.5 text-lg font-black tracking-tight text-ink shrink-0"
+          className="flex min-w-0 max-w-[58vw] items-center gap-2.5 text-lg font-black tracking-tight text-ink sm:max-w-none lg:shrink-0"
           href={withLanguage("/", language)}
         >
           {logoUrl ? <LogoImg src={logoUrl} alt={siteName} /> : null}
-          <span>{siteName}</span>
+          <span className="truncate">{siteName}</span>
         </Link>
 
         {/* Center: category links with subcategory dropdown */}

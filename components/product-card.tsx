@@ -27,7 +27,7 @@ export function ProductCard({ product, language }: { product: Product; language:
         <p className="line-clamp-2 text-sm font-bold leading-5 text-ink">
           {name}
         </p>
-        <div className="flex items-baseline justify-between gap-2">
+        <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
           <p className="text-base font-black text-terracotta">
             €{Number(product.price).toFixed(2)}
           </p>

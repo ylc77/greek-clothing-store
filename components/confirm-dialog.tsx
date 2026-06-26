@@ -51,7 +51,7 @@ export function ConfirmDialog({
         <div className="mt-3 text-sm leading-6 text-stone-600">{description}</div>
         {prompt ? (
           <input
-            className="mt-3 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
+            className="mt-3 w-full rounded-lg border border-stone-200 px-3 py-2 text-base sm:text-sm"
             placeholder={promptPlaceholder}
             value={promptValue}
             onChange={e => onPromptChange?.(e.target.value)}
