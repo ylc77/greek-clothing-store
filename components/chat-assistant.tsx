@@ -167,7 +167,7 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
       <div className="shrink-0 border-t border-stone-100 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:py-3">
         <form className="flex gap-2" onSubmit={e => { e.preventDefault(); sendMessage(); }}>
           <input
-            className="min-h-11 flex-1 rounded-full border border-stone-200 px-4 py-2 text-sm outline-none focus:border-violet-400"
+            className="min-h-11 flex-1 rounded-full border border-stone-200 px-4 py-2 text-base outline-none focus:border-violet-400 sm:text-sm"
             placeholder={productContext ? t.aiProductPlaceholder : t.aiPlaceholder}
             value={input}
             onChange={e => setInput(e.target.value)}
