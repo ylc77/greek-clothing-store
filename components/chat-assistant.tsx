@@ -7,6 +7,18 @@ import { text, type Language } from "@/lib/i18n";
 type Message = { role: "user" | "assistant"; text: string; products?: AiProduct[] };
 type AiProduct = { sku: string; name_en: string; name_gr: string; price: number; stock: number; sizes: string; image_url: string; reason: string; url: string };
 
+function shouldShowProductRecommendations(message: string) {
+  const normalized = message.toLowerCase();
+  return [
+    "similar",
+    "recommend",
+    "other product",
+    "παρόμοια",
+    "πρότεινε",
+    "προϊόντα",
+  ].some((term) => normalized.includes(term));
+}
+
 export function ChatAssistant({ language, productContext, onClose }: { language: Language; productContext?: Record<string, unknown> | null; onClose?: () => void }) {
   const t = text[language];
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", text: t.aiGreeting }]);
@@ -49,7 +61,12 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
       if (productContext) body.productContext = productContext;
       const r = await fetch("/api/ai-shop-assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const d = await r.json();
-      setMessages(prev => [...prev, { role: "assistant", text: d.reply || "", products: d.products || [] }]);
+      const currentSku = productContext?.sku ? String(productContext.sku) : "";
+      const products = Array.isArray(d.products) ? d.products : [];
+      const visibleProducts = shouldShowProductRecommendations(text)
+        ? products.filter((p: AiProduct) => p.sku !== currentSku)
+        : [];
+      setMessages(prev => [...prev, { role: "assistant", text: d.reply || "", products: visibleProducts }]);
     } catch {
       setMessages(prev => [...prev, { role: "assistant", text: language === "el" ? "Ο AI βοηθός δεν είναι προσωρινά διαθέσιμος." : "AI assistant is temporarily unavailable." }]);
     } finally { setLoading(false); }
@@ -70,10 +87,10 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
 
   const isWide = expanded && !isMobile;
   const winW = isWide ? "max-w-[640px]" : "max-w-[440px]";
-  const winH = isWide ? "h-[760px]" : "h-[620px]";
+  const winH = isWide ? "sm:h-[760px]" : "sm:h-[620px]";
 
   return (
-    <div className={`fixed bottom-6 right-6 z-50 flex flex-col w-[calc(100vw-24px)] ${winW} ${winH} max-h-[calc(100vh-48px)] rounded-2xl border border-stone-200 bg-white shadow-2xl`}>
+    <div className={`fixed bottom-2 right-3 z-50 flex h-[calc(100dvh-80px)] max-h-[calc(100dvh-80px)] w-[calc(100vw-24px)] ${winW} ${winH} flex-col rounded-2xl border border-stone-200 bg-white shadow-2xl sm:bottom-6 sm:right-6 sm:max-h-[calc(100vh-48px)]`}>
       {/* Header */}
       <div className="flex items-center justify-between rounded-t-2xl bg-ink px-4 py-3 text-white shrink-0">
         <span className="text-sm font-black">{t.aiAssistant}</span>
@@ -93,25 +110,25 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
 
       {/* Product context card */}
       {productContext ? (
-        <div className="mx-4 mt-3 flex gap-3 rounded-xl border border-violet-100 bg-violet-50/50 p-3 shrink-0">
-          {productContext.imageUrl ? <img alt="" className="h-16 w-12 rounded-lg object-cover" src={String(productContext.imageUrl)} /> : null}
+        <div className="mx-3 mt-2 flex shrink-0 gap-2 rounded-xl border border-violet-100 bg-violet-50/50 p-2 sm:mx-4 sm:mt-3 sm:gap-3 sm:p-3">
+          {productContext.imageUrl ? <img alt="" className="h-12 w-9 rounded-lg object-cover sm:h-16 sm:w-12" src={String(productContext.imageUrl)} /> : null}
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-bold text-violet-600 uppercase">{t.aiProductLabel}</p>
-            <p className="text-xs font-bold text-ink line-clamp-1 mt-0.5">
+            <p className="text-[9px] font-bold uppercase text-violet-600 sm:text-[10px]">{t.aiProductLabel}</p>
+            <p className="mt-0.5 line-clamp-1 text-[11px] font-bold text-ink sm:text-xs">
               {language === "en"
                 ? String(productContext.productNameEn || productContext.productName || "")
                 : String(productContext.productNameGr || productContext.productName || productContext.productNameEn || "")}
             </p>
-            <p className="text-[11px] text-stone-500 mt-0.5">€{Number(productContext.price || 0).toFixed(2)} · {String(productContext.sizes || "—")} · {Number(productContext.stock || 0) > 0 ? (language === "el" ? "Σε απόθεμα" : "In stock") : (language === "el" ? "Εξαντλημένο" : "Out of stock")}</p>
+            <p className="mt-0.5 line-clamp-1 text-[10px] text-stone-500 sm:text-[11px]">€{Number(productContext.price || 0).toFixed(2)} · {String(productContext.sizes || "—")} · {Number(productContext.stock || 0) > 0 ? (language === "el" ? "Σε απόθεμα" : "In stock") : (language === "el" ? "Εξαντλημένο" : "Out of stock")}</p>
           </div>
         </div>
       ) : null}
 
       {/* Quick actions */}
       {quickBtns.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5 px-4 pt-2 pb-1 shrink-0">
+        <div className="flex shrink-0 gap-1.5 overflow-x-auto px-3 pb-1 pt-2 [-ms-overflow-style:none] [scrollbar-width:none] sm:flex-wrap sm:px-4 [&::-webkit-scrollbar]:hidden">
           {quickBtns.map((q, i) => (
-            <button key={i} className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-bold text-violet-700 hover:bg-violet-100" onClick={() => sendMessage(q.prompt)} type="button">{q.label}</button>
+            <button key={i} className="shrink-0 whitespace-nowrap rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100 sm:py-1" onClick={() => sendMessage(q.prompt)} type="button">{q.label}</button>
           ))}
         </div>
       ) : null}
@@ -124,7 +141,7 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
       ) : null}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3 sm:px-4">
         {messages.map((m, i) => (
           <div key={i}>
             <div className={`text-sm leading-relaxed rounded-xl px-3 py-2 max-w-[85%] ${m.role === "user" ? "bg-violet-100 text-violet-900 ml-auto" : "bg-stone-100 text-ink"}`}>
@@ -147,18 +164,18 @@ export function ChatAssistant({ language, productContext, onClose }: { language:
       </div>
 
       {/* Input */}
-      <div className="px-4 py-3 border-t border-stone-100 shrink-0">
+      <div className="shrink-0 border-t border-stone-100 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:py-3">
         <form className="flex gap-2" onSubmit={e => { e.preventDefault(); sendMessage(); }}>
           <input
-            className="flex-1 rounded-full border border-stone-200 px-4 py-2 text-sm outline-none focus:border-violet-400"
+            className="min-h-11 flex-1 rounded-full border border-stone-200 px-4 py-2 text-sm outline-none focus:border-violet-400"
             placeholder={productContext ? t.aiProductPlaceholder : t.aiPlaceholder}
             value={input}
             onChange={e => setInput(e.target.value)}
             disabled={loading}
           />
-          <button className="shrink-0 rounded-full bg-violet-600 px-4 py-2 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50" disabled={loading || !input.trim()} type="submit">→</button>
+          <button className="min-h-11 shrink-0 rounded-full bg-violet-600 px-4 py-2 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50" disabled={loading || !input.trim()} type="submit">→</button>
         </form>
-        <p className="mt-1.5 text-[10px] text-stone-400 text-center">{t.aiNeedHelp}</p>
+        <p className="mt-1 text-center text-[10px] text-stone-400 sm:mt-1.5">{t.aiNeedHelp}</p>
       </div>
     </div>
   );
