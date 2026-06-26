@@ -1,9 +1,14 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ChatAssistant } from "@/components/chat-assistant";
 import type { Language } from "@/lib/i18n";
+
+const ChatAssistant = dynamic(
+  () => import("@/components/chat-assistant").then((module) => module.ChatAssistant),
+  { ssr: false },
+);
 
 export function ChatLauncher() {
   const [visible, setVisible] = useState(true);

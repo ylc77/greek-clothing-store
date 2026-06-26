@@ -47,7 +47,12 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
               onClick={() => setActiveIndex(index)}
               type="button"
             >
-              <SafeImage alt={`${alt} ${index + 1}`} className="h-full w-full object-cover" src={imageUrl} />
+              <SafeImage
+                alt={`${alt} ${index + 1}`}
+                className="h-full w-full object-cover"
+                loading="lazy"
+                src={imageUrl}
+              />
             </button>
           ))}
         </div>
@@ -58,6 +63,8 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
         <SafeImage
           alt={alt}
           className="h-full w-full object-contain object-center"
+          fetchPriority="high"
+          loading="eager"
           src={images[activeIndex]}
         />
 

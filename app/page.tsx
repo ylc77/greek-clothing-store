@@ -93,6 +93,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               <SafeImage
                 alt={siteName}
                 className="aspect-[4/3] w-full rounded-2xl object-cover object-center shadow-2xl shadow-stone-900/10"
+                fetchPriority="high"
+                loading="eager"
                 src={heroImage}
               />
             </div>

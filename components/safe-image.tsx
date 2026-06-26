@@ -1,19 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 type SafeImageProps = {
   src: string;
   alt: string;
   className?: string;
   loading?: "lazy" | "eager";
-  fallback?: React.ReactNode;
+  fetchPriority?: "high" | "low" | "auto";
+  decoding?: "sync" | "async" | "auto";
+  fallback?: ReactNode;
   /** Secondary image URL to try if primary src fails (e.g. JPG → SVG fallback). */
   fallbackSrc?: string;
 };
 
 /** Renders an img with onError fallback. If src is empty, shows a refined placeholder. */
-export function SafeImage({ src, alt, className, loading, fallback, fallbackSrc }: SafeImageProps) {
+export function SafeImage({
+  src,
+  alt,
+  className,
+  loading,
+  fetchPriority,
+  decoding = "async",
+  fallback,
+  fallbackSrc,
+}: SafeImageProps) {
   const [failStage, setFailStage] = useState(0);
   // 0 = trying primary src; 1 = trying fallbackSrc; 2 = show placeholder
 
@@ -52,6 +63,8 @@ export function SafeImage({ src, alt, className, loading, fallback, fallbackSrc 
     <img
       alt={alt}
       className={className}
+      decoding={decoding}
+      fetchPriority={fetchPriority}
       loading={loading}
       src={effectiveSrc}
       onError={handleError}
