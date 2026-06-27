@@ -37,7 +37,7 @@ export function SiteHeader({
         </Link>
 
         {/* Center: category links with subcategory dropdown */}
-        <nav className="hidden items-center gap-1 lg:flex">
+        <nav className="hidden items-center gap-1 xl:flex">
           {categories.map((cat) => (
             <div className="group relative" key={cat.slug}>
               <Link
@@ -89,7 +89,7 @@ export function SiteHeader({
       </div>
 
       {/* Mobile: horizontal scroll category row */}
-      <nav className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 pb-3 scrollbar-none sm:px-6 lg:hidden">
+      <nav className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 pb-3 scrollbar-none sm:px-6 xl:hidden">
         {categories.map((cat) => (
           <Link
             className="shrink-0 rounded-full border border-stone-200 bg-white px-3 py-2 text-sm font-bold text-stone-700 whitespace-nowrap"
