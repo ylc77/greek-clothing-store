@@ -22,6 +22,11 @@ type ImportResult = {
   translateError?: string;
 };
 
+type ValidImportRow = {
+  rowNumber: number;
+  mutation: ProductMutation;
+};
+
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
@@ -34,6 +39,29 @@ function unavailable() {
     },
     { status: 500 },
   );
+}
+
+function skuKey(sku: string) {
+  return sku.trim().toUpperCase();
+}
+
+function parseCsvSizeStock(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  const sizeStock: Record<string, number> = {};
+  value.split(/[,\s]+/).forEach((pair) => {
+    const [size, qty] = pair.split(":");
+    if (!size || qty === undefined) return;
+
+    const parsedQty = parseInt(qty, 10);
+    if (!Number.isNaN(parsedQty) && parsedQty >= 0) {
+      sizeStock[size.trim().toUpperCase()] = parsedQty;
+    }
+  });
+
+  return Object.keys(sizeStock).length > 0 ? sizeStock : null;
 }
 
 export async function POST(request: NextRequest) {
@@ -49,8 +77,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json()) as { rows?: ImportRow[] };
   const rows = Array.isArray(body.rows) ? body.rows : [];
 
-  // ── Phase 1: validate every row ──────────────────────────────────
-  const validRows: Array<{ rowNumber: number; mutation: ProductMutation }> = [];
+  const validRows: ValidImportRow[] = [];
   const results: ImportResult[] = [];
 
   rows.forEach((row, index) => {
@@ -70,79 +97,83 @@ export async function POST(request: NextRequest) {
       return;
     }
 
-    // Parse size_stock from CSV (format: "S:2,M:3,L:1,XL:0")
-    const rawSizeStock = row.size_stock;
-    if (typeof rawSizeStock === "string" && rawSizeStock.trim()) {
-      const ss: Record<string, number> = {};
-      rawSizeStock.split(/[,\s]+/).forEach((pair) => {
-        const [sz, qty] = pair.split(":");
-        if (sz && qty !== undefined) {
-          const n = parseInt(qty, 10);
-          if (!isNaN(n) && n >= 0) ss[sz.trim().toUpperCase()] = n;
-        }
-      });
-      if (Object.keys(ss).length > 0) {
-        (mutation as Record<string, unknown>).size_stock = ss;
-        (mutation as Record<string, unknown>).stock = Object.values(ss).reduce((a: number, b: number) => a + b, 0);
-      }
+    const sizeStock = parseCsvSizeStock(row.size_stock);
+    if (sizeStock) {
+      (mutation as Record<string, unknown>).size_stock = sizeStock;
+      (mutation as Record<string, unknown>).stock = Object.values(sizeStock).reduce(
+        (sum, qty) => sum + qty,
+        0,
+      );
     }
 
     validRows.push({ rowNumber, mutation });
   });
 
-  // ── Phase 2: batch-translate missing fields ──────────────────────
   const translateResults = await batchTranslateRows(
-    validRows.map((r) => r.mutation),
+    validRows.map((row) => row.mutation),
     3,
   );
 
-  // Merge translations into mutations — NEVER overwrite user-provided data
   validRows.forEach(({ mutation }, index) => {
-    const tr = translateResults[index];
-    if (!tr) return;
+    const translated = translateResults[index];
+    if (!translated) return;
 
-    if (!mutation.name_en && tr.name_en) mutation.name_en = tr.name_en;
-    if (!mutation.description_en && tr.description_en)
-      mutation.description_en = tr.description_en;
-    if (!mutation.name_gr && tr.name_gr) mutation.name_gr = tr.name_gr;
-    if (!mutation.description_gr && tr.description_gr)
-      mutation.description_gr = tr.description_gr;
+    if (!mutation.name_en && translated.name_en) mutation.name_en = translated.name_en;
+    if (!mutation.description_en && translated.description_en) {
+      mutation.description_en = translated.description_en;
+    }
+    if (!mutation.name_gr && translated.name_gr) mutation.name_gr = translated.name_gr;
+    if (!mutation.description_gr && translated.description_gr) {
+      mutation.description_gr = translated.description_gr;
+    }
   });
 
-  // ── Phase 3: upsert into Supabase ────────────────────────────────
-  if (validRows.length > 0) {
+  const lastIndexBySku = new Map<string, number>();
+  validRows.forEach((row, index) => {
+    lastIndexBySku.set(skuKey(row.mutation.sku), index);
+  });
+
+  const rowsToUpsert = validRows.filter((row, index) => {
+    return lastIndexBySku.get(skuKey(row.mutation.sku)) === index;
+  });
+
+  if (rowsToUpsert.length > 0) {
     const { error } = await supabase
       .from("products")
       .upsert(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        validRows.map((row) => row.mutation as any),
+        rowsToUpsert.map((row) => row.mutation as any),
         { onConflict: "sku" },
       );
 
     if (error) {
       validRows.forEach((row, index) => {
-        const tr = translateResults[index];
+        const translated = translateResults[index];
         results.push({
           rowNumber: row.rowNumber,
           sku: row.mutation.sku,
           ok: false,
           message: error.message,
-          translated: tr?.translated ?? false,
-          translateError: tr?.translateError,
+          translated: translated?.translated ?? false,
+          translateError: translated?.translateError,
         });
       });
     } else {
       validRows.forEach((row, index) => {
-        const tr = translateResults[index];
-        const parts: string[] = ["已导入"];
-        if (tr?.translated) parts.push("已翻译");
+        const translated = translateResults[index];
+        const isLastDuplicate = lastIndexBySku.get(skuKey(row.mutation.sku)) === index;
+        const parts: string[] = [
+          isLastDuplicate ? "已导入" : "已跳过：同一 CSV 中后面的相同 SKU 已覆盖",
+        ];
+        if (translated?.translated) parts.push("已翻译");
+
         results.push({
           rowNumber: row.rowNumber,
           sku: row.mutation.sku,
           ok: true,
-          message: parts.join("，"),
-          translated: tr?.translated ?? false,
-          translateError: tr?.translateError,
+          message: parts.join("；"),
+          translated: translated?.translated ?? false,
+          translateError: translated?.translateError,
         });
       });
     }
@@ -150,14 +181,14 @@ export async function POST(request: NextRequest) {
 
   results.sort((a, b) => a.rowNumber - b.rowNumber);
 
-  const translatedCount = results.filter((r) => r.translated).length;
+  const translatedCount = results.filter((result) => result.translated).length;
   const translateFailureCount = results.filter(
-    (r) => r.translateError,
+    (result) => result.translateError,
   ).length;
 
   return NextResponse.json({
-    successCount: results.filter((r) => r.ok).length,
-    failureCount: results.filter((r) => !r.ok).length,
+    successCount: results.filter((result) => result.ok).length,
+    failureCount: results.filter((result) => !result.ok).length,
     translatedCount,
     translateFailureCount,
     results,
