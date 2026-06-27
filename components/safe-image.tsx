@@ -9,12 +9,12 @@ type SafeImageProps = {
   loading?: "lazy" | "eager";
   fetchPriority?: "high" | "low" | "auto";
   decoding?: "sync" | "async" | "auto";
+  sizes?: string;
+  onError?: () => void;
   fallback?: ReactNode;
-  /** Secondary image URL to try if primary src fails (e.g. JPG → SVG fallback). */
   fallbackSrc?: string;
 };
 
-/** Renders an img with onError fallback. If src is empty, shows a refined placeholder. */
 export function SafeImage({
   src,
   alt,
@@ -22,12 +22,12 @@ export function SafeImage({
   loading,
   fetchPriority,
   decoding = "async",
+  sizes,
+  onError,
   fallback,
   fallbackSrc,
 }: SafeImageProps) {
   const [failStage, setFailStage] = useState(0);
-  // 0 = trying primary src; 1 = trying fallbackSrc; 2 = show placeholder
-
   const effectiveSrc = failStage === 1 && fallbackSrc ? fallbackSrc : src;
   const failed = failStage >= 2 || !effectiveSrc;
 
@@ -53,11 +53,14 @@ export function SafeImage({
 
   function handleError() {
     if (failStage === 0 && fallbackSrc) {
-      setFailStage(1); // try fallbackSrc next
+      setFailStage(1);
     } else {
-      setFailStage(2); // both failed → show placeholder
+      onError?.();
+      setFailStage(2);
     }
   }
+
+  const optimizedSrcSet = buildNextImageSrcSet(effectiveSrc);
 
   return (
     <img
@@ -66,8 +69,21 @@ export function SafeImage({
       decoding={decoding}
       fetchPriority={fetchPriority}
       loading={loading}
+      sizes={optimizedSrcSet ? sizes : undefined}
       src={effectiveSrc}
+      srcSet={optimizedSrcSet || undefined}
       onError={handleError}
     />
   );
+}
+
+function buildNextImageSrcSet(src: string) {
+  if (!/^https?:\/\//i.test(src)) return "";
+  if (/\.svg($|\?)/i.test(src)) return "";
+  if (src.includes("/_next/image")) return "";
+
+  const widths = [384, 640, 828, 1080, 1200];
+  return widths
+    .map((width) => `/_next/image?url=${encodeURIComponent(src)}&w=${width}&q=75 ${width}w`)
+    .join(", ");
 }

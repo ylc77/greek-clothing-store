@@ -38,9 +38,12 @@ export async function generateMetadata({
 export default async function HomePage({ searchParams }: HomePageProps) {
   const language = getLanguage((await searchParams).lang);
   const t = text[language];
-  const settings = await getBusinessSettings();
-  const { products, error } = await getLatestProducts(4);
-  const categoryImages = await getCategoryImages();
+  const [settings, latestProducts, categoryImages] = await Promise.all([
+    getBusinessSettings(),
+    getLatestProducts(4),
+    Promise.resolve(getCategoryImages()),
+  ]);
+  const { products, error } = latestProducts;
 
   const siteName = settings.business_name;
   const siteIntro =
@@ -95,6 +98,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 className="aspect-[4/3] w-full rounded-2xl object-cover object-center shadow-2xl shadow-stone-900/10"
                 fetchPriority="high"
                 loading="eager"
+                sizes="(max-width: 1024px) 100vw, 50vw"
                 src={heroImage}
               />
             </div>
@@ -117,7 +121,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
             {categories.map((cat) => {
               const img = categoryImages[cat.slug];
-              const fallbackImg = img.replace(/\.jpg$/, ".svg");
               return (
                 <Link
                   key={cat.slug}
@@ -125,12 +128,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                   href={withLanguage(`/${cat.slug}`, language)}
                 >
                   <div className="relative flex aspect-[3/4] items-center justify-center overflow-hidden bg-[#f3efe8]">
-                    <SafeImage
-                      alt={categoryLabels[cat.slug][language]}
-                      className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"
-                      fallbackSrc={fallbackImg}
-                      loading="lazy"
-                      src={img}
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-0 bg-cover bg-center transition duration-500 group-hover:scale-[1.04]"
+                      style={{ backgroundImage: `url("${img}")` }}
                     />
                     {/* gradient overlay for text readability */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />

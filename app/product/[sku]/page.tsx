@@ -50,8 +50,11 @@ export async function generateMetadata({
 }: ProductPageProps): Promise<Metadata> {
   const [{ sku }, resolvedSearchParams] = await Promise.all([params, searchParams]);
   const language = getLanguage(resolvedSearchParams.lang);
-  const settings = await getBusinessSettings();
-  const { product } = await getProductBySku(decodeURIComponent(sku));
+  const [settings, productResult] = await Promise.all([
+    getBusinessSettings(),
+    getProductBySku(decodeURIComponent(sku)),
+  ]);
+  const { product } = productResult;
   if (!product) return { title: settings.business_name };
   const title = `${productName(product, language)} | ${settings.business_name}`;
   const description =
@@ -80,8 +83,11 @@ export default async function ProductPage({
   const [{ sku }, resolvedSearchParams] = await Promise.all([params, searchParams]);
   const language = getLanguage(resolvedSearchParams.lang);
   const t = text[language];
-  const settings = await getBusinessSettings();
-  const { product, error } = await getProductBySku(decodeURIComponent(sku));
+  const [settings, productResult] = await Promise.all([
+    getBusinessSettings(),
+    getProductBySku(decodeURIComponent(sku)),
+  ]);
+  const { product, error } = productResult;
 
   if (!product && !error) notFound();
 

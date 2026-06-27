@@ -20,9 +20,12 @@ export async function generateMetadata({
   params,
   searchParams,
 }: CategoryRouteProps): Promise<Metadata> {
-  const { category } = await params;
-  const language = getLanguage((await searchParams).lang);
-  const settings = await getBusinessSettings();
+  const [{ category }, resolvedSearchParams, settings] = await Promise.all([
+    params,
+    searchParams,
+    getBusinessSettings(),
+  ]);
+  const language = getLanguage(resolvedSearchParams.lang);
 
   if (!isProductCategory(category)) {
     return { title: settings.business_name };
@@ -41,10 +44,12 @@ export default async function DynamicCategoryPage({
   params,
   searchParams,
 }: CategoryRouteProps) {
-  const { category } = await params;
-  const resolvedSearchParams = await searchParams;
+  const [{ category }, resolvedSearchParams, settings] = await Promise.all([
+    params,
+    searchParams,
+    getBusinessSettings(),
+  ]);
   const language = getLanguage(resolvedSearchParams.lang);
-  const settings = await getBusinessSettings();
 
   if (!isProductCategory(category)) {
     notFound();

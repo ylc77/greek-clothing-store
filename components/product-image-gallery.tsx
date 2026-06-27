@@ -51,6 +51,7 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
                 alt={`${alt} ${index + 1}`}
                 className="h-full w-full object-cover"
                 loading="lazy"
+                sizes="80px"
                 src={imageUrl}
               />
             </button>
@@ -65,6 +66,7 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
           className="h-full w-full object-contain object-center"
           fetchPriority="high"
           loading="eager"
+          sizes="(max-width: 768px) 100vw, 50vw"
           src={images[activeIndex]}
         />
 

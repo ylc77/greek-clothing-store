@@ -19,6 +19,7 @@ export function ProductCard({ product, language }: { product: Product; language:
           alt={name}
           className="aspect-[3/4] w-full object-cover object-center transition duration-500 group-hover:scale-[1.04]"
           loading="lazy"
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
           src={product.image_url}
         />
       </div>
