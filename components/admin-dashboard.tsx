@@ -26,6 +26,7 @@ type Tab = "dashboard" | "add" | "csv" | "images" | "skroutz" | "categories";
 /* ── Constants ───────────────────────────────────────────── */
 const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_en: "", description_cn: "", description_gr: "", description_en: "", category: "men", subcategory: "tshirts", price: 0, stock: 0, sizes: "", image_url: "", image_urls: "", brand: "", barcode: "", vat: 24, color: "", skroutz_url: "", is_active: true, fit_type: "regular", material: "", ai_keywords: "", style_tags: "", size_chart: "", material_verified: false };
 const csvFields = ["sku","name_cn","description_cn","name_en","description_en","name_gr","description_gr","category","subcategory","price","stock","sizes","size_stock","image_url","image_urls","brand","barcode","vat","color","skroutz_url","is_active","material","fit_type","ai_keywords","style_tags","size_chart","material_verified"];
+const quickCsvFields = ["sku","name_cn","description_cn","category","subcategory","price","stock","sizes","brand","color","image_url","image_urls","is_active"];
 const tabs: { key: Tab; label: string }[] = [
   { key: "dashboard", label: "商品列表" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "批量图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
@@ -46,11 +47,18 @@ function parseCsv(text: string) {
   return rows.map((values, i) => { const out: CsvRow = { rowNumber: i + 2 }; headers.forEach((h, hi) => { out[h] = values[hi] || ""; }); return out; });
 }
 function csvCell(v: string) { return `"${v.replace(/"/g, '""')}"`; }
+function downloadCsv(filename: string, fields: string[], sample: string[]) {
+  const csv = `${fields.join(",")}\n${sample.map(csvCell).join(",")}\n`;
+  const b = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+  const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
+}
 function downloadCsvTemplate() {
-  const sample = ["DEMO-WOMEN-DRESSES-001","女士连衣裙","示例中文描述","Women dress","Sample English description","Γυναικείο φόρεμα","Παράδειγμα περιγραφής","women","dresses","29.90","10","S,M,L","S:2,M:3,L:1","","","Fashion Boutique","","24","black","","true","cotton","regular","dress summer elegant","casual summer","{\"S\":{\"bust\":\"84-88\"},\"M\":{\"bust\":\"88-92\"}}","true"];
-  const csv = `${csvFields.join(",")}\n${sample.map(csvCell).join(",")}\n`;
-  const b = new Blob(["﻿", csv], { type: "text/csv;charset=utf-8" });
-  const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = "products-template.csv"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
+  const sample = ["SKU-001","Chinese product name","Chinese product description","English product name","English product description","Greek product name","Greek product description","women","dresses","29.90","10","S,M,L","S:2,M:3,L:1","","","Store Brand","","24","black","","true","cotton","regular","dress summer elegant","casual summer","{\"S\":{\"bust\":\"84-88\"},\"M\":{\"bust\":\"88-92\"}}","true"];
+  downloadCsv("products-template.csv", csvFields, sample);
+}
+function downloadQuickCsvTemplate() {
+  const sample = ["SKU-001","Chinese product name","Chinese product description","women","dresses","29.90","10","S,M,L","Store Brand","black","","","true"];
+  downloadCsv("products-quick-template.csv", quickCsvFields, sample);
 }
 function validatePreviewRow(row: CsvRow) {
   const errors: string[] = [];
@@ -570,10 +578,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <h2 className="mb-1 text-lg font-black text-ink">CSV 批量导入</h2>
             <p className="mb-4 text-xs text-stone-500">SKU 已存在则更新，不存在则新增。中文商品自动翻译英文和希腊语。</p>
             <div className="flex flex-wrap gap-2 mb-4">
-              <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={downloadCsvTemplate} type="button">下载 CSV 模板</button>
+              <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={downloadQuickCsvTemplate} type="button">下载快速 CSV 模板</button>
+              <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={downloadCsvTemplate} type="button">下载完整 CSV 模板</button>
               <button className="rounded-lg bg-ink px-4 py-2 text-sm font-bold text-white hover:bg-stone-800 disabled:opacity-50" disabled={csvRows.length === 0 || loading} onClick={confirmImportCsv} type="button">导入 CSV</button>
             </div>
             <input accept=".csv,text/csv" className="input" onChange={e => void handleCsv(e.target.files?.[0] || null)} type="file" />
+            <p className="mt-2 text-xs text-stone-500">快速模板只保留日常上新字段，图片 URL 可以留空，之后用批量上传按 SKU 自动绑定；完整模板适合从备份迁移或填写 AI / 尺码表等高级字段。</p>
             <p className="mt-2 text-xs text-stone-400">字段：{csvFields.join(", ")}</p>
             {csvRows.length > 0 ? (
               <div className="mt-4">
