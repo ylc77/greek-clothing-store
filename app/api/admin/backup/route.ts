@@ -27,8 +27,12 @@ const csvFields = [
   "color",
   "skroutz_url",
   "is_active",
+  "material",
+  "fit_type",
   "ai_keywords",
   "style_tags",
+  "size_chart",
+  "material_verified",
 ];
 
 function csvCell(value: unknown) {
