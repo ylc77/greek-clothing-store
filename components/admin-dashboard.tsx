@@ -86,51 +86,6 @@ function downloadCsv(filename: string, fields: string[], sample: string[]) {
   const b = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
   const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
 }
-function downloadExcelTemplate() {
-  const fields = quickCsvFields;
-  const sample = ["SKU-001","Chinese product name","Chinese product description","women","dresses","29.90","10","S,M,L","Store Brand","black","","","true"];
-  const widths = [130,180,320,110,130,90,80,120,150,120,260,320,90];
-  const required = new Set(["sku","name_cn","description_cn","category","subcategory","price","stock"]);
-  const xmlEscape = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  const cols = widths.map((width) => `<Column ss:Width="${width}"/>`).join("");
-  const header = fields.map((field) => `<Cell ss:StyleID="${required.has(field) ? "Required" : "Header"}"><Data ss:Type="String">${xmlEscape(field)}</Data></Cell>`).join("");
-  const labelRow = fields.map((field) => `<Cell ss:StyleID="Label"><Data ss:Type="String">${xmlEscape(csvFieldLabels[field] || field)}</Data></Cell>`).join("");
-  const row = sample.map((value) => `<Cell ss:StyleID="Input"><Data ss:Type="String">${xmlEscape(value)}</Data></Cell>`).join("");
-  const notes = [
-    ["必填字段", "SKU、中文名称、中文描述、一级分类、二级分类、价格、库存"],
-    ["选填字段", "尺码、品牌、颜色、主图URL、多图URL、是否上架"],
-    ["图片", "图片 URL 可以留空，之后用批量上传按 SKU 自动绑定。"],
-    ["颜色", "颜色是选填字段，不确定可以留空。"],
-    ["导入", "填写后请另存为 CSV UTF-8，再回到后台导入。"]
-  ].map(([label, value]) => `<Row><Cell ss:StyleID="NoteLabel"><Data ss:Type="String">${xmlEscape(label)}</Data></Cell><Cell ss:MergeAcross="10" ss:StyleID="Note"><Data ss:Type="String">${xmlEscape(value)}</Data></Cell></Row>`).join("");
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
- <Styles>
-  <Style ss:ID="Header"><Font ss:Bold="1"/><Interior ss:Color="#EDE7DD" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-  <Style ss:ID="Required"><Font ss:Bold="1" ss:Color="#9A3412"/><Interior ss:Color="#FED7AA" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-  <Style ss:ID="Label"><Font ss:Color="#57534E"/><Interior ss:Color="#F5F5F4" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E7E5E4"/></Borders></Style>
-  <Style ss:ID="Input"><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/></Borders></Style>
-  <Style ss:ID="NoteLabel"><Font ss:Bold="1"/><Interior ss:Color="#F5F5F4" ss:Pattern="Solid"/></Style>
-  <Style ss:ID="Note"><Interior ss:Color="#FAFAF9" ss:Pattern="Solid"/></Style>
- </Styles>
- <Worksheet ss:Name="Quick CSV Template">
-  <Table>${cols}
-   <Row ss:Height="24">${header}</Row>
-   <Row ss:Height="22">${labelRow}</Row>
-   <Row>${row}</Row>
-   <Row></Row>
-   ${notes}
-  </Table>
-  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal><TopRowBottomPane>1</TopRowBottomPane></WorksheetOptions>
- </Worksheet>
-</Workbook>`;
-  const b = new Blob([xml], { type: "application/vnd.ms-excel;charset=utf-8" });
-  const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = "products-quick-template-excel.xls"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
-}
 function downloadCsvTemplate() {
   const sample = ["SKU-001","Chinese product name","Chinese product description","English product name","English product description","Greek product name","Greek product description","women","dresses","29.90","10","S,M,L","S:2,M:3,L:1","","","Store Brand","","24","black","","true","cotton","regular","dress summer elegant","casual summer","{\"S\":{\"bust\":\"84-88\"},\"M\":{\"bust\":\"88-92\"}}","true"];
   downloadCsv("products-template.csv", csvFields, sample);
@@ -657,7 +612,6 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <h2 className="mb-1 text-lg font-black text-ink">CSV 批量导入</h2>
             <p className="mb-4 text-xs text-stone-500">SKU 已存在则更新，不存在则新增。中文商品自动翻译英文和希腊语。</p>
             <div className="flex flex-wrap gap-2 mb-4">
-              <button className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-bold text-amber-900 hover:bg-amber-100" onClick={downloadExcelTemplate} type="button">下载 Excel 填写版</button>
               <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={downloadQuickCsvTemplate} type="button">下载快速 CSV 模板</button>
               <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={downloadCsvTemplate} type="button">下载完整 CSV 模板</button>
               <button className="rounded-lg bg-ink px-4 py-2 text-sm font-bold text-white hover:bg-stone-800 disabled:opacity-50" disabled={csvRows.length === 0 || loading} onClick={confirmImportCsv} type="button">导入 CSV</button>
