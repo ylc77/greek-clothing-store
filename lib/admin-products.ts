@@ -71,6 +71,22 @@ function numberValue(value: unknown) {
   return NaN;
 }
 
+function booleanValue(value: unknown, fallback: boolean) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return fallback;
+    if (["false", "0", "no", "n", "off", "inactive", "下架", "否"].includes(normalized)) {
+      return false;
+    }
+    if (["true", "1", "yes", "y", "on", "active", "上架", "是"].includes(normalized)) {
+      return true;
+    }
+  }
+  return fallback;
+}
+
 function parseStringArray(value: unknown): string[] | undefined {
   if (Array.isArray(value)) { const arr = value.filter((v): v is string => typeof v === "string" && v.trim().length > 0); return arr.length > 0 ? arr : undefined; }
   if (typeof value === "string" && value.trim()) { const arr = value.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); return arr.length > 0 ? arr : undefined; }
@@ -173,14 +189,14 @@ export function validateProductPayload(payload: AdminProductPayload) {
           vat,
           color: stringValue(payload.color),
           skroutz_url: stringValue(payload.skroutz_url),
-          is_active: payload.is_active === false ? false : true,
+          is_active: booleanValue(payload.is_active, true),
           size_stock: parseSizeStock(payload.size_stock),
           fit_type: stringValue(payload.fit_type || "regular"),
           material: stringValue(payload.material),
           ai_keywords: parseStringArray(payload.ai_keywords),
           style_tags: parseStringArray(payload.style_tags),
           size_chart: parseSizeChart(payload.size_chart),
-          material_verified: payload.material_verified === true,
+          material_verified: booleanValue(payload.material_verified, false),
         }
       : null;
 
