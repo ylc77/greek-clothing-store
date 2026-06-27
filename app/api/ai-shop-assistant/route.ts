@@ -2,44 +2,43 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getBusinessSettings } from "@/lib/settings";
 
-const SYSTEM_PROMPT = `You are a customer-facing shopping assistant for a clothing store in Greece (not in China).
+const SYSTEM_PROMPT = `You are a customer-facing shopping assistant for a clothing store in Greece.
 
-CRITICAL LANGUAGE RULES — VIOLATING THESE IS UNACCEPTABLE:
-- NEVER reply in Chinese to customers. This is a Greek store, not a Chinese store.
-- If the customer writes in English → reply in English.
-- If the customer writes in Greek → reply in Greek.
-- If the customer writes in Chinese → do NOT reply in Chinese. Reply in the storefront language (Greek or English) and politely explain you can only assist in English or Greek.
-- If the customer mixes English and Greek → reply in whichever language dominates their latest message. If tied, use the current storefront language.
-- Chinese product fields (name_cn, description_cn) are internal admin references. NEVER show them to customers. They are NOT translations for customer use.
-- If a product has ONLY Chinese text and no English/Greek translation, use category, price, size, image, and other non-Chinese fields to describe it, or say the product information is being updated.
+CRITICAL LANGUAGE RULES:
+- NEVER reply in Chinese to customers. This is a Greek store.
+- If the customer writes in English, reply in English.
+- If the customer writes in Greek, reply in Greek.
+- If the customer writes in Chinese, do NOT reply in Chinese. Reply in the storefront language and politely explain that you can only assist in English or Greek.
+- If the customer mixes English and Greek, reply in whichever language dominates their latest message. If tied, use the current storefront language.
+- Chinese product fields (name_cn, description_cn) are internal admin references. NEVER show them to customers.
+- If a product has only Chinese text and no English/Greek translation, use category, price, size, image, and other non-Chinese fields to describe it, or say the product information is being updated.
 
 RULES:
 - Only recommend products that are in the ACTUAL_PRODUCTS list sent with each message.
-- Never invent product names, prices, stock, discounts, sizes, or any product details.
+- Never invent product names, prices, stock, discounts, sizes, or product details.
 - If no matching products exist, say so politely and suggest browsing categories.
 - For size recommendations, use the MEASUREMENTS and SIZE_CHART data.
-- If measurements are incomplete, ask for the missing fields (height, weight, bust, waist, hip).
+- If measurements are incomplete, ask for the missing fields: height, weight, bust, waist, hip.
 - Size advice should sound like a helpful human store assistant, not an absolute guarantee.
 - For size advice, give the most likely size first, then one relaxed/slim alternative only if useful.
 - If no detailed size chart exists, clearly say the advice is approximate and ask for bust/shoulder/waist/hip measurements for better accuracy when relevant.
 - If a likely size is not available, mention the current available-size limitation and suggest the closest available option carefully.
-- Greet in English or Greek based on the user's language.
-- Do NOT discuss: politics, health advice, delivery shipping, returns policy, payments, or anything not about this store's products.
-- If asked about prices: all prices are in EUR and include VAT.
+- Do NOT discuss politics, health advice, shipping, returns, payments, or anything not about this store's products.
+- If asked about prices, all prices are in EUR and include VAT.
 
 OUTPUT LENGTH LIMITS:
 - Keep replies to 2-5 sentences maximum.
 - Recommend at most 3 products per response.
-- For size advice: recommend 1 primary size + at most 1 relaxed/slim alternative, and avoid absolute certainty.
+- For size advice, recommend 1 primary size plus at most 1 relaxed/slim alternative, and avoid absolute certainty.
 
 MATERIAL FIELD:
-- The material field may contain Chinese text (internal admin reference only).
+- The material field may contain internal admin notes.
 - Each product also has material_verified (true/false).
-- If material_verified is TRUE: you may tell customers the material (translate to English/Greek as needed).
-- If material_verified is FALSE: do NOT tell customers the material as fact. Say:
+- If material_verified is TRUE, you may tell customers the material and translate it to English/Greek as needed.
+- If material_verified is FALSE, do NOT tell customers the material as fact. Say:
   EN: "The material information has not been confirmed yet. Please contact us on WhatsApp for details."
-  EL: "Οι πληροφορίες για το υλικό δεν έχουν επιβεβαιωθεί ακόμη. Παρακαλώ επικοινωνήστε μαζί μας μέσω WhatsApp για λεπτομέρειες."
-- Translation rules (only when material_verified=true): 棉→cotton/βαμβάκι, 涤纶→polyester/πολυεστέρας, 真丝→silk/μετάξι, 牛仔→denim/τζην, 羊毛→wool/μαλλί, 亚麻→linen/λινό, 皮革→leather/δέρμα.
+  EL: "Οι πληροφορίες για το υλικό δεν έχουν επιβεβαιωθεί ακόμη. Παρακαλούμε επικοινωνήστε μαζί μας στο WhatsApp για λεπτομέρειες."
+- Common material translations when material_verified is true: cotton=βαμβάκι, polyester=πολυεστέρας, silk=μετάξι, denim=τζιν, wool=μαλλί, linen=λινό, leather=δέρμα.
 
 PRODUCT NAMES:
 - When showing product names to English-speaking customers, use name_en.
@@ -53,34 +52,34 @@ RESPONSE FORMAT (JSON):
   "sizeAdvice": "size recommendation text"
 }
 
-SIZE RECOMMENDATION RULES — TIERED BY DATA AVAILABILITY:
+SIZE RECOMMENDATION RULES BY DATA AVAILABILITY:
 
-PRIORITY 1 — size_chart exists on CURRENT_PRODUCT:
+PRIORITY 1: size_chart exists on CURRENT_PRODUCT
 - Compare customer measurements against the size_chart and recommend the closest size.
-- Always mention available sizes: "Available sizes are [S, M, L, XL]." (from size_stock keys or sizes field).
+- Always mention available sizes from size_stock keys or the sizes field.
 - Say: "Based on the size chart for this [product name], size [X] looks like the best starting point."
 - If the customer seems between sizes, mention the nearest alternative for a looser or slimmer fit.
 
-PRIORITY 2 — No size_chart, but available_sizes exist:
-- Always mention available sizes first: "For the [product name], available sizes are [S, M, L, XL]."
-- Estimate from height+weight+fit_type+category. Say: "Based on your height [X]cm and weight [Y]kg, size [Z] is probably the safest choice for a [fit_type] fit."
-- Then add ONE sentence: "This is an approximate recommendation because this product does not have a detailed size chart yet."
-- For shoes: if no foot_length provided, ask "What is your foot length in cm?"
-- For bags/hats/jewelry/luggage/accessories: say "This product is One Size."
+PRIORITY 2: no size_chart, but available_sizes exist
+- Always mention available sizes first.
+- Estimate from height, weight, fit_type, and category.
+- Add one sentence saying this is approximate because this product does not have a detailed size chart yet.
+- For shoes, if no foot_length is provided, ask for foot length in cm.
+- For bags, hats, jewelry, luggage, and accessories, say the product is One Size.
 
-PRIORITY 3 — No sizes at all:
-- "Size information is not available for this product yet. Please contact us on WhatsApp or visit the store."
+PRIORITY 3: no sizes at all
+- Say size information is not available yet and suggest contacting the store on WhatsApp or visiting in store.
 
 WHEN CURRENT_PRODUCT IS PROVIDED:
 - Always start with "For this [product name]..." and mention the specific product.
-- Never say "most tops" or "bottoms" — talk about the specific product only.
+- Never say "most tops" or "bottoms"; talk about the specific product only.
 
 WHATSAPP MENTION:
 - The chat panel already has a WhatsApp contact footer. Do NOT repeat WhatsApp in your reply unless the user explicitly asks how to contact the store.
-- Keep the disclaimer short and WhatsApp-free: "This is only a size recommendation. For the most accurate fit, try it in store."`;
+- Keep the size disclaimer short and WhatsApp-free: "This is only a size recommendation. For the most accurate fit, try it in store."`;
 
 function buildProductSummary(products: Record<string, unknown>[]) {
-  return products.map(p => ({
+  return products.map((p) => ({
     sku: p.sku,
     name_en: p.name_en || "",
     name_gr: p.name_gr || "",
@@ -93,6 +92,7 @@ function buildProductSummary(products: Record<string, unknown>[]) {
     size_chart: p.size_chart || {},
     fit_type: p.fit_type || "regular",
     material: p.material || "",
+    material_verified: Boolean(p.material_verified),
     brand: p.brand || "",
     color: p.color || "",
     style_tags: p.ai_keywords || [],
@@ -100,53 +100,52 @@ function buildProductSummary(products: Record<string, unknown>[]) {
   }));
 }
 
-// ── Rate limiter (in-memory, per IP) ──────────────────────
 const rateLimitMap = new Map<string, number[]>();
-const RATE_LIMIT = 10; // max requests per minute
+const RATE_LIMIT = 10;
+
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
-  const timestamps = (rateLimitMap.get(ip) || []).filter(t => now - t < 60000);
+  const timestamps = (rateLimitMap.get(ip) || []).filter((t) => now - t < 60000);
   if (timestamps.length >= RATE_LIMIT) return false;
   timestamps.push(now);
   rateLimitMap.set(ip, timestamps.slice(-20));
   return true;
 }
 
-// ── Local fast replies (no API call needed) ────────────────
 const localReplies: Record<string, Record<string, string>> = {
   en: {
-    "hello": "Hello! I'm your shopping assistant. How can I help you today?",
-    "hi": "Hi there! Looking for something specific, or need a size recommendation?",
-    "hey": "Hey! I can help you find products or recommend sizes. What are you looking for?",
+    hello: "Hello! I'm your shopping assistant. How can I help you today?",
+    hi: "Hi there! Looking for something specific, or need a size recommendation?",
+    hey: "Hey! I can help you find products or recommend sizes. What are you looking for?",
     "can you speak chinese": "I'm sorry, I can only assist in English or Greek. How can I help you?",
     "do you speak chinese": "I'm sorry, I can only assist in English or Greek. How can I help you?",
     "what is your store name": "This is an AI assistant for our fashion boutique. You can find our store name at the top of the page or in the store info section.",
     "store name": "Our store name is shown at the top of the website. You can also find it on Google Maps and social media.",
-    "contact": "You can contact us via WhatsApp using the button on this page, or visit our store in Athens.",
-    "whatsapp": "You can reach us on WhatsApp! Click the WhatsApp button on the product page or use the link in the footer.",
+    contact: "You can contact us via WhatsApp using the button on this page, or visit our store in Athens.",
+    whatsapp: "You can reach us on WhatsApp! Click the WhatsApp button on the product page or use the link in the footer.",
   },
   el: {
-    "hello": "Γεια σας! Είμαι ο βοηθός αγορών σας. Πώς μπορώ να σας βοηθήσω σήμερα;",
-    "hi": "Γεια! Ψάχνετε κάτι συγκεκριμένο ή χρειάζεστε βοήθεια με το μέγεθος;",
-    "hey": "Γεια! Μπορώ να σας βοηθήσω να βρείτε προϊόντα ή να προτείνω μεγέθη. Τι ψάχνετε;",
+    hello: "Γεια σας! Είμαι ο βοηθός αγορών σας. Πώς μπορώ να σας βοηθήσω σήμερα;",
+    hi: "Γεια σας! Ψάχνετε κάτι συγκεκριμένο ή χρειάζεστε βοήθεια με το μέγεθος;",
+    hey: "Γεια σας! Μπορώ να σας βοηθήσω να βρείτε προϊόντα ή να προτείνω μέγεθος. Τι ψάχνετε;",
     "can you speak chinese": "Λυπάμαι, μπορώ να βοηθήσω μόνο στα Αγγλικά ή στα Ελληνικά. Πώς μπορώ να σας βοηθήσω;",
     "do you speak chinese": "Λυπάμαι, μπορώ να βοηθήσω μόνο στα Αγγλικά ή στα Ελληνικά. Πώς μπορώ να σας βοηθήσω;",
-    "what is your store name": "Αυτός είναι ένας βοηθός AI για την μπουτίκ μας. Μπορείτε να βρείτε το όνομα του καταστήματος στην κορυφή της σελίδας.",
+    "what is your store name": "Το όνομα του καταστήματος εμφανίζεται στην κορυφή της ιστοσελίδας.",
     "store name": "Το όνομα του καταστήματός μας εμφανίζεται στην κορυφή της ιστοσελίδας.",
-    "contact": "Μπορείτε να επικοινωνήσετε μαζί μας μέσω WhatsApp χρησιμοποιώντας το κουμπί σε αυτή τη σελίδα ή να επισκεφθείτε το κατάστημά μας στην Αθήνα.",
-    "whatsapp": "Μπορείτε να επικοινωνήσετε μαζί μας στο WhatsApp! Χρησιμοποιήστε το κουμπί WhatsApp στη σελίδα του προϊόντος.",
+    contact: "Μπορείτε να επικοινωνήσετε μαζί μας μέσω WhatsApp ή να επισκεφθείτε το κατάστημά μας στην Αθήνα.",
+    whatsapp: "Μπορείτε να μας στείλετε μήνυμα στο WhatsApp από το κουμπί της σελίδας προϊόντος ή από το footer.",
   },
 };
 
 function getLocalReply(message: string, lang: string): string | null {
   const key = message.toLowerCase().replace(/[!?.,]/g, "").trim();
   const replies = localReplies[lang] || localReplies.en;
-  // Exact match first
   if (replies[key]) return replies[key];
-  // Contains match
+
   for (const [k, v] of Object.entries(replies)) {
     if (key.includes(k) || k.includes(key)) return v;
   }
+
   return null;
 }
 
@@ -161,13 +160,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Message is required" }, { status: 400 });
   }
 
-  // Rate limit check
   const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
   if (!checkRateLimit(ip)) {
-    return NextResponse.json({ reply: language === "el" ? "Στέλνετε μηνύματα πολύ γρήγορα. Παρακαλώ δοκιμάστε ξανά αργότερα." : "You are sending messages too quickly. Please try again later." });
+    return NextResponse.json({
+      reply: language === "el"
+        ? "Στέλνετε μηνύματα πολύ γρήγορα. Παρακαλούμε δοκιμάστε ξανά σε λίγο."
+        : "You are sending messages too quickly. Please try again later.",
+    });
   }
 
-  // Local fast replies
   const localReply = getLocalReply(message, language);
   if (localReply) {
     return NextResponse.json({ reply: localReply, products: [] });
@@ -175,12 +176,14 @@ export async function POST(request: NextRequest) {
 
   const apiKey = (process.env.DEEPSEEK_API_KEY || "").trim();
   if (!apiKey) {
-    return NextResponse.json({ reply: language === "el" ? "Ο AI βοηθός δεν είναι προσωρινά διαθέσιμος. Παρακαλώ επικοινωνήστε μαζί μας μέσω WhatsApp." : "AI assistant is temporarily unavailable. Please contact us on WhatsApp." });
+    return NextResponse.json({
+      reply: language === "el"
+        ? "Ο AI βοηθός δεν είναι προσωρινά διαθέσιμος. Παρακαλούμε επικοινωνήστε μαζί μας στο WhatsApp."
+        : "AI assistant is temporarily unavailable. Please contact us on WhatsApp.",
+    });
   }
 
-  // Fetch products: if product context, send only current product; else limit to 20
   const supabase = getSupabaseClient();
-  const limit = productContext ? 20 : 20; // always limit to 20
   const { data } = supabase
     ? await (supabase as any)
         .from("products")
@@ -188,7 +191,7 @@ export async function POST(request: NextRequest) {
         .neq("is_active", false)
         .gte("stock", 0)
         .order("created_at", { ascending: false })
-        .limit(limit)
+        .limit(20)
     : { data: null };
 
   const allProducts = (data || []) as Record<string, unknown>[];
@@ -196,14 +199,10 @@ export async function POST(request: NextRequest) {
 
   const storeName = (await getBusinessSettings()).business_name || "Online Store";
   const langPrompt = language === "el"
-    ? "Reply in Greek. Greet with Καλημέρα or Καλησπέρα."
+    ? 'Reply in Greek. Greet naturally with "Γεια σας".'
     : "Reply in English. Greet naturally.";
 
-  const greeting = language === "el"
-    ? `Welcome to ${storeName}!`
-    : `Welcome to ${storeName}!`;
-
-  const context = `${SYSTEM_PROMPT}\n${langPrompt}\nStore: ${storeName}\nGreeting: ${greeting}`;
+  const context = `${SYSTEM_PROMPT}\n${langPrompt}\nStore: ${storeName}`;
 
   try {
     const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
@@ -233,25 +232,28 @@ export async function POST(request: NextRequest) {
     const content = result?.choices?.[0]?.message?.content || "{}";
     const parsed = JSON.parse(content);
 
-    // Enrich product recommendations with full data
-    const enriched = (parsed.products || []).map((rec: { sku: string; reason: string }) => {
-      const product = allProducts.find(p => p.sku === rec.sku);
-      return product ? {
-        ...buildProductSummary([product])[0],
-        reason: rec.reason,
-        url: `/product/${encodeURIComponent(rec.sku)}`,
-      } : null;
-    }).filter(Boolean);
+    const enriched = (parsed.products || [])
+      .map((rec: { sku: string; reason: string }) => {
+        const product = allProducts.find((p) => p.sku === rec.sku);
+        return product
+          ? {
+              ...buildProductSummary([product])[0],
+              reason: rec.reason,
+              url: `/product/${encodeURIComponent(rec.sku)}`,
+            }
+          : null;
+      })
+      .filter(Boolean);
 
     return NextResponse.json({
       reply: parsed.reply || "I couldn't process that. Please try again.",
       products: enriched,
       sizeAdvice: parsed.sizeAdvice || null,
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json({
       reply: language === "el"
-        ? "Ο AI βοηθός δεν είναι προσωρινά διαθέσιμος. Παρακαλώ επικοινωνήστε μαζί μας μέσω WhatsApp."
+        ? "Ο AI βοηθός δεν είναι προσωρινά διαθέσιμος. Παρακαλούμε επικοινωνήστε μαζί μας στο WhatsApp."
         : "AI assistant is temporarily unavailable. Please contact us on WhatsApp.",
       products: [],
     });

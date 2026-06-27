@@ -237,16 +237,7 @@ export async function batchTranslateRows(
       }),
     );
 
-    // Log progress for observability in Vercel / server logs
-    console.log(
-      `[translate] group ${Math.floor(g / groupSize) + 1}/${Math.ceil(needsTranslation.length / groupSize)}: ` +
-        groupResults
-          .map(
-            (r) =>
-              `row[${r.index}] ${r.result.ok ? "ok" : "FAIL: " + (r.result.ok ? "" : r.result.error)}`,
-          )
-          .join(", "),
-    );
+    void groupResults;
   }
 
   return results;
