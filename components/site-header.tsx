@@ -89,10 +89,10 @@ export function SiteHeader({
       </div>
 
       {/* Mobile: horizontal scroll category row */}
-      <nav className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 pb-3 scrollbar-none sm:px-6 xl:hidden">
+      <nav className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 pb-3 scrollbar-none sm:px-6 lg:justify-center lg:gap-1.5 xl:hidden">
         {categories.map((cat) => (
           <Link
-            className="shrink-0 rounded-full border border-stone-200 bg-white px-3 py-2 text-sm font-bold text-stone-700 whitespace-nowrap"
+            className="shrink-0 rounded-full border border-stone-200 bg-white px-3 py-2 text-sm font-bold text-stone-700 whitespace-nowrap lg:px-2.5 lg:text-xs"
             href={withLanguage(`/${cat.slug}`, language)}
             key={cat.slug}
           >

@@ -13,6 +13,7 @@ type ProductActionsProps = {
   sizeStock?: Record<string, number> | null;
   stock: number;
   skroutzUrl?: string | null;
+  skroutzEnabled?: boolean;
   language?: Language;
   whatsappUrl?: string;
   category?: string;
@@ -38,19 +39,27 @@ function buildSkroutzUrl(skroutzUrl: string | null | undefined, productNameEn: s
   return url.toString();
 }
 
-export function ProductActions({ productName, productNameEn, productNameGr, sku, sizes, sizeStock, stock, skroutzUrl, language, whatsappUrl, category, subcategory, price, imageUrl, sizeChart, fitType }: ProductActionsProps) {
+export function ProductActions({ productName, productNameEn, productNameGr, sku, sizes, sizeStock, stock, skroutzUrl, skroutzEnabled = true, language, whatsappUrl, category, subcategory, price, imageUrl, sizeChart, fitType }: ProductActionsProps) {
   const waUrl = whatsappUrl || "#";
   const t = text[language || "el"];
   const sizeOptions = useMemo(() => getSizeOptions({ sizes, stock, size_stock: sizeStock }), [sizes, stock, sizeStock]);
   const [selectedSize, setSelectedSize] = useState("");
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const [currentUrl, setCurrentUrl] = useState("");
 
   const totalStock = Number(stock) || 0;
   const allOut = sizeOptions.length > 0 && sizeOptions.every(s => s.disabled);
   const outOfStock = totalStock <= 0 || allOut;
-  const hasSkroutz = Boolean(skroutzUrl?.trim());
   const hasWhatsApp = Boolean(whatsappUrl?.trim());
+  const skroutzHref = buildSkroutzUrl(skroutzUrl, productNameEn, sku);
+  const selectedSizeText = selectedSize || (sizeOptions.find(s => !s.disabled)?.label) || t.oneSize;
+  const whatsappMessage = [`${t.whatsappAskProduct}: ${productName}`, `${t.whatsappAskSku}: ${sku}`, currentUrl, selectedSizeText ? `${t.whatsappAskSize}: ${selectedSizeText}` : ""].filter(Boolean).join("\n");
+  const whatsappHref = hasWhatsApp ? buildWhatsAppUrl({ baseUrl: waUrl, text: whatsappMessage }) : "#";
+
+  useEffect(() => {
+    setCurrentUrl(window.location.href);
+  }, []);
 
   // Auto-clear selected size if it becomes disabled
   useEffect(() => {
@@ -63,11 +72,7 @@ export function ProductActions({ productName, productNameEn, productNameGr, sku,
   function askWhatsApp() {
     if (sizeOptions.length > 1 && !selectedSize) { setMessage(t.selectSize); return; }
     setMessage("");
-    const sizeText = selectedSize || (sizeOptions.find(s => !s.disabled)?.label) || t.oneSize;
-    const textContent = [`${t.whatsappAskProduct}: ${productName}`, `${t.whatsappAskSku}: ${sku}`, `${window.location.href}`, sizeText ? `${t.whatsappAskSize}: ${sizeText}` : ""].filter(Boolean).join("\n");
-    window.open(buildWhatsAppUrl({ baseUrl: waUrl, text: textContent }), "_blank", "noopener,noreferrer");
   }
-  function viewOnSkroutz() { window.open(buildSkroutzUrl(skroutzUrl, productNameEn, sku), "_blank", "noopener,noreferrer"); }
 
   return (
     <div>
@@ -113,26 +118,39 @@ export function ProductActions({ productName, productNameEn, productNameGr, sku,
       {message ? <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">{message}</p> : null}
 
       {/* BUTTONS: Skroutz, AI Assistant, WhatsApp */}
-      {hasSkroutz ? (
-        outOfStock ? (
-          <button className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-stone-200 px-6 py-3.5 text-sm font-black text-stone-400 cursor-not-allowed" disabled type="button">
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" /></svg>
-            {t.viewSkroutz} ({t.outOfStockLabel})
-          </button>
-        ) : (
-          <button className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#2d7d46] px-6 py-3.5 text-sm font-black text-white shadow-sm transition hover:bg-[#236836] hover:shadow-md hover:-translate-y-0.5" onClick={viewOnSkroutz} type="button">
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" /></svg>
-            {t.viewSkroutz}
-            <svg className="h-3.5 w-3.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M7 17L17 7M7 7h10v10" /></svg>
-          </button>
-        )
+      {skroutzEnabled ? outOfStock ? (
+        <button className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-stone-200 px-6 py-3.5 text-sm font-black text-stone-400 cursor-not-allowed" disabled type="button">
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" /></svg>
+          {t.viewSkroutz} ({t.outOfStockLabel})
+        </button>
+      ) : (
+        <a className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#2d7d46] px-6 py-3.5 text-sm font-black text-white shadow-sm transition hover:bg-[#236836] hover:shadow-md hover:-translate-y-0.5" href={skroutzHref} rel="noreferrer" target="_blank">
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" /></svg>
+          {t.viewSkroutz}
+          <svg className="h-3.5 w-3.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M7 17L17 7M7 7h10v10" /></svg>
+        </a>
       ) : null}
 
       {/* AI Assistant button */}
       <button className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-6 py-3 text-sm font-bold text-violet-700 transition hover:bg-violet-100 hover:border-violet-300" onClick={() => { window.dispatchEvent(new CustomEvent("openAiChat", { detail: { product: { sku, productName, productNameEn, productNameGr, sizes, sizeStock, stock, category, subcategory, price, imageUrl, sizeChart, fitType } } })); }} type="button">{t.askAi}</button>
 
       {hasWhatsApp ? (
-        <button className={`mt-2 inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-6 py-3 text-sm font-bold text-ink transition hover:border-ink hover:bg-stone-50 ${!hasSkroutz ? "py-3.5 shadow-sm" : ""}`} onClick={askWhatsApp} type="button">{t.whatsappContact}</button>
+        <a
+          className="mt-2 inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-6 py-3 text-sm font-bold text-ink transition hover:border-ink hover:bg-stone-50"
+          href={whatsappHref}
+          onClick={(event) => {
+            if (sizeOptions.length > 1 && !selectedSize) {
+              event.preventDefault();
+              askWhatsApp();
+            } else {
+              setMessage("");
+            }
+          }}
+          rel="noreferrer"
+          target="_blank"
+        >
+          {t.whatsappContact}
+        </a>
       ) : null}
     </div>
   );

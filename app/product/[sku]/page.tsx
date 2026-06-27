@@ -211,7 +211,8 @@ export default async function ProductPage({
                 sizes={product.sizes}
                 sizeStock={safeSizeStock}
                 stock={Number(product.stock)}
-                skroutzUrl={settings.enable_skroutz ? product.skroutz_url : null}
+                skroutzUrl={product.skroutz_url}
+                skroutzEnabled={settings.enable_skroutz}
                 language={language}
                 category={product.category}
                 subcategory={product.subcategory || undefined}
