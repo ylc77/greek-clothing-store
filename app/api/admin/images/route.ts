@@ -277,7 +277,19 @@ export async function POST(request: NextRequest) {
             })() as unknown as string[]
           };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: updateError } = await (supabase as any).from("products").update(updatePayload).eq("sku", sku);
+    let { error: updateError } = await (supabase as any).from("products").update(updatePayload).eq("sku", sku);
+
+    if (
+      updateError &&
+      galleryIndex === null &&
+      /image_(width|height)|schema cache/i.test(updateError.message)
+    ) {
+      // Older customer databases may not have image dimension columns yet.
+      // Keep the upload usable by saving the main image URL without dimensions.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fallback = await (supabase as any).from("products").update({ image_url: imageUrl }).eq("sku", sku);
+      updateError = fallback.error;
+    }
 
     if (updateError) {
       results.push({ fileName, sku, ok: false, message: updateError.message });
