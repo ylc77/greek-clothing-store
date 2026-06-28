@@ -89,17 +89,24 @@ export function SiteHeader({
       </div>
 
       {/* Mobile: horizontal scroll category row */}
-      <nav className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 pb-3 scrollbar-none sm:px-6 lg:justify-center lg:gap-1.5 xl:hidden">
-        {categories.map((cat) => (
-          <Link
-            className="shrink-0 rounded-full border border-stone-200 bg-white px-3 py-2 text-sm font-bold text-stone-700 whitespace-nowrap lg:px-2.5 lg:text-xs"
-            href={withLanguage(`/${cat.slug}`, language)}
-            key={cat.slug}
-          >
-            {categoryLabels[cat.slug][language]}
-          </Link>
-        ))}
-      </nav>
+      <div className="relative xl:hidden">
+        <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-paper to-transparent" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-14 bg-gradient-to-l from-paper to-transparent" />
+        <div className="pointer-events-none absolute right-3 top-1/2 z-20 hidden -translate-y-1/2 rounded-full border border-stone-200 bg-white/90 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-stone-500 shadow-sm min-[420px]:block">
+          {language === "en" ? "Swipe →" : "Σύρετε →"}
+        </div>
+        <nav className="mx-auto flex max-w-7xl snap-x gap-2 overflow-x-auto px-4 pb-3 pr-20 scrollbar-none sm:px-6 sm:pr-24 lg:justify-center lg:gap-1.5 xl:hidden">
+          {categories.map((cat) => (
+            <Link
+              className="shrink-0 snap-start rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-bold text-stone-700 shadow-sm whitespace-nowrap transition active:scale-[0.98] lg:px-2.5 lg:text-xs"
+              href={withLanguage(`/${cat.slug}`, language)}
+              key={cat.slug}
+            >
+              {categoryLabels[cat.slug][language]}
+            </Link>
+          ))}
+        </nav>
+      </div>
     </header>
   );
 }

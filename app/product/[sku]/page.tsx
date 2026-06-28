@@ -154,16 +154,25 @@ export default async function ProductPage({
 
       <section className="mx-auto max-w-7xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
         {/* Breadcrumb */}
-        <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold text-stone-400 sm:text-sm">
-          <Link className="hover:text-ink" href={withLanguage("/", language)}>
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold text-stone-500 sm:mb-5 sm:text-sm">
+          <Link
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-2 text-ink shadow-sm transition hover:border-stone-300 hover:bg-stone-50 hover:shadow active:scale-[0.98]"
+            href={withLanguage("/", language)}
+          >
+            <span aria-hidden="true">←</span>
             {t.backHome}
           </Link>
-          <span>/</span>
-          <Link className="hover:text-ink" href={backHref}>
+          <span className="text-stone-300">/</span>
+          <Link
+            className="inline-flex min-h-10 items-center rounded-full border border-stone-200 bg-white px-3 py-2 text-ink shadow-sm transition hover:border-stone-300 hover:bg-stone-50 hover:shadow active:scale-[0.98]"
+            href={backHref}
+          >
             {backLabel}
           </Link>
-          <span>/</span>
-          <span className="text-ink">{productName(product, language)}</span>
+          <span className="text-stone-300">/</span>
+          <span className="min-h-10 min-w-0 flex-1 rounded-full bg-stone-100 px-3 py-2 text-ink sm:flex-none">
+            <span className="line-clamp-1">{productName(product, language)}</span>
+          </span>
         </div>
 
         {/* Main layout */}

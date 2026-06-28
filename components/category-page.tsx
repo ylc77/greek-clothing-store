@@ -57,7 +57,11 @@ export async function CategoryPage({
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         <div className="mb-6 flex flex-col gap-4 border-b border-stone-200 pb-5 sm:mb-7 sm:flex-row sm:items-end sm:justify-between sm:pb-6">
           <div>
-            <Link className="text-sm font-black text-stone-500 hover:text-ink" href={withLanguage("/", language)}>
+            <Link
+              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-black text-ink shadow-sm transition hover:border-stone-300 hover:bg-stone-50 hover:shadow active:scale-[0.98]"
+              href={withLanguage("/", language)}
+            >
+              <span aria-hidden="true">←</span>
               {t.backHome}
             </Link>
             <p className="mt-4 text-sm font-black uppercase tracking-[0.18em] text-olive">{t.categories}</p>
