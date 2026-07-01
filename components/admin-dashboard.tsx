@@ -134,6 +134,16 @@ function hasSizeStock(product: AdminProduct) {
   const ss = (product as Record<string, unknown>).size_stock;
   return Boolean(ss && typeof ss === "object" && !Array.isArray(ss) && Object.values(ss as Record<string, unknown>).some(v => Number(v) > 0));
 }
+function imageQualityIssue(product: AdminProduct) {
+  if (!hasText(product.image_url)) return "缺主图";
+  if (!isHttpUrl(product.image_url)) return "主图不是公网链接";
+  const raw = product as Record<string, unknown>;
+  const width = Number(raw.image_width) || 0;
+  const height = Number(raw.image_height) || 0;
+  if (!width && !height) return "未记录图片尺寸";
+  if (width < 1000 && height < 1000) return `图片尺寸不足 ${width}×${height}`;
+  return "";
+}
 function productIssues(product: AdminProduct) {
   const issues: { code: string; label: string; level: "block" | "warn" }[] = [];
   const stock = effectiveStock(product);
@@ -144,8 +154,9 @@ function productIssues(product: AdminProduct) {
   if (!product.is_active) issues.push({ code: "inactive", label: "未上架", level: "block" });
   if (!Number.isFinite(Number(product.price)) || Number(product.price) <= 0) issues.push({ code: "price", label: "价格无效", level: "block" });
   if (stock <= 0) issues.push({ code: "stock", label: "库存为 0", level: "block" });
-  if (!hasText(product.image_url)) issues.push({ code: "image", label: "缺主图", level: "block" });
-  else if (!isHttpUrl(product.image_url)) issues.push({ code: "image-url", label: "主图不是公网链接", level: "block" });
+  const imageIssue = imageQualityIssue(product);
+  if (imageIssue === "缺主图" || imageIssue === "主图不是公网链接") issues.push({ code: "image", label: imageIssue, level: "block" });
+  else if (imageIssue) issues.push({ code: "image-quality", label: imageIssue, level: "warn" });
   if (!nameOk) issues.push({ code: "name", label: "缺商品名", level: "block" });
   if (!descOk) issues.push({ code: "description", label: "缺描述", level: "warn" });
   if (!hasText(product.name_gr)) issues.push({ code: "name-gr", label: "缺希腊语名称", level: "warn" });
@@ -183,7 +194,7 @@ export function AdminDashboard() {
 
   // Search / filter state
   const [search, setSearch] = useState(""); const [filterCat, setFilterCat] = useState(""); const [filterSub, setFilterSub] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all"); // all | active | inactive | noimg | nostock | nosizestock | demo
+  const [filterStatus, setFilterStatus] = useState("all"); // all | active | inactive | noimg | badimage | nostock | nosizestock | demo
 
   const csvSummary = useMemo(() => {
     const valid = csvRows.filter(r => validatePreviewRow(r).length === 0).length;
@@ -207,6 +218,10 @@ export function AdminDashboard() {
     if (filterStatus === "active") list = list.filter(p => p.is_active);
     if (filterStatus === "inactive") list = list.filter(p => !p.is_active);
     if (filterStatus === "noimg") list = list.filter(p => !p.image_url);
+    if (filterStatus === "badimage") list = list.filter(p => {
+      const issue = imageQualityIssue(p);
+      return Boolean(issue && issue !== "缺主图");
+    });
     if (filterStatus === "nostock") list = list.filter(p => effectiveStock(p) === 0);
     if (filterStatus === "nosizestock") list = list.filter(p => p.sizes.trim() && !((p as Record<string,unknown>).size_stock && typeof (p as Record<string,unknown>).size_stock === "object" && Object.keys((p as Record<string,unknown>).size_stock as object).length > 0));
     if (filterStatus === "nodesc") list = list.filter(p => !p.description_en?.trim() && !p.description_gr?.trim());
@@ -235,6 +250,7 @@ export function AdminDashboard() {
       issueCount: rows.filter(row => row.issues.length > 0).length,
       blockers: rows.filter(row => row.blockers.length > 0).length,
       warnings: rows.filter(row => row.blockers.length === 0 && row.warnings.length > 0).length,
+      imageIssues: rows.filter(row => row.issues.some(issue => issue.code === "image" || issue.code === "image-quality")).length,
     };
   }, [products]);
 
@@ -401,11 +417,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
                 <button className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50" disabled={loading} onClick={() => void loadProducts()} type="button">刷新检查</button>
               </div>
-              <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
+              <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
                 {[
                   { label: "商品总数", value: products.length, tone: "text-ink" },
                   { label: "可前台展示", value: launchChecks.siteReady, tone: "text-emerald-700" },
                   { label: "可进 Skroutz", value: launchChecks.feedReady, tone: "text-blue-700" },
+                  { label: "图片待处理", value: launchChecks.imageIssues, tone: launchChecks.imageIssues > 0 ? "text-amber-600" : "text-emerald-700" },
                   { label: "有阻断问题", value: launchChecks.blockers, tone: launchChecks.blockers > 0 ? "text-red-600" : "text-emerald-700" },
                   { label: "仅需优化", value: launchChecks.warnings, tone: launchChecks.warnings > 0 ? "text-amber-600" : "text-emerald-700" },
                 ].map(item => (
@@ -422,6 +439,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mt-3 flex flex-wrap gap-2">
                 {[
                   { k: "noimg", l: "缺主图" },
+                  { k: "badimage", l: "图片尺寸 / 链接问题" },
                   { k: "nostock", l: "库存为 0" },
                   { k: "nodesc", l: "缺描述" },
                   { k: "nosizestock", l: "缺尺码库存" },
@@ -536,11 +554,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <input className="input md:col-span-2" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
               <select className="input" value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部分类</option>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select>
               <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoryList[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
-              <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="noimg">缺图片</option><option value="nostock">库存为0</option><option value="nosizestock">未分配尺码</option><option value="nodesc">缺描述</option><option value="demo">测试商品</option></select>
+              <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="noimg">缺图片</option><option value="badimage">图片尺寸/链接问题</option><option value="nostock">库存为0</option><option value="nosizestock">未分配尺码</option><option value="nodesc">缺描述</option><option value="demo">测试商品</option></select>
             </div>
             {/* Quick filter buttons */}
             <div className="mb-3 flex flex-wrap gap-1.5">
-              {[{k:"noimg",l:"缺图片"},{k:"nosizestock",l:"未分配尺码"},{k:"nostock",l:"库存为0"},{k:"demo",l:"测试商品"}].map(b => (
+              {[{k:"noimg",l:"缺图片"},{k:"badimage",l:"图片待处理"},{k:"nosizestock",l:"未分配尺码"},{k:"nostock",l:"库存为0"},{k:"demo",l:"测试商品"}].map(b => (
                 <button key={b.k} className={`rounded-full px-3.5 py-1.5 text-xs font-bold transition ${filterStatus===b.k ? "bg-ink text-white" : "border border-stone-200 bg-white text-stone-400 hover:border-stone-300 hover:text-ink"}`} onClick={() => setFilterStatus(filterStatus===b.k ? "all" : b.k)} type="button">{b.l}</button>
               ))}
               {filterStatus !== "all" ? <button className="rounded-full px-3.5 py-1.5 text-xs font-bold text-stone-400 hover:text-ink" onClick={() => setFilterStatus("all")} type="button">清除筛选</button> : null}
