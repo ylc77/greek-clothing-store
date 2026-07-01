@@ -973,9 +973,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="order-1 rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4 lg:sticky lg:top-4 lg:order-2 lg:self-start">
                 <h3 className="text-sm font-black text-ink">商品照片</h3>
                 <p className="mt-1 text-xs text-stone-500">主图必选；背面图、细节图会自动放进多图。</p>
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <label className="block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">拍摄主图<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
-                  <label className="block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">相册选择<input accept="image/*" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  <label className="block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">从相册选择主图<input accept="image/jpeg,image/png,image/webp" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
+                  <label className="block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">打开相机拍摄<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
                 </div>
                 {quickMainFile ? <p className="mt-2 truncate text-xs text-emerald-700">主图：{quickMainFile.name}</p> : <p className="mt-2 text-xs text-amber-600">还没有主图</p>}
                 <label className="mt-3 block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">选择背面 / 细节图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setQuickBackFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
@@ -1423,8 +1423,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               ) : (
                 <div className="mb-4 rounded-lg border border-stone-200 bg-stone-50 p-4">
                   <p className="text-xs text-stone-500 mb-2">新商品图片会在保存时自动上传。</p>
-                  <div className="flex gap-2">
-                    <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">选择主图<input accept="image/*" className="hidden" type="file" onChange={e => setNewMainFile(e.target.files?.[0] || null)} /></label>
+                  <div className="flex flex-wrap gap-2">
+                    <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">从相册选择主图<input accept="image/jpeg,image/png,image/webp" className="hidden" type="file" onChange={e => setNewMainFile(e.target.files?.[0] || null)} /></label>
+                    <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">打开相机拍摄<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => setNewMainFile(e.target.files?.[0] || null)} /></label>
                     <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">选择多图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setNewGalleryFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
                     {(newMainFile || newGalleryFiles.length > 0) ? <button className="rounded-lg border border-red-100 px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-50" onClick={() => { setNewMainFile(null); setNewGalleryFiles([]); }} type="button">清除</button> : null}
                   </div>
