@@ -58,6 +58,9 @@ export async function PUT(request: NextRequest) {
   if ("enable_skroutz" in payload) {
     update.enable_skroutz = payload.enable_skroutz === true;
   }
+  if ("feed_min_stock" in payload) {
+    update.feed_min_stock = Math.max(1, Math.trunc(Number(payload.feed_min_stock) || 1));
+  }
 
   // Get the existing row id
   const existing = await getBusinessSettings();

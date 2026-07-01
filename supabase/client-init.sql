@@ -114,6 +114,7 @@ create table if not exists business_settings (
   opening_hours text default '',
   footer_text text default '',
   enable_skroutz boolean default false,
+  feed_min_stock int default 1,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );

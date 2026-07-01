@@ -26,6 +26,7 @@ export type BusinessSettings = {
   opening_hours: string;
   footer_text: string;
   enable_skroutz: boolean;
+  feed_min_stock: number;
 };
 
 const defaults: BusinessSettings = {
@@ -46,6 +47,7 @@ const defaults: BusinessSettings = {
   opening_hours: "",
   footer_text: "",
   enable_skroutz: false,
+  feed_min_stock: 1,
 };
 
 let cached: BusinessSettings | null = null;
@@ -89,6 +91,7 @@ export async function getBusinessSettings(): Promise<BusinessSettings> {
     opening_hours: String(data.opening_hours || ""),
     footer_text: String(data.footer_text || ""),
     enable_skroutz: data.enable_skroutz === true,
+    feed_min_stock: Math.max(1, Number(data.feed_min_stock || defaults.feed_min_stock)),
   };
 
   cached = settings;

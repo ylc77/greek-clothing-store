@@ -29,6 +29,7 @@ const emptySettings: BusinessSettings = {
   opening_hours: "",
   footer_text: "",
   enable_skroutz: false,
+  feed_min_stock: 1,
 };
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
@@ -67,7 +68,7 @@ export default function AdminSettingsPage() {
     if (activePassword) void loadSettings();
   }, [activePassword]);
 
-  function updateField(key: keyof BusinessSettings, value: string | boolean) {
+  function updateField(key: keyof BusinessSettings, value: string | boolean | number) {
     setSettings((s) => ({ ...s, [key]: value }));
   }
 
@@ -174,6 +175,9 @@ export default function AdminSettingsPage() {
                 <select className="input" value={settings.enable_skroutz ? "true" : "false"} onChange={e => updateField("enable_skroutz", e.target.value === "true")}>
                   <option value="true">开启</option><option value="false">关闭</option>
                 </select>
+              </Field>
+              <Field label="进入 Skroutz Feed 的最低库存" hint="小店库存少时建议设为 2 或 3，避免实体店刚卖掉后线上还展示。默认 1。">
+                <input className="input" min="1" step="1" type="number" value={settings.feed_min_stock} onChange={e => updateField("feed_min_stock", Math.max(1, Number(e.target.value) || 1))} />
               </Field>
               <Field label="营业时间（每行一条）">
                 <textarea className="input min-h-28" value={settings.opening_hours} onChange={e => updateField("opening_hours", e.target.value)} placeholder={`Monday - Friday: 10:00 - 20:00\nSaturday: 10:00 - 18:00\nSunday: Closed`} />

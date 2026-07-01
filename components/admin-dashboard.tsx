@@ -21,7 +21,21 @@ type CsvRow = Record<string, string | number>;
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = "dashboard" | "check" | "add" | "csv" | "images" | "skroutz" | "categories";
+type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "add" | "csv" | "images" | "skroutz" | "categories";
+type QuickAddState = {
+  category: ProductCategory;
+  subcategory: string;
+  price: number;
+  stock: number;
+  sizes: string;
+  size_stock: string;
+  color: string;
+  brand: string;
+  name_cn: string;
+  description_cn: string;
+  notes: string;
+  is_active: boolean;
+};
 
 /* ── Constants ───────────────────────────────────────────── */
 const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_en: "", description_cn: "", description_gr: "", description_en: "", category: "men", subcategory: "tshirts", price: 0, stock: 0, sizes: "", image_url: "", image_urls: "", brand: "", barcode: "", vat: 24, color: "", skroutz_url: "", is_active: true, fit_type: "regular", material: "", ai_keywords: "", style_tags: "", size_chart: "", material_verified: false };
@@ -58,8 +72,22 @@ const csvFieldLabels: Record<string, string> = {
 };
 const csvHeaderAliases = new Map(Object.entries(csvFieldLabels).flatMap(([field, label]) => [[field, field], [label, field]]));
 const tabs: { key: Tab; label: string }[] = [
-  { key: "dashboard", label: "商品列表" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "批量图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
+  { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "批量图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
+const emptyQuickAdd: QuickAddState = {
+  category: "men",
+  subcategory: "tshirts",
+  price: 0,
+  stock: 1,
+  sizes: "S,M,L",
+  size_stock: "",
+  color: "",
+  brand: "",
+  name_cn: "",
+  description_cn: "",
+  notes: "",
+  is_active: true,
+};
 
 /* ── Utilities ───────────────────────────────────────────── */
 function parseCsv(text: string) {
@@ -199,6 +227,14 @@ export function AdminDashboard() {
   const [newMainFile, setNewMainFile] = useState<File | null>(null); const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
   const [sizeStock, setSizeStock] = useState<Record<string, number>>({});
   const [showSizeSummary, setShowSizeSummary] = useState(false);
+  const [quickAdd, setQuickAdd] = useState<QuickAddState>(emptyQuickAdd);
+  const [quickMainFile, setQuickMainFile] = useState<File | null>(null);
+  const [quickBackFiles, setQuickBackFiles] = useState<File[]>([]);
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [sellingSku, setSellingSku] = useState<string | null>(null);
+  const [styleImageSku, setStyleImageSku] = useState<string | null>(null);
+  const [styleImageStyle, setStyleImageStyle] = useState("Mediterranean boutique look");
+  const [styleImageModelType, setStyleImageModelType] = useState("adult fashion model");
   const [dbCats, setDbCats] = useState<Array<Record<string,unknown>>>([]);
   const [dbSubs, setDbSubs] = useState<Array<Record<string,unknown>>>([]);
   useEffect(() => { if (activePassword) { fetch("/api/admin/categories", { headers: { "x-admin-password": activePassword } }).then(r => r.json()).then(d => { setDbCats((d.categories||[]).filter((c:Record<string,unknown>) => c.is_active !== false)); setDbSubs((d.subcategories||[]).filter((s:Record<string,unknown>) => s.is_active !== false)); }).catch(() => {}); } }, [activePassword, tab]);
@@ -311,6 +347,31 @@ export function AdminDashboard() {
 
   async function loadProducts() { setLoading(true); try { const d = await api("/api/admin/products?limit=500"); setProducts(d.products||[]); } catch (e) { toast(e instanceof Error ? e.message : "商品读取失败", "err"); } finally { setLoading(false); } }
   useEffect(() => { if (activePassword) void loadProducts(); }, [activePassword]);
+
+  function parseSizeStockText(value: string) {
+    const out: Record<string, number> = {};
+    value.split(/[,，\n]+/).map(part => part.trim()).filter(Boolean).forEach(part => {
+      const [rawSize, rawQty] = part.split(/[:：=]/).map(x => x?.trim());
+      const qty = Number(rawQty);
+      if (rawSize && Number.isFinite(qty) && qty >= 0) out[rawSize.toUpperCase()] = Math.floor(qty);
+    });
+    return out;
+  }
+  function quickSku(cat = quickAdd.category, sub = quickAdd.subcategory) {
+    const prefix = skuPrefix(cat, sub);
+    let max = 0;
+    for (const product of products) {
+      if (!product.sku.startsWith(prefix)) continue;
+      const n = parseInt(product.sku.slice(prefix.length), 10);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+    return `${prefix}${String(max + 1).padStart(3, "0")}`;
+  }
+  function updateQuickAdd<K extends keyof QuickAddState>(key: K, value: QuickAddState[K]) {
+    setQuickAdd(current => key === "category"
+      ? { ...current, category: value as ProductCategory, subcategory: subcategoryList[value as ProductCategory]?.[0] || "" }
+      : { ...current, [key]: value });
+  }
 
   function skuPrefix(cat: string, sub: string) { return `${cat || "x"}-${sub || "x"}-`; }
   function updateField<K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) { setForm(c => { if (key === "category") { const nextCat = value as ProductCategory; const nextSub = subcategoryList[nextCat]?.[0] || ""; const prefix = skuPrefix(nextCat, nextSub); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, category: nextCat, subcategory: nextSub, sku: skuEmpty ? prefix : c.sku }; } if (key === "subcategory") { const prefix = skuPrefix(c.category, value as string); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, subcategory: value as string, sku: skuEmpty ? prefix : c.sku }; } return { ...c, [key]: value }; }); }
@@ -487,6 +548,105 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   function confirmDeleteImage(opts: ImageDeleteOptions) { const label = opts.kind === "main" ? "主图" : "这张多图"; setConfirm({ open: true, title: `确定删除${label}？`, desc: "Storage 文件也会一起删除。", confirmText: "确认删除", variant: "danger", action: () => { setConfirm(c => ({ ...c, open: false })); executeDeleteImage(opts, label); } }); }
   async function executeDeleteImage(opts: ImageDeleteOptions, label: string) { setLoading(true); try { const r = await fetch("/api/admin/images", { method: "DELETE", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify(opts) }); const d = await readJson(r, "删除图片接口错误"); if (!r.ok) throw new Error(d.error || "删除图片失败"); toast(`${label}已删除。`); await loadProducts(); if (editingIdRef.current && form.sku === opts.sku) { setForm(c => { if (opts.kind === "main") return { ...c, image_url: "" }; const next = imageLines(c.image_urls).filter((_, i) => i !== opts.index); return { ...c, image_urls: next.join("\n") }; }); } } catch (er) { toast(er instanceof Error ? er.message : "删除图片失败", "err"); } finally { setLoading(false); } }
 
+  async function submitQuickAdd(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!quickMainFile) { toast("请先拍摄或选择一张主图", "err"); return; }
+    if (!Number.isFinite(Number(quickAdd.price)) || Number(quickAdd.price) <= 0) { toast("请填写正确价格", "err"); return; }
+    const sku = quickSku();
+    const parsedSizeStock = parseSizeStockText(quickAdd.size_stock);
+    const sizeKeys = Object.keys(parsedSizeStock);
+    const stock = sizeKeys.length > 0 ? sizeKeys.reduce((sum, key) => sum + parsedSizeStock[key], 0) : Math.max(0, Number(quickAdd.stock) || 0);
+    const payload: Record<string, unknown> = {
+      sku,
+      category: quickAdd.category,
+      subcategory: quickAdd.subcategory,
+      price: Number(quickAdd.price),
+      stock,
+      sizes: sizeKeys.length > 0 ? sortSizeKeys(sizeKeys).join(",") : quickAdd.sizes.trim(),
+      size_stock: sizeKeys.length > 0 ? parsedSizeStock : undefined,
+      name_cn: quickAdd.name_cn.trim() || `${quickAdd.color ? `${quickAdd.color} ` : ""}${quickAdd.category} ${quickAdd.subcategory}`,
+      description_cn: quickAdd.description_cn.trim() || quickAdd.notes.trim() || "请在保存后检查并补充商品描述。",
+      name_en: "",
+      name_gr: "",
+      description_en: "",
+      description_gr: "",
+      brand: quickAdd.brand.trim(),
+      color: quickAdd.color.trim(),
+      vat: 24,
+      image_url: "",
+      image_urls: "",
+      is_active: quickAdd.is_active,
+    };
+    setQuickSaving(true);
+    try {
+      const saved = await api("/api/admin/products", { method: "POST", body: JSON.stringify(payload) });
+      const savedSku = saved?.product?.sku || sku;
+      const main = new FormData();
+      main.append("images", quickMainFile);
+      main.append("sku", savedSku);
+      main.append("mode", "main");
+      const mainResult = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: main });
+      const mainData = await readJson(mainResult, "主图上传失败");
+      if (!mainResult.ok) throw new Error(mainData.error || "主图上传失败");
+      if (quickBackFiles.length > 0) {
+        const gallery = new FormData();
+        quickBackFiles.forEach(file => gallery.append("images", file));
+        gallery.append("sku", savedSku);
+        gallery.append("mode", "gallery");
+        const galleryResult = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: gallery });
+        const galleryData = await readJson(galleryResult, "多图上传失败");
+        if (!galleryResult.ok) throw new Error(galleryData.error || "多图上传失败");
+      }
+      toast(`快速上新完成：${savedSku}`);
+      setQuickAdd(emptyQuickAdd);
+      setQuickMainFile(null);
+      setQuickBackFiles([]);
+      await loadProducts();
+      setSearch(savedSku);
+      setTab("dashboard");
+    } catch (er) {
+      toast(er instanceof Error ? er.message : "快速上新失败", "err");
+    } finally {
+      setQuickSaving(false);
+    }
+  }
+
+  async function sellOne(product: AdminProduct, size?: string) {
+    setSellingSku(`${product.sku}:${size || ""}`);
+    try {
+      await api("/api/admin/products/sell", { method: "POST", body: JSON.stringify({ sku: product.sku, size, quantity: 1, autoDeactivate: true }) });
+      toast(size ? `${product.sku} / ${size} 已售出 1 件` : `${product.sku} 已售出 1 件`);
+      await loadProducts();
+    } catch (er) {
+      toast(er instanceof Error ? er.message : "减库存失败", "err");
+    } finally {
+      setSellingSku(null);
+    }
+  }
+
+  async function generateStyleImageForCurrentProduct() {
+    if (!form.sku.trim()) { toast("请先选择商品", "err"); return; }
+    setStyleImageSku(form.sku);
+    try {
+      const d = await api("/api/admin/products/style-image", {
+        method: "POST",
+        body: JSON.stringify({ sku: form.sku, style: styleImageStyle, modelType: styleImageModelType }),
+      });
+      if (d.imageUrl) {
+        setForm(c => {
+          const existing = imageLines(c.image_urls);
+          return { ...c, image_urls: Array.from(new Set([...existing, d.imageUrl])).join("\n") };
+        });
+      }
+      toast("AI 模特图已生成，并加入多图。");
+      await loadProducts();
+    } catch (er) {
+      toast(er instanceof Error ? er.message : "AI 模特图生成失败", "err");
+    } finally {
+      setStyleImageSku(null);
+    }
+  }
+
   /* ── Login gate ─────────────────────────────────────────── */
   if (!activePassword) {
     return (
@@ -542,6 +702,77 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         </nav>
 
         {/* ── TAB: Launch check ─────────────────────────────── */}
+        {tab === "quickAdd" ? (
+          <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-black text-ink">拍照快速上新</h2>
+                <p className="mt-1 text-xs text-stone-500">拍主图、填价格和库存，系统自动生成 SKU；适合库存少、款式多的小店。</p>
+              </div>
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">下一件 SKU：{quickSku()}</span>
+            </div>
+            <form className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]" onSubmit={submitQuickAdd}>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <Field label="一级分类"><select className="input" value={quickAdd.category} onChange={e => updateQuickAdd("category", e.target.value as ProductCategory)}>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select></Field>
+                <Field label="二级分类"><select className="input" value={quickAdd.subcategory} onChange={e => updateQuickAdd("subcategory", e.target.value)}>{subcategoryList[quickAdd.category].map(s => <option key={s} value={s}>{s}</option>)}</select></Field>
+                <Field label="价格"><input className="input" min="0" step="0.01" type="number" value={quickAdd.price} onChange={e => updateQuickAdd("price", Number(e.target.value))} /></Field>
+                <Field label="总库存"><input className="input" min="0" step="1" type="number" value={quickAdd.stock} onChange={e => updateQuickAdd("stock", Number(e.target.value))} /></Field>
+                <Field label="尺码"><input className="input" value={quickAdd.sizes} onChange={e => updateQuickAdd("sizes", e.target.value)} placeholder="S,M,L" /></Field>
+                <Field label="尺码库存"><input className="input" value={quickAdd.size_stock} onChange={e => updateQuickAdd("size_stock", e.target.value)} placeholder="S:1,M:1,L:0" /></Field>
+                <Field label="颜色（选填）"><input className="input" value={quickAdd.color} onChange={e => updateQuickAdd("color", e.target.value)} placeholder="black / beige" /></Field>
+                <Field label="品牌（选填）"><input className="input" value={quickAdd.brand} onChange={e => updateQuickAdd("brand", e.target.value)} /></Field>
+                <Field label="状态"><select className="input" value={quickAdd.is_active ? "yes" : "no"} onChange={e => updateQuickAdd("is_active", e.target.value === "yes")}><option value="yes">保存后上架</option><option value="no">先存草稿</option></select></Field>
+                <Field label="中文商品名（可空）"><input className="input" value={quickAdd.name_cn} onChange={e => updateQuickAdd("name_cn", e.target.value)} placeholder="可后续 AI 补全" /></Field>
+                <Field label="备注 / 描述（可空）"><textarea className="input min-h-24" value={quickAdd.description_cn} onChange={e => { updateQuickAdd("description_cn", e.target.value); updateQuickAdd("notes", e.target.value); }} placeholder="例如：薄款、适合夏天、宽松版型" /></Field>
+              </div>
+              <div className="rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4">
+                <h3 className="text-sm font-black text-ink">商品照片</h3>
+                <p className="mt-1 text-xs text-stone-500">主图必选；背面图、细节图会自动放进多图。</p>
+                <label className="mt-4 block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">选择 / 拍摄主图<input accept="image/*" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
+                {quickMainFile ? <p className="mt-2 truncate text-xs text-emerald-700">主图：{quickMainFile.name}</p> : <p className="mt-2 text-xs text-amber-600">还没有主图</p>}
+                <label className="mt-3 block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">选择背面 / 细节图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setQuickBackFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
+                {quickBackFiles.length > 0 ? <p className="mt-2 text-xs text-stone-500">多图：{quickBackFiles.length} 张</p> : null}
+                <button className="mt-5 w-full rounded-lg bg-ink px-4 py-3 text-sm font-bold text-white hover:bg-stone-800 disabled:opacity-50" disabled={quickSaving || loading} type="submit">{quickSaving ? "保存中..." : "保存并上传图片"}</button>
+                <p className="mt-3 text-[11px] leading-relaxed text-stone-400">提示：不需要打印 SKU 标签。后台自动生成 SKU；实体店卖掉后用“快速售出”减库存。</p>
+              </div>
+            </form>
+          </section>
+        ) : null}
+
+        {tab === "quickSale" ? (
+          <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-black text-ink">快速售出减库存</h2>
+                <p className="mt-1 text-xs text-stone-500">实体店卖出一件后，在这里点一下即可减库存；库存归零时会自动下架。</p>
+              </div>
+              <button className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50" disabled={loading} onClick={() => void loadProducts()} type="button">刷新库存</button>
+            </div>
+            <div className="mb-4 grid gap-2 md:grid-cols-3">
+              <input className="input" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
+              <select className="input" value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部分类</option>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select>
+              <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoryList[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {filteredProducts.filter(p => p.is_active && effectiveStock(p) > 0).slice(0, 80).map(product => {
+                const raw = product as Record<string, unknown>;
+                const stockBySize = raw.size_stock && typeof raw.size_stock === "object" && !Array.isArray(raw.size_stock) ? raw.size_stock as Record<string, number> : null;
+                return (
+                  <article className="rounded-xl border border-stone-100 bg-stone-50 p-3" key={product.id}>
+                    <div className="flex gap-3">
+                      {product.image_url ? <img alt="" className="h-20 w-16 rounded-lg object-cover" src={product.image_url} /> : <div className="h-20 w-16 rounded-lg bg-stone-200" />}
+                      <div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-ink">{product.name_cn || product.name_en || product.name_gr || product.sku}</p><p className="mt-1 truncate text-[11px] font-bold text-stone-400">{product.sku}</p><p className="mt-1 text-xs font-bold text-emerald-700">库存 {effectiveStock(product)}</p></div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {stockBySize ? sortSizeKeys(Object.keys(stockBySize)).map(size => <button className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-ink hover:bg-stone-100 disabled:opacity-40" disabled={(stockBySize[size] || 0) <= 0 || sellingSku === `${product.sku}:${size}`} key={size} onClick={() => void sellOne(product, size)} type="button">{size} -1 <span className="text-stone-400">({stockBySize[size] || 0})</span></button>) : <button className="w-full rounded-lg bg-ink px-4 py-2 text-xs font-bold text-white hover:bg-stone-800 disabled:opacity-50" disabled={sellingSku === `${product.sku}:`} onClick={() => void sellOne(product)} type="button">售出 1 件</button>}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+
         {tab === "check" ? (
           <section className="flex flex-col gap-5">
             <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
@@ -929,6 +1160,15 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       上传多图
                       <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" disabled={loading} multiple onChange={e => { void uploadImages(e.target.files, { sku: form.sku, mode: "gallery" }); e.currentTarget.value = ""; }} type="file" />
                     </label>
+                  </div>
+                  <div className="mt-4 rounded-lg border border-amber-100 bg-amber-50/60 p-3">
+                    <p className="text-xs font-black text-ink">AI 模特穿搭图（选填）</p>
+                    <p className="mt-1 text-[11px] text-stone-500">先上传真实正面/背面图，再生成参考穿搭图。生成图会加入多图，不会替换主图。</p>
+                    <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                      <input className="input bg-white" value={styleImageStyle} onChange={e => setStyleImageStyle(e.target.value)} placeholder="Mediterranean boutique look" />
+                      <input className="input bg-white" value={styleImageModelType} onChange={e => setStyleImageModelType(e.target.value)} placeholder="adult fashion model" />
+                      <button className="rounded-lg border border-amber-200 bg-white px-4 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50" disabled={loading || styleImageSku === form.sku || !form.image_url} onClick={() => void generateStyleImageForCurrentProduct()} type="button">{styleImageSku === form.sku ? "生成中..." : "生成 AI 模特图"}</button>
+                    </div>
                   </div>
                   {/* Image previews */}
                   <div className="mt-4 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">

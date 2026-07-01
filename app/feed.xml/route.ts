@@ -20,7 +20,7 @@ export async function GET() {
   }
   const brandName = settings.business_name || "Fashion Boutique";
   const products = await getFeedProducts();
-  const xml = buildSkroutzFeed(products, brandName);
+  const xml = buildSkroutzFeed(products, brandName, settings.feed_min_stock);
 
   return new Response(xml, {
     headers: {

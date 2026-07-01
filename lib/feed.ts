@@ -117,9 +117,10 @@ export async function getFeedProducts(): Promise<Product[]> {
 }
 
 /* ── Feed builder: Skroutz / MyWebstore ───────────────────── */
-export function buildSkroutzFeed(products: Product[], brandName: string): string {
+export function buildSkroutzFeed(products: Product[], brandName: string, minStock = 1): string {
+  const requiredStock = Math.max(1, Math.trunc(Number(minStock) || 1));
   const eligibleProducts = products.filter(product => (
-    getTotalStock(product) > 0 &&
+    getTotalStock(product) >= requiredStock &&
     isAbsoluteHttpUrl(product.image_url)
   ));
 
