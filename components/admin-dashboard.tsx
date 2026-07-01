@@ -172,6 +172,7 @@ export function AdminDashboard() {
   const [imageResults, setImageResults] = useState<ApiResult[]>([]); const [selectedImageSku, setSelectedImageSku] = useState("");
   const [tab, setTab] = useState<Tab>("dashboard");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [autoCompletingId, setAutoCompletingId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ open: boolean; title: string; desc: string; confirmText: string; variant: "danger"|"success"|"default"; action: () => void; prompt?: boolean; promptValue?: string }>({ open: false, title: "", desc: "", confirmText: "确认", variant: "default", action: () => {} });
   const [newMainFile, setNewMainFile] = useState<File | null>(null); const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
   const [sizeStock, setSizeStock] = useState<Record<string, number>>({});
@@ -253,7 +254,9 @@ export function AdminDashboard() {
   function updateField<K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) { setForm(c => { if (key === "category") { const nextCat = value as ProductCategory; const nextSub = subcategoryList[nextCat]?.[0] || ""; const prefix = skuPrefix(nextCat, nextSub); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, category: nextCat, subcategory: nextSub, sku: skuEmpty ? prefix : c.sku }; } if (key === "subcategory") { const prefix = skuPrefix(c.category, value as string); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, subcategory: value as string, sku: skuEmpty ? prefix : c.sku }; } return { ...c, [key]: value }; }); }
   function generateNextSku() { const prefix = skuPrefix(form.category, form.subcategory); const existing = products.filter(p => p.sku.startsWith(prefix)); let max = 0; for (const p of existing) { const rest = p.sku.slice(prefix.length); const n = parseInt(rest, 10); if (!isNaN(n) && n > max) max = n; } const next = String(max + 1).padStart(3, "0"); updateField("sku", prefix + next); toast(`SKU 已生成: ${prefix + next}`); }
   function loadSizeStock(p: AdminProduct) { const ss = (p as Record<string,unknown>).size_stock; if (ss && typeof ss === 'object' && !Array.isArray(ss)) { const rec: Record<string,number> = {}; for (const [k,v] of Object.entries(ss as Record<string,unknown>)) { if (typeof v === 'number') rec[k.toUpperCase()] = v; } setSizeStock(rec); } else { setSizeStock({}); } }
-  function startEdit(p: AdminProduct) { setEditingId(p.id); setForm({ sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, barcode:p.barcode, vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active, material: p.material || (p as Record<string,unknown>).material as string || "", fit_type: (p as Record<string,unknown>).fit_type as string || "regular", ai_keywords: Array.isArray((p as Record<string,unknown>).ai_keywords) ? ((p as Record<string,unknown>).ai_keywords as string[]).join(",") : String((p as Record<string,unknown>).ai_keywords || ""), style_tags: Array.isArray((p as Record<string,unknown>).style_tags) ? ((p as Record<string,unknown>).style_tags as string[]).join(",") : String((p as Record<string,unknown>).style_tags || ""), size_chart: typeof (p as Record<string,unknown>).size_chart === "object" ? JSON.stringify((p as Record<string,unknown>).size_chart) : String((p as Record<string,unknown>).size_chart || ""), material_verified: (p as Record<string,unknown>).material_verified === true }); loadSizeStock(p); setShowSizeChart(!!((typeof (p as Record<string,unknown>).size_chart === "object" ? JSON.stringify((p as Record<string,unknown>).size_chart) : String((p as Record<string,unknown>).size_chart || "")).trim())); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  function formFromProduct(p: AdminProduct): ProductFormData { return { sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, barcode:p.barcode, vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active, material: p.material || (p as Record<string,unknown>).material as string || "", fit_type: (p as Record<string,unknown>).fit_type as string || "regular", ai_keywords: Array.isArray((p as Record<string,unknown>).ai_keywords) ? ((p as Record<string,unknown>).ai_keywords as string[]).join(",") : String((p as Record<string,unknown>).ai_keywords || ""), style_tags: Array.isArray((p as Record<string,unknown>).style_tags) ? ((p as Record<string,unknown>).style_tags as string[]).join(",") : String((p as Record<string,unknown>).style_tags || ""), size_chart: typeof (p as Record<string,unknown>).size_chart === "object" ? JSON.stringify((p as Record<string,unknown>).size_chart) : String((p as Record<string,unknown>).size_chart || ""), material_verified: (p as Record<string,unknown>).material_verified === true }; }
+  function openProductForm(p: AdminProduct) { const nextForm = formFromProduct(p); setEditingId(p.id); setForm(nextForm); loadSizeStock(p); setShowSizeChart(!!nextForm.size_chart.trim()); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); return nextForm; }
+  function startEdit(p: AdminProduct) { openProductForm(p); }
   function copyProduct(p: AdminProduct) { setEditingId(null); setForm({ ...p, sku: p.sku + "-COPY" }); loadSizeStock(p); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
   function addSize(sz: string) { setSizeStock(prev => { if (sz in prev) return prev; return { ...prev, [sz]: 0 }; }); }
   function toggleSizeSummary() { setShowSizeSummary(prev => !prev); }
@@ -270,6 +273,38 @@ export function AdminDashboard() {
   }
   async function doTranslate() { setTranslating(true); try { const d = await api("/api/admin/translate", { method: "POST", body: JSON.stringify({ name_cn: form.name_cn, description_cn: form.description_cn }) }) as TranslationResult; setForm(c => ({ ...c, name_gr: d.name_gr, description_gr: d.description_gr, name_en: d.name_en, description_en: d.description_en })); toast("翻译已生成，请检查后再保存。"); } catch (e) { toast(e instanceof Error ? e.message : "自动翻译失败", "err"); } finally { setTranslating(false); } }
   async function generateAiMeta() { setAiMetaLoading(true); try { const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ product: { name_cn: form.name_cn, name_en: form.name_en, name_gr: form.name_gr, description_en: form.description_en, category: form.category, subcategory: form.subcategory, price: form.price, sizes: form.sizes } }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "生成失败"); setForm(c => ({ ...c, fit_type: d.fit_type || c.fit_type, material: d.material || c.material, ai_keywords: d.ai_keywords || c.ai_keywords, style_tags: d.style_tags || c.style_tags, material_verified: false })); toast("AI 导购信息已生成，请检查后再保存。"); } catch (e) { toast(e instanceof Error ? e.message : "AI 生成失败", "err"); } finally { setAiMetaLoading(false); } }
+  async function startAiComplete(p: AdminProduct) {
+    const base = openProductForm(p);
+    const needsTranslation = Boolean((base.name_cn.trim() || base.description_cn.trim()) && (!base.name_en.trim() || !base.description_en.trim() || !base.name_gr.trim() || !base.description_gr.trim()));
+    const needsMeta = Boolean((base.name_cn.trim() || base.name_en.trim() || base.name_gr.trim()) && (!base.ai_keywords.trim() || !base.style_tags.trim() || !base.material.trim()));
+    if (!needsTranslation && !needsMeta) { toast("这个商品暂时没有明显需要 AI 补全的字段。"); return; }
+    setAutoCompletingId(p.id);
+    try {
+      let working = base;
+      if (needsTranslation) {
+        try {
+          const translated = await api("/api/admin/translate", { method: "POST", body: JSON.stringify({ name_cn: base.name_cn, description_cn: base.description_cn }) }) as TranslationResult;
+          working = { ...working, name_en: working.name_en || translated.name_en, description_en: working.description_en || translated.description_en, name_gr: working.name_gr || translated.name_gr, description_gr: working.description_gr || translated.description_gr };
+          setForm(c => ({ ...c, name_en: c.name_en || translated.name_en, description_en: c.description_en || translated.description_en, name_gr: c.name_gr || translated.name_gr, description_gr: c.description_gr || translated.description_gr }));
+        } catch (e) {
+          toast(e instanceof Error ? `翻译未完成：${e.message}` : "翻译未完成", "err");
+        }
+      }
+      if (needsMeta) {
+        try {
+          const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ product: { name_cn: working.name_cn, name_en: working.name_en, name_gr: working.name_gr, description_en: working.description_en, category: working.category, subcategory: working.subcategory, price: working.price, sizes: working.sizes } }) });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.error || "生成失败");
+          setForm(c => ({ ...c, fit_type: d.fit_type || c.fit_type, material: c.material || d.material || "", ai_keywords: c.ai_keywords || d.ai_keywords || "", style_tags: c.style_tags || d.style_tags || "", material_verified: false }));
+        } catch (e) {
+          toast(e instanceof Error ? `AI 导购信息未完成：${e.message}` : "AI 导购信息未完成", "err");
+        }
+      }
+      toast("AI 补全已填入表单，请检查后手动保存。");
+    } finally {
+      setAutoCompletingId(null);
+    }
+  }
 
   /* ── Submit / Delete ──────────────────────────────────── */
   async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!form.sku.trim()) { toast("请填写 SKU", "err"); return; } if (!form.name_cn.trim() && !form.name_en.trim() && !form.name_gr.trim()) { toast("请至少填写一个语言的商品名", "err"); return; } if (form.size_chart.trim()) { try { JSON.parse(form.size_chart.trim()); } catch { toast("尺码表 JSON 格式不正确，请检查", "err"); return; } }
@@ -458,7 +493,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                             </span>
                           </td>
                           <td className="py-3 pr-3">
-                            <button className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => startEdit(product)} type="button">编辑</button>
+                            <div className="flex flex-wrap gap-1.5">
+                              <button className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => startEdit(product)} type="button">编辑</button>
+                              <button className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={autoCompletingId === product.id} onClick={() => void startAiComplete(product)} type="button">
+                                {autoCompletingId === product.id ? "补全中..." : "AI 补全"}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -568,7 +608,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <form className="flex flex-col gap-5" onSubmit={submitProduct}>
             {/* Basic info card */}
             <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-black text-ink">基础信息</h2>
+              <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <h2 className="text-base font-black text-ink">基础信息</h2>
+                <p className="text-xs font-bold text-stone-400">AI 补全后需要检查并点击保存才会写入数据库。</p>
+              </div>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                 <Field label="SKU">
                   <div className="flex gap-1.5">
