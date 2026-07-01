@@ -169,6 +169,15 @@ function productIssues(product: AdminProduct) {
 function entersSkroutzFeed(product: AdminProduct) {
   return product.is_active && !isTestProductSku(product.sku) && effectiveStock(product) > 0 && isHttpUrl(product.image_url) && Number(product.price) > 0;
 }
+function needsAiCompletion(product: AdminProduct) {
+  const hasChinese = hasText(product.name_cn) || hasText(product.description_cn);
+  const missingTranslation = hasChinese && (!hasText(product.name_en) || !hasText(product.description_en) || !hasText(product.name_gr) || !hasText(product.description_gr));
+  const raw = product as Record<string, unknown>;
+  const hasKeywords = Array.isArray(raw.ai_keywords) ? raw.ai_keywords.length > 0 : hasText(raw.ai_keywords);
+  const hasStyleTags = Array.isArray(raw.style_tags) ? raw.style_tags.length > 0 : hasText(raw.style_tags);
+  const missingMeta = (hasText(product.name_cn) || hasText(product.name_en) || hasText(product.name_gr)) && (!hasKeywords || !hasStyleTags || !hasText(raw.material));
+  return missingTranslation || missingMeta;
+}
 /* ── Main component ──────────────────────────────────────── */
 export function AdminDashboard() {
   const { toast } = useToast();
@@ -251,6 +260,7 @@ export function AdminDashboard() {
       blockers: rows.filter(row => row.blockers.length > 0).length,
       warnings: rows.filter(row => row.blockers.length === 0 && row.warnings.length > 0).length,
       imageIssues: rows.filter(row => row.issues.some(issue => issue.code === "image" || issue.code === "image-quality")).length,
+      aiCompletable: rows.filter(row => needsAiCompletion(row.product)).length,
     };
   }, [products]);
 
@@ -349,6 +359,61 @@ export function AdminDashboard() {
       setAutoCompletingId(null);
     }
   }
+  function confirmBatchAiComplete() {
+    const targets = launchChecks.rows.map(row => row.product).filter(needsAiCompletion).slice(0, 20);
+    if (targets.length === 0) { toast("暂无需要 AI 补全的商品。"); return; }
+    setConfirm({
+      open: true,
+      title: "批量 AI 补全？",
+      desc: `将处理 ${targets.length} 件商品，并调用 DeepSeek API。补全结果会直接保存到数据库。一次最多处理 20 件，避免费用失控。是否继续？`,
+      confirmText: "确认补全",
+      variant: "default",
+      action: () => void executeBatchAiComplete(targets),
+    });
+  }
+  async function executeBatchAiComplete(targets: AdminProduct[]) {
+    setLoading(true);
+    setConfirm(c => ({ ...c, open: true, confirmText: "补全中..." }));
+    let ok = 0;
+    let fail = 0;
+    try {
+      for (const product of targets) {
+        try {
+          const payload: Record<string, unknown> = { ...product };
+          const hasChinese = hasText(product.name_cn) || hasText(product.description_cn);
+          if (hasChinese && (!hasText(product.name_en) || !hasText(product.description_en) || !hasText(product.name_gr) || !hasText(product.description_gr))) {
+            const translated = await api("/api/admin/translate", { method: "POST", body: JSON.stringify({ name_cn: product.name_cn, description_cn: product.description_cn }) }) as TranslationResult;
+            payload.name_en = product.name_en || translated.name_en;
+            payload.description_en = product.description_en || translated.description_en;
+            payload.name_gr = product.name_gr || translated.name_gr;
+            payload.description_gr = product.description_gr || translated.description_gr;
+          }
+          const raw = product as Record<string, unknown>;
+          const hasKeywords = Array.isArray(raw.ai_keywords) ? raw.ai_keywords.length > 0 : hasText(raw.ai_keywords);
+          const hasStyleTags = Array.isArray(raw.style_tags) ? raw.style_tags.length > 0 : hasText(raw.style_tags);
+          if ((hasText(product.name_cn) || hasText(product.name_en) || hasText(product.name_gr)) && (!hasKeywords || !hasStyleTags || !hasText(raw.material))) {
+            const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ product: { name_cn: payload.name_cn, name_en: payload.name_en, name_gr: payload.name_gr, description_en: payload.description_en, category: product.category, subcategory: product.subcategory, price: product.price, sizes: product.sizes } }) });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error || "AI 导购信息生成失败");
+            if (d.fit_type) payload.fit_type = d.fit_type;
+            if (!hasText(raw.material) && d.material) payload.material = d.material;
+            if (!hasKeywords && d.ai_keywords) payload.ai_keywords = String(d.ai_keywords).split(/[,，\s]+/).filter(Boolean);
+            if (!hasStyleTags && d.style_tags) payload.style_tags = String(d.style_tags).split(/[,，\s]+/).filter(Boolean);
+            payload.material_verified = false;
+          }
+          await api(`/api/admin/products/${product.id}`, { method: "PUT", body: JSON.stringify(payload) });
+          ok++;
+        } catch {
+          fail++;
+        }
+      }
+      toast(`批量 AI 补全完成：成功 ${ok}，失败 ${fail}`);
+      await loadProducts();
+    } finally {
+      setLoading(false);
+      setConfirm({ open: false, title: "", desc: "", confirmText: "", variant: "default", action: () => {} });
+    }
+  }
 
   /* ── Submit / Delete ──────────────────────────────────── */
   async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!form.sku.trim()) { toast("请填写 SKU", "err"); return; } if (!form.name_cn.trim() && !form.name_en.trim() && !form.name_gr.trim()) { toast("请至少填写一个语言的商品名", "err"); return; } if (form.size_chart.trim()) { try { JSON.parse(form.size_chart.trim()); } catch { toast("尺码表 JSON 格式不正确，请检查", "err"); return; } }
@@ -445,15 +510,17 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50" disabled={loading} onClick={() => void loadProducts()} type="button">刷新检查</button>
+                  <button className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={loading || launchChecks.aiCompletable === 0} onClick={confirmBatchAiComplete} type="button">批量 AI 补全</button>
                   <button className="rounded-lg bg-ink px-4 py-2 text-xs font-bold text-white hover:bg-stone-800 disabled:opacity-50" disabled={launchChecks.issueCount === 0} onClick={downloadLaunchCheckReport} type="button">导出检查报告</button>
                 </div>
               </div>
-              <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+              <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
                 {[
                   { label: "商品总数", value: products.length, tone: "text-ink" },
                   { label: "可前台展示", value: launchChecks.siteReady, tone: "text-emerald-700" },
                   { label: "可进 Skroutz", value: launchChecks.feedReady, tone: "text-blue-700" },
                   { label: "图片待处理", value: launchChecks.imageIssues, tone: launchChecks.imageIssues > 0 ? "text-amber-600" : "text-emerald-700" },
+                  { label: "可 AI 补全", value: launchChecks.aiCompletable, tone: launchChecks.aiCompletable > 0 ? "text-violet-700" : "text-emerald-700" },
                   { label: "有阻断问题", value: launchChecks.blockers, tone: launchChecks.blockers > 0 ? "text-red-600" : "text-emerald-700" },
                   { label: "仅需优化", value: launchChecks.warnings, tone: launchChecks.warnings > 0 ? "text-amber-600" : "text-emerald-700" },
                 ].map(item => (

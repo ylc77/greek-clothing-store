@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:site": "node scripts/site-smoke-check.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",
