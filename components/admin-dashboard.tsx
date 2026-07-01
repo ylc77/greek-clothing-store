@@ -32,7 +32,11 @@ type QuickAddState = {
   color: string;
   brand: string;
   name_cn: string;
+  name_gr: string;
+  name_en: string;
   description_cn: string;
+  description_gr: string;
+  description_en: string;
   notes: string;
   is_active: boolean;
 };
@@ -84,7 +88,11 @@ const emptyQuickAdd: QuickAddState = {
   color: "",
   brand: "",
   name_cn: "",
+  name_gr: "",
+  name_en: "",
   description_cn: "",
+  description_gr: "",
+  description_en: "",
   notes: "",
   is_active: true,
 };
@@ -216,6 +224,8 @@ export function AdminDashboard() {
   const [form, setForm] = useState<ProductFormData>(emptyProduct); const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false); const [translating, setTranslating] = useState(false);
   const [aiMetaLoading, setAiMetaLoading] = useState(false);
+  const [aiCopyLoading, setAiCopyLoading] = useState(false);
+  const [aiQuickCopyLoading, setAiQuickCopyLoading] = useState(false);
   const [showSizeChart, setShowSizeChart] = useState(false);
   const editingIdRef = useRef<string | null>(null); editingIdRef.current = editingId;
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]); const [csvResults, setCsvResults] = useState<ApiResult[]>([]);
@@ -387,6 +397,42 @@ export function AdminDashboard() {
     const key = size.trim().toUpperCase();
     setQuickSizeStock(prev => { const next = { ...prev }; delete next[key]; return next; });
   }
+  async function generateQuickProductCopy() {
+    if (!quickAdd.category && !quickAdd.subcategory && !quickAdd.name_cn.trim() && !quickAdd.description_cn.trim() && !quickAdd.notes.trim()) { toast("请先填写分类、商品名或备注。", "err"); return; }
+    setAiQuickCopyLoading(true);
+    try {
+      const sizes = Object.keys(quickSizeStock).length > 0 ? sortSizeKeys(Object.keys(quickSizeStock)).join(",") : quickAdd.sizes;
+      const d = await api("/api/admin/generate-product-copy", {
+        method: "POST",
+        body: JSON.stringify({
+          product: {
+            name_cn: quickAdd.name_cn,
+            description_cn: quickAdd.description_cn,
+            category: quickAdd.category,
+            subcategory: quickAdd.subcategory,
+            color: quickAdd.color,
+            brand: quickAdd.brand,
+            sizes,
+            notes: quickAdd.notes,
+          },
+        }),
+      }) as TranslationResult & { name_cn?: string; description_cn?: string };
+      setQuickAdd(current => ({
+        ...current,
+        name_cn: d.name_cn || current.name_cn,
+        description_cn: d.description_cn || current.description_cn,
+        name_gr: d.name_gr || current.name_gr,
+        description_gr: d.description_gr || current.description_gr,
+        name_en: d.name_en || current.name_en,
+        description_en: d.description_en || current.description_en,
+      }));
+      toast("拍照上新文案已生成，保存前可以继续检查。");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "AI 文案生成失败", "err");
+    } finally {
+      setAiQuickCopyLoading(false);
+    }
+  }
 
   function skuPrefix(cat: string, sub: string) { return `${cat || "x"}-${sub || "x"}-`; }
   function updateField<K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) { setForm(c => { if (key === "category") { const nextCat = value as ProductCategory; const nextSub = subcategoryList[nextCat]?.[0] || ""; const prefix = skuPrefix(nextCat, nextSub); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, category: nextCat, subcategory: nextSub, sku: skuEmpty ? prefix : c.sku }; } if (key === "subcategory") { const prefix = skuPrefix(c.category, value as string); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, subcategory: value as string, sku: skuEmpty ? prefix : c.sku }; } return { ...c, [key]: value }; }); }
@@ -444,6 +490,41 @@ export function AdminDashboard() {
     doTranslate();
   }
   async function doTranslate() { setTranslating(true); try { const d = await api("/api/admin/translate", { method: "POST", body: JSON.stringify({ name_cn: form.name_cn, description_cn: form.description_cn }) }) as TranslationResult; setForm(c => ({ ...c, name_gr: d.name_gr, description_gr: d.description_gr, name_en: d.name_en, description_en: d.description_en })); toast("翻译已生成，请检查后再保存。"); } catch (e) { toast(e instanceof Error ? e.message : "自动翻译失败", "err"); } finally { setTranslating(false); } }
+  async function generateProductCopy() {
+    if (!form.name_cn.trim() && !form.description_cn.trim() && !form.category && !form.subcategory) { toast("请先填写分类、商品名或备注。", "err"); return; }
+    setAiCopyLoading(true);
+    try {
+      const d = await api("/api/admin/generate-product-copy", {
+        method: "POST",
+        body: JSON.stringify({
+          product: {
+            name_cn: form.name_cn,
+            description_cn: form.description_cn,
+            category: form.category,
+            subcategory: form.subcategory,
+            color: form.color,
+            brand: form.brand,
+            material: form.material,
+            sizes: form.sizes || sortSizeKeys(Object.keys(sizeStock)).join(","),
+          },
+        }),
+      }) as TranslationResult & { name_cn?: string; description_cn?: string };
+      setForm(c => ({
+        ...c,
+        name_cn: d.name_cn || c.name_cn,
+        description_cn: d.description_cn || c.description_cn,
+        name_gr: d.name_gr || c.name_gr,
+        description_gr: d.description_gr || c.description_gr,
+        name_en: d.name_en || c.name_en,
+        description_en: d.description_en || c.description_en,
+      }));
+      toast("AI 商品文案已生成，请检查后再保存。");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "AI 文案生成失败", "err");
+    } finally {
+      setAiCopyLoading(false);
+    }
+  }
   async function generateAiMeta() { setAiMetaLoading(true); try { const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ product: { name_cn: form.name_cn, name_en: form.name_en, name_gr: form.name_gr, description_en: form.description_en, category: form.category, subcategory: form.subcategory, price: form.price, sizes: form.sizes } }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "生成失败"); setForm(c => ({ ...c, fit_type: d.fit_type || c.fit_type, material: d.material || c.material, ai_keywords: d.ai_keywords || c.ai_keywords, style_tags: d.style_tags || c.style_tags, material_verified: false })); toast("AI 导购信息已生成，请检查后再保存。"); } catch (e) { toast(e instanceof Error ? e.message : "AI 生成失败", "err"); } finally { setAiMetaLoading(false); } }
   async function startAiComplete(p: AdminProduct) {
     const base = openProductForm(p);
@@ -581,10 +662,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       size_stock: sizeKeys.length > 0 ? parsedSizeStock : undefined,
       name_cn: quickAdd.name_cn.trim() || `${quickAdd.color ? `${quickAdd.color} ` : ""}${quickAdd.category} ${quickAdd.subcategory}`,
       description_cn: quickAdd.description_cn.trim() || quickAdd.notes.trim() || "请在保存后检查并补充商品描述。",
-      name_en: "",
-      name_gr: "",
-      description_en: "",
-      description_gr: "",
+      name_en: quickAdd.name_en.trim(),
+      name_gr: quickAdd.name_gr.trim(),
+      description_en: quickAdd.description_en.trim(),
+      description_gr: quickAdd.description_gr.trim(),
       brand: quickAdd.brand.trim(),
       color: quickAdd.color.trim(),
       vat: 24,
@@ -764,6 +845,21 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <Field label="状态"><select className="input" value={quickAdd.is_active ? "yes" : "no"} onChange={e => updateQuickAdd("is_active", e.target.value === "yes")}><option value="yes">保存后上架</option><option value="no">先存草稿</option></select></Field>
                 <Field label="中文商品名（可空）"><input className="input" value={quickAdd.name_cn} onChange={e => updateQuickAdd("name_cn", e.target.value)} placeholder="可后续 AI 补全" /></Field>
                 <Field label="备注 / 描述（可空）"><textarea className="input min-h-24" value={quickAdd.description_cn} onChange={e => { updateQuickAdd("description_cn", e.target.value); updateQuickAdd("notes", e.target.value); }} placeholder="例如：薄款、适合夏天、宽松版型" /></Field>
+                <div className="md:col-span-2 xl:col-span-3 rounded-lg border border-violet-100 bg-violet-50/60 p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-black text-ink">AI 一键生成商品文案</p>
+                      <p className="mt-1 text-xs text-stone-500">根据分类、颜色、品牌、尺码和备注生成中/英/希腊语名称与描述。</p>
+                    </div>
+                    <button className="rounded-lg border border-violet-200 bg-white px-4 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiQuickCopyLoading} onClick={() => void generateQuickProductCopy()} type="button">{aiQuickCopyLoading ? "生成中..." : "AI 生成文案"}</button>
+                  </div>
+                  {quickAdd.name_en || quickAdd.name_gr || quickAdd.description_en || quickAdd.description_gr ? (
+                    <div className="mt-3 grid gap-2 text-xs text-stone-600 md:grid-cols-2">
+                      <p><b>EN:</b> {quickAdd.name_en || "-"} {quickAdd.description_en ? `- ${quickAdd.description_en}` : ""}</p>
+                      <p><b>EL:</b> {quickAdd.name_gr || "-"} {quickAdd.description_gr ? `- ${quickAdd.description_gr}` : ""}</p>
+                    </div>
+                  ) : null}
+                </div>
               </div>
               <div className="rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4">
                 <h3 className="text-sm font-black text-ink">商品照片</h3>
@@ -1134,6 +1230,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="space-y-3"><Field label="英文名"><input className="input" data-admin-field="name_en" value={form.name_en} onChange={e => updateField("name_en", e.target.value)} /></Field><Field label="英文描述"><textarea className="input min-h-24" data-admin-field="description_en" value={form.description_en} onChange={e => updateField("description_en", e.target.value)} /></Field></div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
+                <button className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiCopyLoading} onClick={() => void generateProductCopy()} type="button">{aiCopyLoading ? "生成中..." : "AI 生成商品文案"}</button>
                 <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" disabled={translating} onClick={() => void translateProduct()} type="button">{translating ? "翻译中..." : "自动翻译"}</button>
                 {editingId ? <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={() => { setEditingId(null); setForm(emptyProduct); }} type="button">取消编辑</button> : null}
               </div>
