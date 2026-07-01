@@ -21,7 +21,7 @@ type CsvRow = Record<string, string | number>;
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = "dashboard" | "add" | "csv" | "images" | "skroutz" | "categories";
+type Tab = "dashboard" | "check" | "add" | "csv" | "images" | "skroutz" | "categories";
 
 /* ── Constants ───────────────────────────────────────────── */
 const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_en: "", description_cn: "", description_gr: "", description_en: "", category: "men", subcategory: "tshirts", price: 0, stock: 0, sizes: "", image_url: "", image_urls: "", brand: "", barcode: "", vat: 24, color: "", skroutz_url: "", is_active: true, fit_type: "regular", material: "", ai_keywords: "", style_tags: "", size_chart: "", material_verified: false };
@@ -58,7 +58,7 @@ const csvFieldLabels: Record<string, string> = {
 };
 const csvHeaderAliases = new Map(Object.entries(csvFieldLabels).flatMap(([field, label]) => [[field, field], [label, field]]));
 const tabs: { key: Tab; label: string }[] = [
-  { key: "dashboard", label: "商品列表" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "批量图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
+  { key: "dashboard", label: "商品列表" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "批量图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
 
 /* ── Utilities ───────────────────────────────────────────── */
@@ -118,6 +118,46 @@ function normalizeProduct(p: ProductFormData): ProductFormData {
   return { ...p, sku: p.sku.trim(), name_cn: p.name_cn.trim(), name_gr: p.name_gr.trim(), name_en: p.name_en.trim(), description_cn: p.description_cn.trim(), description_gr: p.description_gr.trim(), description_en: p.description_en.trim(), subcategory: p.subcategory.trim(), price: Number(p.price), stock: Number(p.stock), sizes: p.sizes.trim(), image_url: img, image_urls: cleanImageUrls(p.image_urls, img), brand: p.brand.trim(), barcode: p.barcode.trim(), vat: Number(p.vat), color: p.color.trim(), skroutz_url: p.skroutz_url.trim(), is_active: p.is_active, fit_type: p.fit_type, material: p.material.trim(), ai_keywords: p.ai_keywords.trim(), style_tags: p.style_tags.trim(), size_chart: p.size_chart.trim() };
 }
 function imageLines(v: string) { return v.split(/\r?\n/).map(s => s.trim()).filter(Boolean); }
+function hasText(value: unknown) { return typeof value === "string" && value.trim().length > 0; }
+function isHttpUrl(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try { const url = new URL(value.trim()); return url.protocol === "http:" || url.protocol === "https:"; } catch { return false; }
+}
+function isTestProductSku(sku: string) {
+  const s = sku.trim().toUpperCase();
+  return s === "TEST" || s.startsWith("TEST-") || s.startsWith("TEST_") || s === "DEMO" || s.startsWith("DEMO-") || s.startsWith("DEMO_");
+}
+function needsSizeInfo(product: AdminProduct) {
+  return ["men", "women", "shoes"].includes(product.category.trim().toLowerCase());
+}
+function hasSizeStock(product: AdminProduct) {
+  const ss = (product as Record<string, unknown>).size_stock;
+  return Boolean(ss && typeof ss === "object" && !Array.isArray(ss) && Object.values(ss as Record<string, unknown>).some(v => Number(v) > 0));
+}
+function productIssues(product: AdminProduct) {
+  const issues: { code: string; label: string; level: "block" | "warn" }[] = [];
+  const stock = effectiveStock(product);
+  const nameOk = hasText(product.name_gr) || hasText(product.name_en) || hasText(product.name_cn);
+  const descOk = hasText(product.description_gr) || hasText(product.description_en) || hasText(product.description_cn);
+  if (!hasText(product.sku)) issues.push({ code: "sku", label: "缺 SKU", level: "block" });
+  if (isTestProductSku(product.sku)) issues.push({ code: "test", label: "测试 / Demo SKU，不进入 Feed", level: "block" });
+  if (!product.is_active) issues.push({ code: "inactive", label: "未上架", level: "block" });
+  if (!Number.isFinite(Number(product.price)) || Number(product.price) <= 0) issues.push({ code: "price", label: "价格无效", level: "block" });
+  if (stock <= 0) issues.push({ code: "stock", label: "库存为 0", level: "block" });
+  if (!hasText(product.image_url)) issues.push({ code: "image", label: "缺主图", level: "block" });
+  else if (!isHttpUrl(product.image_url)) issues.push({ code: "image-url", label: "主图不是公网链接", level: "block" });
+  if (!nameOk) issues.push({ code: "name", label: "缺商品名", level: "block" });
+  if (!descOk) issues.push({ code: "description", label: "缺描述", level: "warn" });
+  if (!hasText(product.name_gr)) issues.push({ code: "name-gr", label: "缺希腊语名称", level: "warn" });
+  if (!hasText(product.name_en)) issues.push({ code: "name-en", label: "缺英文名称", level: "warn" });
+  if (!hasText(product.category)) issues.push({ code: "category", label: "缺一级分类", level: "block" });
+  if (!hasText(product.subcategory)) issues.push({ code: "subcategory", label: "缺二级分类", level: "warn" });
+  if (needsSizeInfo(product) && !hasText(product.sizes) && !hasSizeStock(product)) issues.push({ code: "sizes", label: "服装 / 鞋类缺尺码", level: "warn" });
+  return issues;
+}
+function entersSkroutzFeed(product: AdminProduct) {
+  return product.is_active && !isTestProductSku(product.sku) && effectiveStock(product) > 0 && isHttpUrl(product.image_url) && Number(product.price) > 0;
+}
 /* ── Main component ──────────────────────────────────────── */
 export function AdminDashboard() {
   const { toast } = useToast();
@@ -179,6 +219,23 @@ export function AdminDashboard() {
     noImage: products.filter(p => p.is_active && effectiveStock(p) >= 0 && !p.image_url).length,
     noDesc: products.filter(p => p.is_active && effectiveStock(p) >= 0 && !p.description_en && !p.description_gr).length,
   }), [products]);
+
+  const launchChecks = useMemo(() => {
+    const rows = products.map(product => {
+      const issues = productIssues(product);
+      const blockers = issues.filter(issue => issue.level === "block");
+      const warnings = issues.filter(issue => issue.level === "warn");
+      return { product, issues, blockers, warnings, feedReady: entersSkroutzFeed(product), siteReady: product.is_active && blockers.length === 0 };
+    });
+    return {
+      rows,
+      siteReady: rows.filter(row => row.siteReady).length,
+      feedReady: rows.filter(row => row.feedReady).length,
+      issueCount: rows.filter(row => row.issues.length > 0).length,
+      blockers: rows.filter(row => row.blockers.length > 0).length,
+      warnings: rows.filter(row => row.blockers.length === 0 && row.warnings.length > 0).length,
+    };
+  }, [products]);
 
   /* ── API helper ───────────────────────────────────────── */
   async function api(path: string, init: RequestInit = {}) {
@@ -297,6 +354,121 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <button key={t.key} className={`shrink-0 rounded-lg px-5 py-2.5 text-sm font-bold transition ${tab === t.key ? "bg-ink text-white shadow-sm" : "text-stone-400 hover:text-ink hover:bg-stone-100"}`} onClick={() => setTab(t.key)} type="button">{t.label}</button>
           ))}
         </nav>
+
+        {/* ── TAB: Launch check ─────────────────────────────── */}
+        {tab === "check" ? (
+          <section className="flex flex-col gap-5">
+            <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-black text-ink">商品上线检查</h2>
+                  <p className="mt-1 text-xs text-stone-500">只读检查，不会修改商品。用于判断商品是否适合前台展示和进入 Skroutz Feed。</p>
+                </div>
+                <button className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50" disabled={loading} onClick={() => void loadProducts()} type="button">刷新检查</button>
+              </div>
+              <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
+                {[
+                  { label: "商品总数", value: products.length, tone: "text-ink" },
+                  { label: "可前台展示", value: launchChecks.siteReady, tone: "text-emerald-700" },
+                  { label: "可进 Skroutz", value: launchChecks.feedReady, tone: "text-blue-700" },
+                  { label: "有阻断问题", value: launchChecks.blockers, tone: launchChecks.blockers > 0 ? "text-red-600" : "text-emerald-700" },
+                  { label: "仅需优化", value: launchChecks.warnings, tone: launchChecks.warnings > 0 ? "text-amber-600" : "text-emerald-700" },
+                ].map(item => (
+                  <div className="rounded-xl border border-stone-100 bg-stone-50/60 p-4 text-center" key={item.label}>
+                    <p className={`text-2xl font-black ${item.tone}`}>{item.value}</p>
+                    <p className="mt-1 text-xs font-bold text-stone-500">{item.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-black text-ink">常见问题快速筛选</h3>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  { k: "noimg", l: "缺主图" },
+                  { k: "nostock", l: "库存为 0" },
+                  { k: "nodesc", l: "缺描述" },
+                  { k: "nosizestock", l: "缺尺码库存" },
+                  { k: "inactive", l: "已下架" },
+                  { k: "demo", l: "TEST / DEMO" },
+                ].map(button => (
+                  <button
+                    className="rounded-lg border border-stone-200 px-4 py-2 text-xs font-bold text-ink transition hover:bg-stone-50"
+                    key={button.k}
+                    onClick={() => { setFilterStatus(button.k); setTab("dashboard"); }}
+                    type="button"
+                  >
+                    {button.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-ink">问题商品清单</h3>
+                  <p className="mt-1 text-xs text-stone-500">阻断问题会影响上架或进入 Feed；优化项不会阻断展示，但建议补齐。</p>
+                </div>
+                <p className="text-xs font-bold text-stone-400">共 {launchChecks.issueCount} 件商品需要处理</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="bg-stone-50 text-xs font-bold text-stone-400">
+                      <th className="py-2.5 pr-3">商品</th>
+                      <th className="py-2.5 pr-3">状态</th>
+                      <th className="py-2.5 pr-3">问题</th>
+                      <th className="py-2.5 pr-3">Feed</th>
+                      <th className="py-2.5 pr-3">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {launchChecks.rows
+                      .filter(row => row.issues.length > 0)
+                      .sort((a, b) => b.blockers.length - a.blockers.length || b.warnings.length - a.warnings.length)
+                      .slice(0, 120)
+                      .map(({ product, issues, blockers, feedReady }) => (
+                        <tr className="border-b border-stone-50 align-top" key={product.id}>
+                          <td className="py-3 pr-3">
+                            <p className="font-mono text-xs font-black text-ink">{product.sku || "无 SKU"}</p>
+                            <p className="mt-1 max-w-64 truncate text-xs font-bold text-stone-600">{product.name_cn || product.name_en || product.name_gr || "未命名商品"}</p>
+                            <p className="mt-1 text-[11px] text-stone-400">{product.category || "无分类"} / {product.subcategory || "无二级分类"}</p>
+                          </td>
+                          <td className="py-3 pr-3">
+                            {blockers.length > 0 ? (
+                              <span className="inline-flex rounded-full bg-red-100 px-2.5 py-1 text-[11px] font-black text-red-700">阻断</span>
+                            ) : (
+                              <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-black text-amber-700">优化</span>
+                            )}
+                          </td>
+                          <td className="py-3 pr-3">
+                            <div className="flex max-w-xl flex-wrap gap-1.5">
+                              {issues.map(issue => (
+                                <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${issue.level === "block" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`} key={`${product.id}-${issue.code}`}>
+                                  {issue.label}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="py-3 pr-3">
+                            <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${feedReady ? "bg-blue-100 text-blue-700" : "bg-stone-100 text-stone-500"}`}>
+                              {feedReady ? "会进入" : "不会进入"}
+                            </span>
+                          </td>
+                          <td className="py-3 pr-3">
+                            <button className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => startEdit(product)} type="button">编辑</button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                {launchChecks.issueCount === 0 ? <p className="py-10 text-center text-sm font-bold text-emerald-700">当前没有发现上线阻断或明显缺失项。</p> : null}
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {/* ── TAB: Dashboard ──────────────────────────────── */}
         {tab === "dashboard" ? (
