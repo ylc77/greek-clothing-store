@@ -230,6 +230,7 @@ export function AdminDashboard() {
   const [quickAdd, setQuickAdd] = useState<QuickAddState>(emptyQuickAdd);
   const [quickMainFile, setQuickMainFile] = useState<File | null>(null);
   const [quickBackFiles, setQuickBackFiles] = useState<File[]>([]);
+  const [quickSizeStock, setQuickSizeStock] = useState<Record<string, number>>({});
   const [quickSaving, setQuickSaving] = useState(false);
   const [sellingSku, setSellingSku] = useState<string | null>(null);
   const [styleImageSku, setStyleImageSku] = useState<string | null>(null);
@@ -371,6 +372,20 @@ export function AdminDashboard() {
     setQuickAdd(current => key === "category"
       ? { ...current, category: value as ProductCategory, subcategory: subcategoryList[value as ProductCategory]?.[0] || "" }
       : { ...current, [key]: value });
+  }
+  function addQuickSize(size: string) {
+    const key = size.trim().toUpperCase();
+    if (!key) return;
+    setQuickSizeStock(prev => key in prev ? prev : { ...prev, [key]: 1 });
+  }
+  function setQuickSizeQty(size: string, quantity: number) {
+    const key = size.trim().toUpperCase();
+    if (!key) return;
+    setQuickSizeStock(prev => ({ ...prev, [key]: Math.max(0, Math.trunc(quantity) || 0) }));
+  }
+  function removeQuickSize(size: string) {
+    const key = size.trim().toUpperCase();
+    setQuickSizeStock(prev => { const next = { ...prev }; delete next[key]; return next; });
   }
 
   function skuPrefix(cat: string, sub: string) { return `${cat || "x"}-${sub || "x"}-`; }
@@ -553,7 +568,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     if (!quickMainFile) { toast("请先拍摄或选择一张主图", "err"); return; }
     if (!Number.isFinite(Number(quickAdd.price)) || Number(quickAdd.price) <= 0) { toast("请填写正确价格", "err"); return; }
     const sku = quickSku();
-    const parsedSizeStock = parseSizeStockText(quickAdd.size_stock);
+    const parsedSizeStock = Object.keys(quickSizeStock).length > 0 ? quickSizeStock : parseSizeStockText(quickAdd.size_stock);
     const sizeKeys = Object.keys(parsedSizeStock);
     const stock = sizeKeys.length > 0 ? sizeKeys.reduce((sum, key) => sum + parsedSizeStock[key], 0) : Math.max(0, Number(quickAdd.stock) || 0);
     const payload: Record<string, unknown> = {
@@ -599,6 +614,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       }
       toast(`快速上新完成：${savedSku}`);
       setQuickAdd(emptyQuickAdd);
+      setQuickSizeStock({});
       setQuickMainFile(null);
       setQuickBackFiles([]);
       await loadProducts();
@@ -717,8 +733,32 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <Field label="二级分类"><select className="input" value={quickAdd.subcategory} onChange={e => updateQuickAdd("subcategory", e.target.value)}>{subcategoryList[quickAdd.category].map(s => <option key={s} value={s}>{s}</option>)}</select></Field>
                 <Field label="价格"><input className="input" min="0" step="0.01" type="number" value={quickAdd.price} onChange={e => updateQuickAdd("price", Number(e.target.value))} /></Field>
                 <Field label="总库存"><input className="input" min="0" step="1" type="number" value={quickAdd.stock} onChange={e => updateQuickAdd("stock", Number(e.target.value))} /></Field>
-                <Field label="尺码"><input className="input" value={quickAdd.sizes} onChange={e => updateQuickAdd("sizes", e.target.value)} placeholder="S,M,L" /></Field>
-                <Field label="尺码库存"><input className="input" value={quickAdd.size_stock} onChange={e => updateQuickAdd("size_stock", e.target.value)} placeholder="S:1,M:1,L:0" /></Field>
+                <div className="md:col-span-2 xl:col-span-3">
+                  <label className="text-sm font-bold text-ink">尺码库存</label>
+                  <div className="mt-2 rounded-lg border border-stone-200 bg-stone-50 p-3">
+                    <div className="mb-3 flex flex-wrap gap-1.5">
+                      {(quickAdd.category === "shoes" ? ["35","36","37","38","39","40","41","42","43","44","45"] : ["XS","S","M","L","XL","XXL"]).map(size => (
+                        <button className="rounded border border-stone-200 bg-white px-3 py-1.5 text-xs font-bold text-ink hover:bg-stone-100" key={size} onClick={() => addQuickSize(size)} type="button">+ {size}</button>
+                      ))}
+                    </div>
+                    {Object.keys(quickSizeStock).length > 0 ? (
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {sortSizeKeys(Object.keys(quickSizeStock)).map(size => (
+                          <div className="flex items-center gap-2 rounded-lg border border-stone-200 bg-white p-2" key={size}>
+                            <span className="w-12 text-sm font-black text-ink">{size}</span>
+                            <button className="h-8 w-8 rounded border border-stone-200 text-sm font-black" onClick={() => setQuickSizeQty(size, quickSizeStock[size] - 1)} type="button">-</button>
+                            <input className="h-8 w-16 rounded border border-stone-200 text-center text-base sm:text-sm" min="0" step="1" type="number" value={quickSizeStock[size]} onChange={e => setQuickSizeQty(size, Number(e.target.value))} />
+                            <button className="h-8 w-8 rounded border border-stone-200 text-sm font-black" onClick={() => setQuickSizeQty(size, quickSizeStock[size] + 1)} type="button">+</button>
+                            <button className="ml-auto text-xs font-bold text-red-500" onClick={() => removeQuickSize(size)} type="button">删除</button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-stone-500">可不分尺码，只用总库存；如果有 S/M/L 库存，点击上方尺码添加。</p>
+                    )}
+                    <p className="mt-2 text-xs text-stone-400">已分配库存：{Object.values(quickSizeStock).reduce((sum, qty) => sum + qty, 0)}。设置尺码库存后会自动同步总库存和 sizes。</p>
+                  </div>
+                </div>
                 <Field label="颜色（选填）"><input className="input" value={quickAdd.color} onChange={e => updateQuickAdd("color", e.target.value)} placeholder="black / beige" /></Field>
                 <Field label="品牌（选填）"><input className="input" value={quickAdd.brand} onChange={e => updateQuickAdd("brand", e.target.value)} /></Field>
                 <Field label="状态"><select className="input" value={quickAdd.is_active ? "yes" : "no"} onChange={e => updateQuickAdd("is_active", e.target.value === "yes")}><option value="yes">保存后上架</option><option value="no">先存草稿</option></select></Field>
