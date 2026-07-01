@@ -80,7 +80,7 @@ const csvFieldLabels: Record<string, string> = {
 };
 const csvHeaderAliases = new Map(Object.entries(csvFieldLabels).flatMap(([field, label]) => [[field, field], [label, field]]));
 const tabs: { key: Tab; label: string }[] = [
-  { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "批量图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
+  { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
 const primaryTabKeys: Tab[] = ["quickAdd", "quickSale", "dashboard", "check"];
 const managementTabKeys: Tab[] = ["add", "images", "csv", "categories", "skroutz"];
@@ -841,7 +841,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               {managementTabKeys.map(key => (
                 <button
                   key={key}
-                  className={`shrink-0 rounded-lg px-4 py-2.5 text-sm font-bold transition ${tab === key ? "bg-ink text-white shadow-sm" : "text-stone-500 hover:bg-stone-100 hover:text-ink"}`}
+                  className={`shrink-0 rounded-lg px-4 py-2.5 text-sm font-bold transition ${key === "csv" || key === "skroutz" ? "hidden lg:inline-flex" : ""} ${tab === key ? "bg-ink text-white shadow-sm" : "text-stone-500 hover:bg-stone-100 hover:text-ink"}`}
                   onClick={() => setTab(key)}
                   type="button"
                 >
@@ -1597,7 +1597,28 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
       <div className="rounded-xl border border-stone-100 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between mb-3"><h2 className="text-lg font-black text-ink">一级分类</h2><button className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-bold hover:bg-stone-50" onClick={addCat} type="button">+ 新增</button></div>
         <p className="mb-3 text-xs text-stone-400">slug 只允许小写英文和横线。停用后前台不再显示，但已有商品不受影响。</p>
-        <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+        <div className="grid gap-3 lg:hidden">
+          {cats.map((c, i) => (
+            <div key={i} className="rounded-xl border border-stone-100 bg-stone-50 p-3">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="min-w-0 truncate text-sm font-black text-ink">{String(c.name_cn || c.name_en || c.slug || "新分类")}</p>
+                <label className="flex shrink-0 items-center gap-1 text-xs font-bold text-stone-500">
+                  <input type="checkbox" checked={c.is_active !== false} onChange={e => updateCat(i, "is_active", e.target.checked)} />
+                  启用
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-xs font-bold text-stone-500">slug<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base font-mono" value={String(c.slug||"")} onChange={e => updateCat(i, "slug", e.target.value.replace(/[^a-z0-9-]/g,"").toLowerCase())} /></label>
+                <label className="block text-xs font-bold text-stone-500">排序<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" type="number" value={Number(c.sort_order||0)} onChange={e => updateCat(i, "sort_order", parseInt(e.target.value)||0)} /></label>
+                <label className="block text-xs font-bold text-stone-500">中文<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.name_cn||"")} onChange={e => updateCat(i, "name_cn", e.target.value)} /></label>
+                <label className="block text-xs font-bold text-stone-500">English<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.name_en||"")} onChange={e => updateCat(i, "name_en", e.target.value)} /></label>
+                <label className="block text-xs font-bold text-stone-500 sm:col-span-2">Ελληνικά<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.name_gr||"")} onChange={e => updateCat(i, "name_gr", e.target.value)} /></label>
+              </div>
+              <button className="mt-3 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => removeCat(i)} type="button">删除分类</button>
+            </div>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto lg:block"><table className="w-full text-left text-sm">
           <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-2 px-2 text-xs font-bold">slug</th><th className="py-2 px-2 text-xs font-bold">中文</th><th className="py-2 px-2 text-xs font-bold">English</th><th className="py-2 px-2 text-xs font-bold">Ελληνικά</th><th className="py-2 px-2 text-xs font-bold w-14">排序</th><th className="py-2 px-2 text-xs font-bold w-12">启用</th><th className="py-2 px-2 text-xs font-bold w-12">删除</th></tr></thead>
           <tbody>
             {cats.map((c, i) => (
@@ -1628,7 +1649,29 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
               </div>
             </div>
             {isOpen && catSubs.length > 0 ? (
-              <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+              <>
+              <div className="grid gap-3 p-3 lg:hidden">
+                {catSubs.map((s) => { const gi = subs.findIndex(x => x === s); return (
+                  <div key={gi} className="rounded-xl border border-stone-100 bg-white p-3">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <p className="min-w-0 truncate text-sm font-black text-ink">{String(s.name_cn || s.name_en || s.slug || "新二级分类")}</p>
+                      <label className="flex shrink-0 items-center gap-1 text-xs font-bold text-stone-500">
+                        <input type="checkbox" checked={s.is_active !== false} onChange={e => updateSub(gi, "is_active", e.target.checked)} />
+                        启用
+                      </label>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block text-xs font-bold text-stone-500">slug<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base font-mono" value={String(s.slug||"")} onChange={e => updateSub(gi, "slug", e.target.value.replace(/[^a-z0-9_-]/g,"").toLowerCase())} /></label>
+                      <label className="block text-xs font-bold text-stone-500">排序<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" type="number" value={Number(s.sort_order||0)} onChange={e => updateSub(gi, "sort_order", parseInt(e.target.value)||0)} /></label>
+                      <label className="block text-xs font-bold text-stone-500">中文<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(s.name_cn||"")} onChange={e => updateSub(gi, "name_cn", e.target.value)} /></label>
+                      <label className="block text-xs font-bold text-stone-500">English<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(s.name_en||"")} onChange={e => updateSub(gi, "name_en", e.target.value)} /></label>
+                      <label className="block text-xs font-bold text-stone-500 sm:col-span-2">Ελληνικά<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(s.name_gr||"")} onChange={e => updateSub(gi, "name_gr", e.target.value)} /></label>
+                    </div>
+                    <button className="mt-3 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => removeSub(gi)} type="button">删除二级分类</button>
+                  </div>
+                );})}
+              </div>
+              <div className="hidden overflow-x-auto lg:block"><table className="w-full text-left text-sm">
                 <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-1.5 px-2 text-[11px] font-bold">slug</th><th className="py-1.5 px-2 text-[11px] font-bold">中文</th><th className="py-1.5 px-2 text-[11px] font-bold">English</th><th className="py-1.5 px-2 text-[11px] font-bold">Ελληνικά</th><th className="py-1.5 px-2 text-[11px] font-bold w-12">排序</th><th className="py-1.5 px-2 text-[11px] font-bold w-10">启用</th><th className="py-1.5 px-2 text-[11px] font-bold w-10">删除</th></tr></thead>
                 <tbody>
                   {catSubs.map((s, si) => { const gi = subs.findIndex(x => x === s); return (
@@ -1644,6 +1687,7 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
                   );})}
                 </tbody>
               </table></div>
+              </>
             ) : <p className="text-xs text-stone-400">暂无二级分类</p>}
           </div>
         );})}
