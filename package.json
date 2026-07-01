@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "check:site": "node scripts/site-smoke-check.js"
+    "check:site": "node scripts/site-smoke-check.js",
+    "check:skroutz": "node scripts/site-smoke-check.js --strict-feed"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",

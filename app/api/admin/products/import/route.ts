@@ -64,6 +64,28 @@ function parseCsvSizeStock(value: unknown) {
   return Object.keys(sizeStock).length > 0 ? sizeStock : null;
 }
 
+function readableImportMessage(message: string) {
+  return message
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const lower = part.toLowerCase();
+      if (lower.includes("sku is required")) return "SKU 必填";
+      if (lower.includes("category")) return "一级分类无效或为空，请填写后台已有分类";
+      if (lower.includes("subcategory")) return "二级分类无效，请填写该一级分类下的二级分类";
+      if (lower.includes("price")) return "价格必须是数字，不能带 € 或文字";
+      if (lower.includes("stock")) return "库存必须是数字";
+      if (lower.includes("vat")) return "VAT 必须是数字";
+      if (lower.includes("duplicate key") || lower.includes("unique")) return "SKU 重复或违反唯一约束";
+      if (lower.includes("invalid input syntax")) return "字段格式不正确，请检查数字、布尔值或 JSON";
+      if (lower.includes("violates row-level security")) return "数据库权限不足，请检查后台 service role 配置";
+      if (lower.includes("column") && lower.includes("does not exist")) return `数据库缺少字段：${part}`;
+      return part;
+    })
+    .join("；");
+}
+
 export async function POST(request: NextRequest) {
   if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) {
     return unauthorized();
@@ -91,7 +113,7 @@ export async function POST(request: NextRequest) {
         rowNumber,
         sku: typeof row.sku === "string" ? row.sku : "",
         ok: false,
-        message: errors.join("; "),
+        message: readableImportMessage(errors.join("; ")),
         translated: false,
       });
       return;
@@ -153,7 +175,7 @@ export async function POST(request: NextRequest) {
           rowNumber: row.rowNumber,
           sku: row.mutation.sku,
           ok: false,
-          message: error.message,
+          message: readableImportMessage(error.message),
           translated: translated?.translated ?? false,
           translateError: translated?.translateError,
         });

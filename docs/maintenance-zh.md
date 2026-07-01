@@ -85,6 +85,23 @@ DEEPSEEK_API_KEY=             # DeepSeek 翻译 API key
 ### Supabase 数据备份
 免费版不支持自动备份。建议定期使用后台「导出 CSV」备份商品数据。店铺设置需手动记录。
 
+### 线上自动监控
+项目已包含 GitHub Actions 定时检查：`.github/workflows/site-monitor.yml`。
+
+- 默认每天检查一次线上网站和 `/feed.xml`。
+- 检查内容包括：首页、分类页、商品详情、联系页、后台入口、`/feed.xml`、`/sitemap.xml`、`/robots.txt`。
+- `/feed.xml` 会额外抽查测试商品、库存、价格格式、商品链接、公网图片；图片尺寸默认记为警告。
+- 失败时会上传 `automation-reports/`，里面包含 JSON 报告和失败截图。
+- 如需改线上域名，在 GitHub 仓库 Settings → Secrets and variables → Actions → Variables 中新增或修改 `BASE_URL`。
+- 正式提交 Skroutz 前建议运行严格检查，图片尺寸不足会直接失败。
+
+本地也可以手动运行：
+
+```bash
+BASE_URL=https://你的域名.vercel.app npm run check:site
+BASE_URL=https://你的域名.vercel.app npm run check:skroutz
+```
+
 ## 后续维护规则
 
 ### 老客户升级 → patches

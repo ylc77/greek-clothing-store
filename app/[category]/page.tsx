@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CategoryPage } from "@/components/category-page";
-import { categoryLabels, getLanguage } from "@/lib/i18n";
+import { categoryLabels, getLanguage, subcategoryLabels } from "@/lib/i18n";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 import { isProductCategory } from "@/lib/types";
@@ -31,11 +31,18 @@ export async function generateMetadata({
     return { title: settings.business_name };
   }
 
-  const title = `${categoryLabels[category][language]} | ${settings.business_name}`;
+  const selectedSubcategory = resolvedSearchParams.subcategory;
+  const categoryLabel = categoryLabels[category][language];
+  const subcategoryLabel =
+    selectedSubcategory && subcategoryLabels[selectedSubcategory]
+      ? subcategoryLabels[selectedSubcategory][language]
+      : "";
+  const pageLabel = subcategoryLabel ? `${subcategoryLabel} · ${categoryLabel}` : categoryLabel;
+  const title = `${pageLabel} | ${settings.business_name}`;
   return {
     title,
-    description: `Browse ${categoryLabels[category][language].toLowerCase()} at ${settings.business_name}.`,
-    alternates: { canonical: `${siteUrl()}/${category}` },
+    description: `Browse ${pageLabel.toLowerCase()} at ${settings.business_name}.`,
+    alternates: { canonical: `${siteUrl()}/${category}${selectedSubcategory ? `?subcategory=${encodeURIComponent(selectedSubcategory)}` : ""}` },
     openGraph: { title, siteName: settings.business_name },
   };
 }

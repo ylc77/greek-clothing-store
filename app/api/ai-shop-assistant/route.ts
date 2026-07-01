@@ -23,8 +23,11 @@ RULES:
 - For size advice, give the most likely size first, then one relaxed/slim alternative only if useful.
 - If no detailed size chart exists, clearly say the advice is approximate and ask for bust/shoulder/waist/hip measurements for better accuracy when relevant.
 - If a likely size is not available, mention the current available-size limitation and suggest the closest available option carefully.
-- Do NOT discuss politics, health advice, shipping, returns, payments, or anything not about this store's products.
+- Do NOT discuss politics, health advice, or topics unrelated to this store.
+- For shipping, returns, payment, pickup, and store-policy questions: only answer from STORE_INFO if it is explicitly provided. If STORE_INFO does not contain the answer, say the store team should confirm it on WhatsApp.
 - If asked about prices, all prices are in EUR and include VAT.
+- Never promise discounts, delivery dates, exact stock, returns approval, or payment availability unless that exact information is present in STORE_INFO or ACTUAL_PRODUCTS.
+- Stock and size availability must come from ACTUAL_PRODUCTS / CURRENT_PRODUCT only. If uncertain, say it should be confirmed with the store before purchase.
 
 OUTPUT LENGTH LIMITS:
 - Keep replies to 2-5 sentences maximum.
@@ -197,12 +200,21 @@ export async function POST(request: NextRequest) {
   const allProducts = (data || []) as Record<string, unknown>[];
   const productSummary = buildProductSummary(allProducts);
 
-  const storeName = (await getBusinessSettings()).business_name || "Online Store";
+  const settings = await getBusinessSettings();
+  const storeName = settings.business_name || "Online Store";
   const langPrompt = language === "el"
     ? 'Reply in Greek. Greet naturally with "Γεια σας".'
     : "Reply in English. Greet naturally.";
 
-  const context = `${SYSTEM_PROMPT}\n${langPrompt}\nStore: ${storeName}`;
+  const storeInfo = {
+    storeName,
+    address: settings.address || "",
+    opening_hours: settings.opening_hours || "",
+    whatsapp: settings.whatsapp ? "available" : "",
+    instagram: settings.instagram || "",
+    footer_text: settings.footer_text || "",
+  };
+  const context = `${SYSTEM_PROMPT}\n${langPrompt}\nStore: ${storeName}\nSTORE_INFO: ${JSON.stringify(storeInfo)}`;
 
   try {
     const response = await fetch("https://api.deepseek.com/v1/chat/completions", {

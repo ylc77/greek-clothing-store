@@ -28,33 +28,33 @@ const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_
 const csvFields = ["sku","name_cn","description_cn","name_en","description_en","name_gr","description_gr","category","subcategory","price","stock","sizes","size_stock","image_url","image_urls","brand","barcode","vat","color","skroutz_url","is_active","material","fit_type","ai_keywords","style_tags","size_chart","material_verified"];
 const quickCsvFields = ["sku","name_cn","description_cn","category","subcategory","price","stock","sizes","brand","color","image_url","image_urls","is_active"];
 const csvFieldLabels: Record<string, string> = {
-  sku: "SKU（必填）",
-  name_cn: "中文名称（必填）",
-  description_cn: "中文描述（必填）",
-  name_en: "英文名称",
-  description_en: "英文描述",
-  name_gr: "希腊语名称",
-  description_gr: "希腊语描述",
-  category: "一级分类（必填）",
-  subcategory: "二级分类（必填）",
-  price: "价格（必填）",
-  stock: "库存（必填）",
-  sizes: "尺码",
-  size_stock: "尺码库存",
-  image_url: "主图URL",
-  image_urls: "多图URL",
-  brand: "品牌",
-  barcode: "条码/EAN",
-  vat: "VAT",
-  color: "颜色（选填）",
-  skroutz_url: "Skroutz链接",
-  is_active: "是否上架",
-  material: "材质",
-  fit_type: "版型",
-  ai_keywords: "AI关键词",
-  style_tags: "风格标签",
-  size_chart: "尺码表JSON",
-  material_verified: "材质已确认",
+  sku: "SKU（必填，唯一商品编号）",
+  name_cn: "中文名称（必填，可用于自动翻译）",
+  description_cn: "中文描述（必填，可用于自动翻译）",
+  name_en: "英文名称（选填，可由 AI 生成）",
+  description_en: "英文描述（选填，可由 AI 生成）",
+  name_gr: "希腊语名称（选填，可由 AI 生成）",
+  description_gr: "希腊语描述（选填，可由 AI 生成）",
+  category: "一级分类（必填：men/women/shoes/bags/luggage/hats/jewelry/other）",
+  subcategory: "二级分类（必填，按后台分类填写）",
+  price: "价格（必填，数字，不加 €）",
+  stock: "总库存（必填，数字）",
+  sizes: "尺码（选填，如 S,M,L）",
+  size_stock: "尺码库存（选填，如 S:2,M:3,L:1）",
+  image_url: "主图 URL（选填，可后续上传图片自动绑定）",
+  image_urls: "多图 URL（选填，多个用逗号或换行）",
+  brand: "品牌（选填）",
+  barcode: "条码 / EAN（选填，有真实条码再填）",
+  vat: "VAT（选填，默认 24）",
+  color: "颜色（选填，建议填写）",
+  skroutz_url: "Skroutz 链接（选填，没有可留空）",
+  is_active: "是否上架（TRUE/FALSE）",
+  material: "材质（选填）",
+  fit_type: "版型（选填：regular/slim/loose）",
+  ai_keywords: "AI 关键词（选填）",
+  style_tags: "风格标签（选填）",
+  size_chart: "尺码表 JSON（选填，高级字段）",
+  material_verified: "材质已人工确认（TRUE/FALSE）",
 };
 const csvHeaderAliases = new Map(Object.entries(csvFieldLabels).flatMap(([field, label]) => [[field, field], [label, field]]));
 const tabs: { key: Tab; label: string }[] = [
@@ -99,9 +99,11 @@ function validatePreviewRow(row: CsvRow) {
   const sku = String(row.sku || "").trim(); const cat = String(row.category || "").trim(); const sub = String(row.subcategory || "").trim();
   const price = Number(String(row.price || "").replace(",", ".")); const stock = Number(String(row.stock || "").replace(",", "."));
   const vat = row.vat === undefined || row.vat === "" ? 24 : Number(String(row.vat).replace(",", "."));
-  if (!sku) errors.push("sku 必填"); if (!isProductCategory(cat)) errors.push("分类无效");
+  if (!sku) errors.push("SKU 必填");
+  if (!isProductCategory(cat)) errors.push("一级分类无效或为空");
   if (isProductCategory(cat) && sub && !isProductSubcategory(cat, sub)) errors.push("二级分类无效");
-  if (!Number.isFinite(price)) errors.push("价格必须是数字"); if (!Number.isFinite(stock)) errors.push("库存必须是数字");
+  if (!Number.isFinite(price)) errors.push("价格必须是数字，不能带 € 或文字");
+  if (!Number.isFinite(stock)) errors.push("库存必须是数字");
   if (!Number.isFinite(vat)) errors.push("VAT 必须是数字");
   return errors;
 }
@@ -239,11 +241,17 @@ export function AdminDashboard() {
   }, [products, search, filterCat, filterSub, filterStatus]);
 
   // Feed stats
-  const feedStats = useMemo(() => ({
-    total: products.filter(p => p.is_active && effectiveStock(p) >= 0).length,
-    noImage: products.filter(p => p.is_active && effectiveStock(p) >= 0 && !p.image_url).length,
-    noDesc: products.filter(p => p.is_active && effectiveStock(p) >= 0 && !p.description_en && !p.description_gr).length,
-  }), [products]);
+  const feedStats = useMemo(() => {
+    const activeRealProducts = products.filter(p => p.is_active && !isTestProductSku(p.sku));
+    const stockReady = activeRealProducts.filter(p => effectiveStock(p) > 0);
+    return {
+      total: activeRealProducts.filter(entersSkroutzFeed).length,
+      noImage: stockReady.filter(p => !isHttpUrl(p.image_url)).length,
+      noDesc: stockReady.filter(p => !p.description_en && !p.description_gr && !p.description_cn).length,
+      noStock: activeRealProducts.filter(p => effectiveStock(p) <= 0).length,
+      testHidden: products.filter(p => p.is_active && isTestProductSku(p.sku)).length,
+    };
+  }, [products]);
 
   const launchChecks = useMemo(() => {
     const rows = products.map(product => {
@@ -311,6 +319,40 @@ export function AdminDashboard() {
   function formFromProduct(p: AdminProduct): ProductFormData { return { sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, barcode:p.barcode, vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active, material: p.material || (p as Record<string,unknown>).material as string || "", fit_type: (p as Record<string,unknown>).fit_type as string || "regular", ai_keywords: Array.isArray((p as Record<string,unknown>).ai_keywords) ? ((p as Record<string,unknown>).ai_keywords as string[]).join(",") : String((p as Record<string,unknown>).ai_keywords || ""), style_tags: Array.isArray((p as Record<string,unknown>).style_tags) ? ((p as Record<string,unknown>).style_tags as string[]).join(",") : String((p as Record<string,unknown>).style_tags || ""), size_chart: typeof (p as Record<string,unknown>).size_chart === "object" ? JSON.stringify((p as Record<string,unknown>).size_chart) : String((p as Record<string,unknown>).size_chart || ""), material_verified: (p as Record<string,unknown>).material_verified === true }; }
   function openProductForm(p: AdminProduct) { const nextForm = formFromProduct(p); setEditingId(p.id); setForm(nextForm); loadSizeStock(p); setShowSizeChart(!!nextForm.size_chart.trim()); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); return nextForm; }
   function startEdit(p: AdminProduct) { openProductForm(p); }
+  function focusAdminField(field: string) {
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(`[data-admin-field="${field}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) el.focus();
+    }, 150);
+  }
+  function handleIssueAction(product: AdminProduct, issueCode: string) {
+    if (issueCode === "image" || issueCode === "image-quality") {
+      setSelectedImageSku(product.sku);
+      setSearch(product.sku);
+      setFilterStatus("all");
+      setTab("images");
+      window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 80);
+      toast("已跳到图片上传区，请重新上传主图。");
+      return;
+    }
+    const fieldMap: Record<string, string> = {
+      sku: "sku",
+      test: "sku",
+      inactive: "is_active",
+      price: "price",
+      stock: "stock",
+      name: "name_cn",
+      description: "description_cn",
+      "name-gr": "name_gr",
+      "name-en": "name_en",
+      category: "category",
+      subcategory: "subcategory",
+      sizes: "sizes",
+    };
+    openProductForm(product);
+    focusAdminField(fieldMap[issueCode] || "sku");
+  }
   function copyProduct(p: AdminProduct) { setEditingId(null); setForm({ ...p, sku: p.sku + "-COPY" }); loadSizeStock(p); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
   function addSize(sz: string) { setSizeStock(prev => { if (sz in prev) return prev; return { ...prev, [sz]: 0 }; }); }
   function toggleSizeSummary() { setShowSizeSummary(prev => !prev); }
@@ -597,11 +639,14 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           <td className="py-3 pr-3">
                             <div className="flex max-w-xl flex-wrap gap-1.5">
                               {issues.map(issue => (
-                                <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${issue.level === "block" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`} key={`${product.id}-${issue.code}`}>
+                                <button className={`rounded-full px-2 py-1 text-[11px] font-bold transition hover:ring-2 hover:ring-stone-200 ${issue.level === "block" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`} key={`${product.id}-${issue.code}`} onClick={() => handleIssueAction(product, issue.code)} title={issue.code === "image" || issue.code === "image-quality" ? "点击去重新上传主图" : "点击定位到对应字段"} type="button">
                                   {issue.label}
-                                </span>
+                                </button>
                               ))}
                             </div>
+                            {issues.some(issue => issue.code === "image" || issue.code === "image-quality") ? (
+                              <button className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-black text-amber-800 hover:bg-amber-100" onClick={() => handleIssueAction(product, "image")} type="button">重新上传主图</button>
+                            ) : null}
                           </td>
                           <td className="py-3 pr-3">
                             <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${feedReady ? "bg-blue-100 text-blue-700" : "bg-stone-100 text-stone-500"}`}>
@@ -731,35 +776,35 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                 <Field label="SKU">
                   <div className="flex gap-1.5">
-                    <input className="input flex-1" required value={form.sku} onChange={e => updateField("sku", e.target.value)} />
+                    <input className="input flex-1" data-admin-field="sku" required value={form.sku} onChange={e => updateField("sku", e.target.value)} />
                     <button className="shrink-0 rounded-lg border border-stone-300 px-3 py-2 text-[11px] font-bold hover:bg-stone-50 whitespace-nowrap" onClick={generateNextSku} type="button">生成编号</button>
                   </div>
                   <p className="mt-1 text-[10px] text-stone-400">切换分类自动生成前缀: {skuPrefix(form.category, form.subcategory)}001</p>
                 </Field>
-                <Field label="分类"><select className="input" value={form.category} onChange={e => updateField("category", e.target.value as ProductCategory)}>{(dbCats.length > 0 ? dbCats : categories.map(c => ({slug:c.slug}))).map((c:Record<string,unknown>) => <option key={String(c.slug)} value={String(c.slug)}>{String(c.slug)}</option>)}</select></Field>
-                <Field label="二级分类"><select className="input" value={form.subcategory} onChange={e => updateField("subcategory", e.target.value)}>{(() => { if (dbSubs.length > 0) { const cat = dbCats.find(x => String(x.slug) === form.category); const list = cat ? dbSubs.filter(s => String(s.category_id) === String(cat.id)) : []; return list.map((s: Record<string, unknown>) => <option key={String(s.slug)} value={String(s.slug)}>{String(s.slug)}</option>); } if (form.category in subcategoryList) { return subcategoryList[form.category].map(s => <option key={s} value={s}>{s}</option>); } return null; })()}</select></Field>
-                <Field label="价格"><input className="input" min="0" step="0.01" type="number" value={form.price} onChange={e => updateField("price", Number(e.target.value))} /></Field>
+                <Field label="分类"><select className="input" data-admin-field="category" value={form.category} onChange={e => updateField("category", e.target.value as ProductCategory)}>{(dbCats.length > 0 ? dbCats : categories.map(c => ({slug:c.slug}))).map((c:Record<string,unknown>) => <option key={String(c.slug)} value={String(c.slug)}>{String(c.slug)}</option>)}</select></Field>
+                <Field label="二级分类"><select className="input" data-admin-field="subcategory" value={form.subcategory} onChange={e => updateField("subcategory", e.target.value)}>{(() => { if (dbSubs.length > 0) { const cat = dbCats.find(x => String(x.slug) === form.category); const list = cat ? dbSubs.filter(s => String(s.category_id) === String(cat.id)) : []; return list.map((s: Record<string, unknown>) => <option key={String(s.slug)} value={String(s.slug)}>{String(s.slug)}</option>); } if (form.category in subcategoryList) { return subcategoryList[form.category].map(s => <option key={s} value={s}>{s}</option>); } return null; })()}</select></Field>
+                <Field label="价格"><input className="input" data-admin-field="price" min="0" step="0.01" type="number" value={form.price} onChange={e => updateField("price", Number(e.target.value))} /></Field>
                 <Field label="库存">
                   {Object.keys(sizeStock).length > 0 ? (
                     <div>
-                      <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" min="0" step="1" type="number" value={Object.values(sizeStock).reduce((a,b)=>a+b,0)} readOnly />
+                      <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" data-admin-field="stock" min="0" step="1" type="number" value={Object.values(sizeStock).reduce((a,b)=>a+b,0)} readOnly />
                       <p className="mt-1 text-[10px] text-stone-400">由尺码库存自动计算</p>
                     </div>
                   ) : (
-                    <input className="input" min="0" step="1" type="number" value={form.stock} onChange={e => updateField("stock", Number(e.target.value))} />
+                    <input className="input" data-admin-field="stock" min="0" step="1" type="number" value={form.stock} onChange={e => updateField("stock", Number(e.target.value))} />
                   )}
                 </Field>
                 <Field label="尺码">
                   {Object.keys(sizeStock).length > 0 ? (
                     <div>
-                      <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" value={sortSizeKeys(Object.keys(sizeStock)).join(",")} readOnly />
+                      <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" data-admin-field="sizes" value={sortSizeKeys(Object.keys(sizeStock)).join(",")} readOnly />
                       <p className="mt-1 text-[10px] text-stone-400">由下方尺码库存自动同步</p>
                     </div>
                   ) : (
-                    <input className="input" value={form.sizes} onChange={e => updateField("sizes", e.target.value)} />
+                    <input className="input" data-admin-field="sizes" value={form.sizes} onChange={e => updateField("sizes", e.target.value)} />
                   )}
                 </Field>
-                <Field label="上架"><select className="input" value={form.is_active ? "true" : "false"} onChange={e => updateField("is_active", e.target.value === "true")}><option value="true">是</option><option value="false">否</option></select></Field>
+                <Field label="上架"><select className="input" data-admin-field="is_active" value={form.is_active ? "true" : "false"} onChange={e => updateField("is_active", e.target.value === "true")}><option value="true">是</option><option value="false">否</option></select></Field>
               </div>
             </section>
 
@@ -813,9 +858,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-base font-black text-ink">多语言内容</h2>
               <div className="grid gap-3 lg:grid-cols-3">
-                <div className="space-y-3"><Field label="中文名"><input className="input" value={form.name_cn} onChange={e => updateField("name_cn", e.target.value)} /></Field><Field label="中文描述"><textarea className="input min-h-24" value={form.description_cn} onChange={e => updateField("description_cn", e.target.value)} /></Field></div>
-                <div className="space-y-3"><Field label="希腊语名"><input className="input" value={form.name_gr} onChange={e => updateField("name_gr", e.target.value)} /></Field><Field label="希腊语描述"><textarea className="input min-h-24" value={form.description_gr} onChange={e => updateField("description_gr", e.target.value)} /></Field></div>
-                <div className="space-y-3"><Field label="英文名"><input className="input" value={form.name_en} onChange={e => updateField("name_en", e.target.value)} /></Field><Field label="英文描述"><textarea className="input min-h-24" value={form.description_en} onChange={e => updateField("description_en", e.target.value)} /></Field></div>
+                <div className="space-y-3"><Field label="中文名"><input className="input" data-admin-field="name_cn" value={form.name_cn} onChange={e => updateField("name_cn", e.target.value)} /></Field><Field label="中文描述"><textarea className="input min-h-24" data-admin-field="description_cn" value={form.description_cn} onChange={e => updateField("description_cn", e.target.value)} /></Field></div>
+                <div className="space-y-3"><Field label="希腊语名"><input className="input" data-admin-field="name_gr" value={form.name_gr} onChange={e => updateField("name_gr", e.target.value)} /></Field><Field label="希腊语描述"><textarea className="input min-h-24" data-admin-field="description_gr" value={form.description_gr} onChange={e => updateField("description_gr", e.target.value)} /></Field></div>
+                <div className="space-y-3"><Field label="英文名"><input className="input" data-admin-field="name_en" value={form.name_en} onChange={e => updateField("name_en", e.target.value)} /></Field><Field label="英文描述"><textarea className="input min-h-24" data-admin-field="description_en" value={form.description_en} onChange={e => updateField("description_en", e.target.value)} /></Field></div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" disabled={translating} onClick={() => void translateProduct()} type="button">{translating ? "翻译中..." : "自动翻译"}</button>
@@ -912,7 +957,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
               {/* URL fields */}
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                <Field label="主图 URL"><input className="input" value={form.image_url} onChange={e => updateField("image_url", e.target.value)} /></Field>
+                <Field label="主图 URL"><input className="input" data-admin-field="image_url" value={form.image_url} onChange={e => updateField("image_url", e.target.value)} /></Field>
                 <Field label="Skroutz URL"><input className="input" placeholder="https://www.skroutz.gr/..." value={form.skroutz_url} onChange={e => updateField("skroutz_url", e.target.value)} /></Field>
                 <Field label="品牌（可选）"><input className="input" value={form.brand} onChange={e => updateField("brand", e.target.value)} placeholder="如无可留空" /></Field>
                 <Field label="条码 / EAN（可选）"><input className="input" value={form.barcode} onChange={e => updateField("barcode", e.target.value)} placeholder="如无可留空" /></Field>
@@ -997,25 +1042,26 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <h2 className="text-lg font-black text-ink">Skroutz Feed 状态</h2>
               <p className="mt-1 text-xs text-stone-400">将此 Feed 链接提交给 Skroutz，用于同步商品名称、价格、库存、图片和商品链接。</p>
               <div className="mt-4 flex items-center gap-2">
-                {feedStats.noImage === 0 && feedStats.noDesc === 0 && stats.noStock === 0 ? (
+                {feedStats.noImage === 0 && feedStats.noDesc === 0 && feedStats.noStock === 0 ? (
                   <span className="inline-block rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">Feed 状态良好，可以提交给 Skroutz</span>
                 ) : (
                   <span className="inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">
-                    Feed 有 {(() => { const issues: string[] = []; if (feedStats.noImage > 0) issues.push(`${feedStats.noImage} 个缺图片`); if (feedStats.noDesc > 0) issues.push(`${feedStats.noDesc} 个缺描述`); if (stats.noStock > 0) issues.push(`${stats.noStock} 个库存为0`); return issues.length; })()} 个问题：{(() => { const issues: string[] = []; if (feedStats.noImage > 0) issues.push(`${feedStats.noImage} 个缺图片`); if (feedStats.noDesc > 0) issues.push(`${feedStats.noDesc} 个缺描述`); if (stats.noStock > 0) issues.push(`${stats.noStock} 个库存为0`); return issues.join("，"); })()}
+                    Feed 有 {(() => { const issues: string[] = []; if (feedStats.noImage > 0) issues.push(`${feedStats.noImage} 个缺公网主图`); if (feedStats.noDesc > 0) issues.push(`${feedStats.noDesc} 个缺描述`); if (feedStats.noStock > 0) issues.push(`${feedStats.noStock} 个无库存`); return issues.length; })()} 个问题：{(() => { const issues: string[] = []; if (feedStats.noImage > 0) issues.push(`${feedStats.noImage} 个缺公网主图`); if (feedStats.noDesc > 0) issues.push(`${feedStats.noDesc} 个缺描述`); if (feedStats.noStock > 0) issues.push(`${feedStats.noStock} 个无库存`); return issues.join("，"); })()}
                   </span>
                 )}
               </div>
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[{ label: "Feed 商品数", v: feedStats.total, color: "" }, { label: "缺图片", v: feedStats.noImage, color: feedStats.noImage > 0 ? "" : "" }, { label: "缺描述", v: feedStats.noDesc, color: "" }, { label: "库存为0", v: stats.noStock, color: "" }].map(s => (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+              {[{ label: "Feed 商品数", v: feedStats.total, color: "" }, { label: "缺公网主图", v: feedStats.noImage, color: feedStats.noImage > 0 ? "" : "" }, { label: "缺描述", v: feedStats.noDesc, color: "" }, { label: "无库存", v: feedStats.noStock, color: "" }, { label: "测试商品隐藏", v: feedStats.testHidden, color: "" }].map(s => (
                 <div key={s.label} className="rounded-xl border border-stone-100 bg-white p-5 text-center shadow-sm">
-                  <p className={`text-2xl font-black ${(s.label === "缺图片"||s.label==="缺描述") && s.v > 0 ? "text-amber-600" : s.label === "库存为0" && s.v > 0 ? "text-red-500" : "text-ink"}`}>{s.v}</p>
+                  <p className={`text-2xl font-black ${(s.label === "缺公网主图"||s.label==="缺描述") && s.v > 0 ? "text-amber-600" : s.label === "无库存" && s.v > 0 ? "text-red-500" : "text-ink"}`}>{s.v}</p>
                   <p className="mt-1 text-xs font-bold text-stone-400">{s.label}</p>
-                  {s.label === "缺图片" ? <p className="mt-1 text-[10px] text-stone-400">缺图片影响商品展示</p> : null}
+                  {s.label === "缺公网主图" ? <p className="mt-1 text-[10px] text-stone-400">缺公网主图不会进入 Feed</p> : null}
                   {s.label === "缺描述" ? <p className="mt-1 text-[10px] text-stone-400">缺描述影响信息完整度</p> : null}
-                  {s.label === "库存为0" ? <p className="mt-1 text-[10px] text-stone-400">库存为0可能无法售卖</p> : null}
+                  {s.label === "无库存" ? <p className="mt-1 text-[10px] text-stone-400">无库存不会进入 Feed</p> : null}
+                  {s.label === "测试商品隐藏" ? <p className="mt-1 text-[10px] text-stone-400">TEST / DEMO 不输出</p> : null}
                 </div>
               ))}
             </div>
