@@ -32,9 +32,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "请至少填写分类、商品名或备注后再生成文案。" }, { status: 400 });
   }
 
-  const prompt = `You are writing product copy for a small fashion boutique in Greece.
+  const prompt = `You are a senior ecommerce copywriter for a small fashion boutique in Greece.
 
-Create concise, realistic ecommerce product names and descriptions.
+Create concise, trustworthy product copy for Greek shoppers and marketplace listings such as Skroutz.
+The copy should feel attractive, searchable, and realistic without sounding exaggerated.
 
 Product hints:
 - Existing Chinese name: ${nameCn || "-"}
@@ -61,13 +62,21 @@ Return ONLY valid JSON:
   "style_tags": ["3-5 short style tags"]
 }
 
-Rules:
+Marketplace writing rules:
+- Product names should be clear search titles: product type + gender/category + color/style/detail when known.
+- Greek names should sound natural for Greek ecommerce, for example: "Γυναικείο Φόρεμα", "Ανδρικό Πουκάμισο", "Casual Τσάντα Χειρός".
+- English names should be simple international retail names, not literal machine translations.
+- Chinese names should help the shop owner recognize the item quickly.
+- Descriptions should sell the use case: everyday wear, office, evening, travel, summer, layering, gift, etc. only when appropriate from the hints.
+- Mention fit, styling, comfort, and occasion when useful, but keep each description to 1-2 short sentences.
+- If useful for Skroutz search, include common category terms naturally, not as keyword spam.
 - Do not invent luxury brands.
 - Do not promise discounts, exact material, waterproofing, handmade, or origin unless provided.
+- Do not promise availability, delivery speed, warranty, or stock quantity.
 - If material is unknown, describe style and usage instead of guessing exact fabric.
 - If image content is not explicitly described in owner notes or photo hints, do not claim exact patterns or fabric.
 - fit_type must be one of regular, slim, loose.
-- Keep names natural for shoppers, not keyword spam.
+- Avoid clickbait, ALL CAPS, emojis, and overly long titles.
 - Greek must be natural modern Greek.
 - Return ONLY JSON.`;
 

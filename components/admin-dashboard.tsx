@@ -82,6 +82,9 @@ const csvHeaderAliases = new Map(Object.entries(csvFieldLabels).flatMap(([field,
 const tabs: { key: Tab; label: string }[] = [
   { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "批量图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
+const primaryTabKeys: Tab[] = ["quickAdd", "quickSale", "dashboard", "check"];
+const managementTabKeys: Tab[] = ["add", "images", "csv", "categories", "skroutz"];
+const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
 const emptyQuickAdd: QuickAddState = {
   category: "men",
   subcategory: "tshirts",
@@ -522,7 +525,7 @@ export function AdminDashboard() {
             sizes: form.sizes || sortSizeKeys(Object.keys(sizeStock)).join(","),
           },
         }),
-      }) as TranslationResult & { name_cn?: string; description_cn?: string };
+      }) as TranslationResult & { name_cn?: string; description_cn?: string; material?: string; fit_type?: string; ai_keywords?: string; style_tags?: string };
       setForm(c => ({
         ...c,
         name_cn: d.name_cn || c.name_cn,
@@ -531,6 +534,11 @@ export function AdminDashboard() {
         description_gr: d.description_gr || c.description_gr,
         name_en: d.name_en || c.name_en,
         description_en: d.description_en || c.description_en,
+        material: d.material || c.material,
+        fit_type: d.fit_type || c.fit_type,
+        ai_keywords: d.ai_keywords || c.ai_keywords,
+        style_tags: d.style_tags || c.style_tags,
+        material_verified: d.material ? false : c.material_verified,
       }));
       toast("AI 商品文案已生成，请检查后再保存。");
     } catch (e) {
@@ -811,10 +819,37 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         </div>
 
         {/* ── Tab bar ─────────────────────────────────────── */}
-        <nav className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-stone-100 bg-white p-1 shadow-sm">
-          {tabs.map(t => (
-            <button key={t.key} className={`shrink-0 rounded-lg px-5 py-2.5 text-sm font-bold transition ${tab === t.key ? "bg-ink text-white shadow-sm" : "text-stone-400 hover:text-ink hover:bg-stone-100"}`} onClick={() => setTab(t.key)} type="button">{t.label}</button>
-          ))}
+        <nav className="mb-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="rounded-xl border border-stone-100 bg-white p-2 shadow-sm">
+            <p className="px-2 pb-1 text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">常用操作</p>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+              {primaryTabKeys.map(key => (
+                <button
+                  key={key}
+                  className={`min-h-12 rounded-lg px-4 py-3 text-sm font-black transition sm:min-h-0 sm:py-2.5 ${tab === key ? "bg-ink text-white shadow-sm" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
+                  onClick={() => setTab(key)}
+                  type="button"
+                >
+                  {tabLabelByKey.get(key) || key}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-xl border border-stone-100 bg-white p-2 shadow-sm">
+            <p className="px-2 pb-1 text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">管理工具</p>
+            <div className="flex gap-1 overflow-x-auto">
+              {managementTabKeys.map(key => (
+                <button
+                  key={key}
+                  className={`shrink-0 rounded-lg px-4 py-2.5 text-sm font-bold transition ${tab === key ? "bg-ink text-white shadow-sm" : "text-stone-500 hover:bg-stone-100 hover:text-ink"}`}
+                  onClick={() => setTab(key)}
+                  type="button"
+                >
+                  {tabLabelByKey.get(key) || key}
+                </button>
+              ))}
+            </div>
+          </div>
         </nav>
 
         {/* ── TAB: Launch check ─────────────────────────────── */}
@@ -827,8 +862,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
               <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">下一件 SKU：{quickSku()}</span>
             </div>
-            <form className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]" onSubmit={submitQuickAdd}>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <form className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]" onSubmit={submitQuickAdd}>
+              <div className="order-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3 lg:order-1">
                 <Field label="一级分类"><select className="input" value={quickAdd.category} onChange={e => updateQuickAdd("category", e.target.value as ProductCategory)}>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select></Field>
                 <Field label="二级分类"><select className="input" value={quickAdd.subcategory} onChange={e => updateQuickAdd("subcategory", e.target.value)}>{subcategoryList[quickAdd.category].map(s => <option key={s} value={s}>{s}</option>)}</select></Field>
                 <Field label="价格"><input className="input" min="0" step="0.01" type="number" value={quickAdd.price} onChange={e => updateQuickAdd("price", Number(e.target.value))} /></Field>
@@ -870,7 +905,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <p className="text-sm font-black text-ink">AI 一键生成商品资料</p>
                       <p className="mt-1 text-xs text-stone-500">根据分类、颜色、品牌、尺码、备注和图片文件名生成文案、材质、版型、关键词和风格标签。</p>
                     </div>
-                    <button className="rounded-lg border border-violet-200 bg-white px-4 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiQuickCopyLoading} onClick={() => void generateQuickProductCopy()} type="button">{aiQuickCopyLoading ? "生成中..." : "AI 生成商品资料"}</button>
+                    <button className="w-full rounded-lg border border-violet-200 bg-white px-4 py-2.5 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50 sm:w-auto" disabled={aiQuickCopyLoading} onClick={() => void generateQuickProductCopy()} type="button">{aiQuickCopyLoading ? "生成中..." : "AI 生成商品资料"}</button>
                   </div>
                   {quickAdd.name_en || quickAdd.name_gr || quickAdd.description_en || quickAdd.description_gr || quickAdd.material || quickAdd.ai_keywords || quickAdd.style_tags ? (
                     <div className="mt-3 grid gap-2 text-xs text-stone-600 md:grid-cols-2">
@@ -882,10 +917,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   ) : null}
                 </div>
               </div>
-              <div className="rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4">
+              <div className="order-1 rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4 lg:sticky lg:top-4 lg:order-2 lg:self-start">
                 <h3 className="text-sm font-black text-ink">商品照片</h3>
                 <p className="mt-1 text-xs text-stone-500">主图必选；背面图、细节图会自动放进多图。</p>
-                <label className="mt-4 block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">选择 / 拍摄主图<input accept="image/*" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
+                <label className="mt-4 block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">选择 / 拍摄主图<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
                 {quickMainFile ? <p className="mt-2 truncate text-xs text-emerald-700">主图：{quickMainFile.name}</p> : <p className="mt-2 text-xs text-amber-600">还没有主图</p>}
                 <label className="mt-3 block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">选择背面 / 细节图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setQuickBackFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
                 {quickBackFiles.length > 0 ? <p className="mt-2 text-xs text-stone-500">多图：{quickBackFiles.length} 张</p> : null}
