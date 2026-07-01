@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
   const brand = cleanText(product.brand, 80);
   const material = cleanText(product.material, 120);
   const sizes = cleanText(product.sizes, 120);
+  const photoHints = cleanText(product.photo_hints, 300);
   const nameCn = cleanText(product.name_cn, 120);
   const descriptionCn = cleanText(product.description_cn, 500);
   const notes = cleanText(product.notes, 500);
@@ -44,6 +45,7 @@ Product hints:
 - Material: ${material || "-"}
 - Sizes: ${sizes || "-"}
 - Owner notes: ${notes || "-"}
+- Photo hints: ${photoHints || "-"}
 
 Return ONLY valid JSON:
 {
@@ -52,13 +54,19 @@ Return ONLY valid JSON:
   "name_en": "English product name",
   "description_en": "English product description, 1-2 short sentences",
   "name_gr": "Greek product name",
-  "description_gr": "Greek product description, 1-2 short sentences"
+  "description_gr": "Greek product description, 1-2 short sentences",
+  "fit_type": "regular" | "slim" | "loose",
+  "material": "short material or fabric description in Chinese, only if reasonably inferable",
+  "ai_keywords": ["5-8 lowercase English search keywords"],
+  "style_tags": ["3-5 short style tags"]
 }
 
 Rules:
 - Do not invent luxury brands.
 - Do not promise discounts, exact material, waterproofing, handmade, or origin unless provided.
 - If material is unknown, describe style and usage instead of guessing exact fabric.
+- If image content is not explicitly described in owner notes or photo hints, do not claim exact patterns or fabric.
+- fit_type must be one of regular, slim, loose.
 - Keep names natural for shoppers, not keyword spam.
 - Greek must be natural modern Greek.
 - Return ONLY JSON.`;
@@ -93,6 +101,10 @@ Rules:
       description_en: cleanText(data.description_en, 500),
       name_gr: cleanText(data.name_gr, 120),
       description_gr: cleanText(data.description_gr, 500),
+      fit_type: ["regular", "slim", "loose"].includes(data.fit_type) ? data.fit_type : "regular",
+      material: cleanText(data.material, 120),
+      ai_keywords: Array.isArray(data.ai_keywords) ? data.ai_keywords.slice(0, 10).join(", ") : cleanText(data.ai_keywords, 200),
+      style_tags: Array.isArray(data.style_tags) ? data.style_tags.slice(0, 6).join(", ") : cleanText(data.style_tags, 160),
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "AI copy generation failed" }, { status: 500 });

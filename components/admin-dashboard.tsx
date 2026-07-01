@@ -37,6 +37,10 @@ type QuickAddState = {
   description_cn: string;
   description_gr: string;
   description_en: string;
+  material: string;
+  fit_type: string;
+  ai_keywords: string;
+  style_tags: string;
   notes: string;
   is_active: boolean;
 };
@@ -93,6 +97,10 @@ const emptyQuickAdd: QuickAddState = {
   description_cn: "",
   description_gr: "",
   description_en: "",
+  material: "",
+  fit_type: "regular",
+  ai_keywords: "",
+  style_tags: "",
   notes: "",
   is_active: true,
 };
@@ -402,6 +410,7 @@ export function AdminDashboard() {
     setAiQuickCopyLoading(true);
     try {
       const sizes = Object.keys(quickSizeStock).length > 0 ? sortSizeKeys(Object.keys(quickSizeStock)).join(",") : quickAdd.sizes;
+      const photoHints = [quickMainFile?.name, ...quickBackFiles.map(file => file.name)].filter(Boolean).join(", ");
       const d = await api("/api/admin/generate-product-copy", {
         method: "POST",
         body: JSON.stringify({
@@ -414,9 +423,10 @@ export function AdminDashboard() {
             brand: quickAdd.brand,
             sizes,
             notes: quickAdd.notes,
+            photo_hints: photoHints,
           },
         }),
-      }) as TranslationResult & { name_cn?: string; description_cn?: string };
+      }) as TranslationResult & { name_cn?: string; description_cn?: string; material?: string; fit_type?: string; ai_keywords?: string; style_tags?: string };
       setQuickAdd(current => ({
         ...current,
         name_cn: d.name_cn || current.name_cn,
@@ -425,8 +435,12 @@ export function AdminDashboard() {
         description_gr: d.description_gr || current.description_gr,
         name_en: d.name_en || current.name_en,
         description_en: d.description_en || current.description_en,
+        material: d.material || current.material,
+        fit_type: d.fit_type || current.fit_type,
+        ai_keywords: d.ai_keywords || current.ai_keywords,
+        style_tags: d.style_tags || current.style_tags,
       }));
-      toast("拍照上新文案已生成，保存前可以继续检查。");
+      toast("拍照上新商品资料已生成，保存前可以继续检查。");
     } catch (e) {
       toast(e instanceof Error ? e.message : "AI 文案生成失败", "err");
     } finally {
@@ -672,6 +686,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       image_url: "",
       image_urls: "",
       is_active: quickAdd.is_active,
+      fit_type: quickAdd.fit_type || "regular",
+      material: quickAdd.material.trim(),
+      ai_keywords: quickAdd.ai_keywords.trim() ? quickAdd.ai_keywords.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean) : [],
+      style_tags: quickAdd.style_tags.trim() ? quickAdd.style_tags.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean) : [],
+      material_verified: false,
     };
     setQuickSaving(true);
     try {
@@ -848,15 +867,17 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="md:col-span-2 xl:col-span-3 rounded-lg border border-violet-100 bg-violet-50/60 p-3">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-sm font-black text-ink">AI 一键生成商品文案</p>
-                      <p className="mt-1 text-xs text-stone-500">根据分类、颜色、品牌、尺码和备注生成中/英/希腊语名称与描述。</p>
+                      <p className="text-sm font-black text-ink">AI 一键生成商品资料</p>
+                      <p className="mt-1 text-xs text-stone-500">根据分类、颜色、品牌、尺码、备注和图片文件名生成文案、材质、版型、关键词和风格标签。</p>
                     </div>
-                    <button className="rounded-lg border border-violet-200 bg-white px-4 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiQuickCopyLoading} onClick={() => void generateQuickProductCopy()} type="button">{aiQuickCopyLoading ? "生成中..." : "AI 生成文案"}</button>
+                    <button className="rounded-lg border border-violet-200 bg-white px-4 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiQuickCopyLoading} onClick={() => void generateQuickProductCopy()} type="button">{aiQuickCopyLoading ? "生成中..." : "AI 生成商品资料"}</button>
                   </div>
-                  {quickAdd.name_en || quickAdd.name_gr || quickAdd.description_en || quickAdd.description_gr ? (
+                  {quickAdd.name_en || quickAdd.name_gr || quickAdd.description_en || quickAdd.description_gr || quickAdd.material || quickAdd.ai_keywords || quickAdd.style_tags ? (
                     <div className="mt-3 grid gap-2 text-xs text-stone-600 md:grid-cols-2">
                       <p><b>EN:</b> {quickAdd.name_en || "-"} {quickAdd.description_en ? `- ${quickAdd.description_en}` : ""}</p>
                       <p><b>EL:</b> {quickAdd.name_gr || "-"} {quickAdd.description_gr ? `- ${quickAdd.description_gr}` : ""}</p>
+                      <p><b>材质/版型:</b> {quickAdd.material || "-"} / {quickAdd.fit_type || "regular"}</p>
+                      <p><b>关键词/标签:</b> {quickAdd.ai_keywords || "-"} {quickAdd.style_tags ? ` / ${quickAdd.style_tags}` : ""}</p>
                     </div>
                   ) : null}
                 </div>
