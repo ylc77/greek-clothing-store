@@ -254,6 +254,34 @@ export function AdminDashboard() {
     };
   }, [products]);
 
+  function downloadLaunchCheckReport() {
+    const headers = ["sku", "name", "category", "subcategory", "status", "feed_status", "stock", "price", "image_url", "issues"];
+    const rows = launchChecks.rows
+      .filter(row => row.issues.length > 0)
+      .map(({ product, issues, blockers, feedReady }) => [
+        product.sku,
+        product.name_cn || product.name_en || product.name_gr || "",
+        product.category || "",
+        product.subcategory || "",
+        blockers.length > 0 ? "blocked" : "needs_review",
+        feedReady ? "feed_ready" : "not_in_feed",
+        String(effectiveStock(product)),
+        String(product.price ?? ""),
+        product.image_url || "",
+        issues.map(issue => issue.label).join("；"),
+      ]);
+    const csv = [headers, ...rows].map(row => row.map(csvCell).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF", csv, "\n"], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `launch-check-report-${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
   /* ── API helper ───────────────────────────────────────── */
   async function api(path: string, init: RequestInit = {}) {
     const r = await fetch(path, { ...init, headers: { "Content-Type": "application/json", "x-admin-password": activePassword, ...(init.headers || {}) } });
@@ -415,7 +443,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <h2 className="text-lg font-black text-ink">商品上线检查</h2>
                   <p className="mt-1 text-xs text-stone-500">只读检查，不会修改商品。用于判断商品是否适合前台展示和进入 Skroutz Feed。</p>
                 </div>
-                <button className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50" disabled={loading} onClick={() => void loadProducts()} type="button">刷新检查</button>
+                <div className="flex flex-wrap gap-2">
+                  <button className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50" disabled={loading} onClick={() => void loadProducts()} type="button">刷新检查</button>
+                  <button className="rounded-lg bg-ink px-4 py-2 text-xs font-bold text-white hover:bg-stone-800 disabled:opacity-50" disabled={launchChecks.issueCount === 0} onClick={downloadLaunchCheckReport} type="button">导出检查报告</button>
+                </div>
               </div>
               <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
                 {[
