@@ -85,6 +85,25 @@ const tabs: { key: Tab; label: string }[] = [
 const primaryTabKeys: Tab[] = ["quickAdd", "quickSale", "dashboard", "check"];
 const managementTabKeys: Tab[] = ["add", "images", "csv", "categories", "skroutz"];
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
+const clothingSizeOptions = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
+const shoeSizeOptions = ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45"];
+const oneSizeOptions = ["ONE SIZE"];
+const sizeSortOrder = [...clothingSizeOptions, ...shoeSizeOptions, ...oneSizeOptions];
+function sizeKindForCategory(category: string) {
+  const normalized = category.trim().toLowerCase();
+  if (normalized === "shoes") return "shoes";
+  if (normalized === "men" || normalized === "women") return "clothing";
+  return "one";
+}
+function sizeOptionsForCategory(category: string) {
+  const kind = sizeKindForCategory(category);
+  if (kind === "shoes") return shoeSizeOptions;
+  if (kind === "clothing") return clothingSizeOptions;
+  return oneSizeOptions;
+}
+function stockTotal(stock: Record<string, number>) {
+  return Object.values(stock).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+}
 const emptyQuickAdd: QuickAddState = {
   category: "men",
   subcategory: "tshirts",
@@ -390,9 +409,18 @@ export function AdminDashboard() {
     return `${prefix}${String(max + 1).padStart(3, "0")}`;
   }
   function updateQuickAdd<K extends keyof QuickAddState>(key: K, value: QuickAddState[K]) {
-    setQuickAdd(current => key === "category"
-      ? { ...current, category: value as ProductCategory, subcategory: subcategoryList[value as ProductCategory]?.[0] || "" }
-      : { ...current, [key]: value });
+    if (key === "category") {
+      const nextCategory = value as ProductCategory;
+      const total = stockTotal(quickSizeStock) || Number(quickAdd.stock) || 1;
+      setQuickSizeStock(current => sizeKindForCategory(nextCategory) === sizeKindForCategory(quickAdd.category)
+        ? current
+        : sizeKindForCategory(nextCategory) === "one"
+          ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(total)) }
+          : {});
+      setQuickAdd(current => ({ ...current, category: nextCategory, subcategory: subcategoryList[nextCategory]?.[0] || "" }));
+      return;
+    }
+    setQuickAdd(current => ({ ...current, [key]: value }));
   }
   function addQuickSize(size: string) {
     const key = size.trim().toUpperCase();
@@ -452,9 +480,34 @@ export function AdminDashboard() {
   }
 
   function skuPrefix(cat: string, sub: string) { return `${cat || "x"}-${sub || "x"}-`; }
-  function updateField<K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) { setForm(c => { if (key === "category") { const nextCat = value as ProductCategory; const nextSub = subcategoryList[nextCat]?.[0] || ""; const prefix = skuPrefix(nextCat, nextSub); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, category: nextCat, subcategory: nextSub, sku: skuEmpty ? prefix : c.sku }; } if (key === "subcategory") { const prefix = skuPrefix(c.category, value as string); const oldPrefix = skuPrefix(c.category, c.subcategory); const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, ""); return { ...c, subcategory: value as string, sku: skuEmpty ? prefix : c.sku }; } return { ...c, [key]: value }; }); }
+  function updateField<K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) {
+    if (key === "category") {
+      const nextCat = value as ProductCategory;
+      if (sizeKindForCategory(nextCat) !== sizeKindForCategory(form.category)) {
+        const total = stockTotal(sizeStock) || Number(form.stock) || 1;
+        setSizeStock(sizeKindForCategory(nextCat) === "one" ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(total)) } : {});
+      }
+    }
+    setForm(c => {
+      if (key === "category") {
+        const nextCat = value as ProductCategory;
+        const nextSub = subcategoryList[nextCat]?.[0] || "";
+        const prefix = skuPrefix(nextCat, nextSub);
+        const oldPrefix = skuPrefix(c.category, c.subcategory);
+        const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, "");
+        return { ...c, category: nextCat, subcategory: nextSub, sku: skuEmpty ? prefix : c.sku };
+      }
+      if (key === "subcategory") {
+        const prefix = skuPrefix(c.category, value as string);
+        const oldPrefix = skuPrefix(c.category, c.subcategory);
+        const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, "");
+        return { ...c, subcategory: value as string, sku: skuEmpty ? prefix : c.sku };
+      }
+      return { ...c, [key]: value };
+    });
+  }
   function generateNextSku() { const prefix = skuPrefix(form.category, form.subcategory); const existing = products.filter(p => p.sku.startsWith(prefix)); let max = 0; for (const p of existing) { const rest = p.sku.slice(prefix.length); const n = parseInt(rest, 10); if (!isNaN(n) && n > max) max = n; } const next = String(max + 1).padStart(3, "0"); updateField("sku", prefix + next); toast(`SKU 已生成: ${prefix + next}`); }
-  function loadSizeStock(p: AdminProduct) { const ss = (p as Record<string,unknown>).size_stock; if (ss && typeof ss === 'object' && !Array.isArray(ss)) { const rec: Record<string,number> = {}; for (const [k,v] of Object.entries(ss as Record<string,unknown>)) { if (typeof v === 'number') rec[k.toUpperCase()] = v; } setSizeStock(rec); } else { setSizeStock({}); } }
+  function loadSizeStock(p: AdminProduct) { const ss = (p as Record<string,unknown>).size_stock; if (ss && typeof ss === 'object' && !Array.isArray(ss)) { const rec: Record<string,number> = {}; for (const [k,v] of Object.entries(ss as Record<string,unknown>)) { if (typeof v === 'number') rec[k.toUpperCase()] = v; } setSizeStock(rec); } else { setSizeStock(sizeKindForCategory(p.category) === "one" ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(Number(p.stock) || 0)) } : {}); } }
   function formFromProduct(p: AdminProduct): ProductFormData { return { sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, barcode:p.barcode, vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active, material: p.material || (p as Record<string,unknown>).material as string || "", fit_type: (p as Record<string,unknown>).fit_type as string || "regular", ai_keywords: Array.isArray((p as Record<string,unknown>).ai_keywords) ? ((p as Record<string,unknown>).ai_keywords as string[]).join(",") : String((p as Record<string,unknown>).ai_keywords || ""), style_tags: Array.isArray((p as Record<string,unknown>).style_tags) ? ((p as Record<string,unknown>).style_tags as string[]).join(",") : String((p as Record<string,unknown>).style_tags || ""), size_chart: typeof (p as Record<string,unknown>).size_chart === "object" ? JSON.stringify((p as Record<string,unknown>).size_chart) : String((p as Record<string,unknown>).size_chart || ""), material_verified: (p as Record<string,unknown>).material_verified === true }; }
   function openProductForm(p: AdminProduct) { const nextForm = formFromProduct(p); setEditingId(p.id); setForm(nextForm); loadSizeStock(p); setShowSizeChart(!!nextForm.size_chart.trim()); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); return nextForm; }
   function startEdit(p: AdminProduct) { openProductForm(p); }
@@ -496,8 +549,7 @@ export function AdminDashboard() {
   function addSize(sz: string) { setSizeStock(prev => { if (sz in prev) return prev; return { ...prev, [sz]: 0 }; }); }
   function toggleSizeSummary() { setShowSizeSummary(prev => !prev); }
   function addMissingSizes() { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); if (parts.length === 0) { toast("sizes 字段为空", "err"); return; } setSizeStock(prev => { let added = 0; const next = { ...prev }; for (const s of parts) { if (!(s in next)) { next[s] = 0; added++; } } if (added > 0) { toast(`已补充 ${added} 个缺失尺码，已有库存不变`); return next; } toast("所有 sizes 尺码已在库存表中"); return prev; }); }
-  const SIZE_ORDER = ["XS","S","M","L","XL","XXL","XXXL"];
-  function sortSizeKeys(keys: string[]) { return keys.sort((a,b) => { const ai = SIZE_ORDER.indexOf(a); const bi = SIZE_ORDER.indexOf(b); if (ai >= 0 && bi >= 0) return ai - bi; if (ai >= 0) return -1; if (bi >= 0) return 1; return a.localeCompare(b); }); }
+  function sortSizeKeys(keys: string[]) { return keys.sort((a,b) => { const ai = sizeSortOrder.indexOf(a); const bi = sizeSortOrder.indexOf(b); if (ai >= 0 && bi >= 0) return ai - bi; if (ai >= 0) return -1; if (bi >= 0) return 1; return a.localeCompare(b); }); }
   function addCustomSize() { const raw = prompt("输入尺码名称，多个用逗号分隔", ""); if (!raw) return; const names = raw.split(/[\/,\s]+/).map((x: string) => x.trim().toUpperCase()).filter(Boolean); if (names.length === 0) return; setSizeStock(prev => { let added = 0; const next = { ...prev }; for (const k of names) { if (!(k in next)) { next[k] = 0; added++; } } if (added > 0) { toast(`已添加 ${added} 个尺码`); return next; } toast("所有尺码已存在"); return prev; }); }
 
   /* ── Translate ────────────────────────────────────────── */
@@ -639,7 +691,7 @@ export function AdminDashboard() {
   /* ── Submit / Delete ──────────────────────────────────── */
   async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!form.sku.trim()) { toast("请填写 SKU", "err"); return; } if (!form.name_cn.trim() && !form.name_en.trim() && !form.name_gr.trim()) { toast("请至少填写一个语言的商品名", "err"); return; } if (form.size_chart.trim()) { try { JSON.parse(form.size_chart.trim()); } catch { toast("尺码表 JSON 格式不正确，请检查", "err"); return; } }
 if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品没有图片", desc: "该商品没有主图，是否继续保存？", confirmText: "继续保存", variant: "default", action: () => { setConfirm(c => ({ ...c, open: false })); doSubmit(); } }); return; } doSubmit(); }
-  async function doSubmit() { setLoading(true); const p = normalizeProduct(form); const aiData: Record<string, unknown> = {}; if (p.ai_keywords.trim()) aiData.ai_keywords = p.ai_keywords.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.style_tags.trim()) aiData.style_tags = p.style_tags.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.size_chart.trim()) aiData.size_chart = JSON.parse(p.size_chart.trim()); if (p.fit_type) aiData.fit_type = p.fit_type; aiData.material_verified = p.material_verified === true; const sizeKeys = Object.keys(sizeStock); const hasSizeStock = sizeKeys.length > 0; const totalStock = sizeKeys.reduce((sum, k) => sum + (sizeStock[k] || 0), 0); const payload = { ...(p as Record<string,unknown>), ...aiData, ...(hasSizeStock ? { sizes: sortSizeKeys(sizeKeys).join(","), size_stock: sizeStock, stock: totalStock } : {}) }; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { const saved = await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); if (!editingId && (newMainFile || newGalleryFiles.length > 0)) { const sku = saved?.product?.sku || form.sku; let imgOk = 0; let imgFail = 0; const imgErrors: string[] = []; try { if (newMainFile) { const fd = new FormData(); fd.append("images", newMainFile); fd.append("sku", sku); fd.append("mode", "main"); const r = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (newGalleryFiles.length > 0) { const fd = new FormData(); newGalleryFiles.forEach(f => fd.append("images", f)); fd.append("sku", sku); fd.append("mode", "gallery"); const r = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (imgFail > 0) { toast(`商品已保存。图片：成功 ${imgOk}，失败 ${imgFail}${imgErrors.length > 0 ? `（${imgErrors.join("；")}）` : ""}`, "err"); } else { toast("商品已保存，图片已上传"); } } catch { toast("商品已保存，图片上传失败", "err"); } setNewMainFile(null); setNewGalleryFiles([]); } setForm(emptyProduct); setEditingId(null); setSizeStock({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
+  async function doSubmit() { setLoading(true); const p = normalizeProduct(form); const sizeKeys = Object.keys(sizeStock); if (sizeKeys.length === 0) { toast("请先在尺码库存里选择尺码并填写库存", "err"); setLoading(false); return; } const aiData: Record<string, unknown> = {}; if (p.ai_keywords.trim()) aiData.ai_keywords = p.ai_keywords.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.style_tags.trim()) aiData.style_tags = p.style_tags.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.size_chart.trim()) aiData.size_chart = JSON.parse(p.size_chart.trim()); if (p.fit_type) aiData.fit_type = p.fit_type; aiData.material_verified = p.material_verified === true; const totalStock = stockTotal(sizeStock); const payload = { ...(p as Record<string,unknown>), ...aiData, sizes: sortSizeKeys(sizeKeys).join(","), size_stock: sizeStock, stock: totalStock }; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { const saved = await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); if (!editingId && (newMainFile || newGalleryFiles.length > 0)) { const sku = saved?.product?.sku || form.sku; let imgOk = 0; let imgFail = 0; const imgErrors: string[] = []; try { if (newMainFile) { const fd = new FormData(); fd.append("images", newMainFile); fd.append("sku", sku); fd.append("mode", "main"); const r = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (newGalleryFiles.length > 0) { const fd = new FormData(); newGalleryFiles.forEach(f => fd.append("images", f)); fd.append("sku", sku); fd.append("mode", "gallery"); const r = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (imgFail > 0) { toast(`商品已保存。图片：成功 ${imgOk}，失败 ${imgFail}${imgErrors.length > 0 ? `（${imgErrors.join("；")}）` : ""}`, "err"); } else { toast("商品已保存，图片已上传"); } } catch { toast("商品已保存，图片上传失败", "err"); } setNewMainFile(null); setNewGalleryFiles([]); } setForm(emptyProduct); setEditingId(null); setSizeStock({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
   function confirmDeleteProduct(p: AdminProduct) { setConfirm({ open: true, title: "确认下架商品？", desc: `下架 ${p.sku} 后商品将不会在前台显示，但数据会保留，之后可以恢复上架。`, confirmText: "确认下架", variant: "danger", action: () => executeDelete(p) }); }
   async function executeDelete(p: AdminProduct) { setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "DELETE" }); toast("商品已下架"); setConfirm(c => ({ ...c, open: false })); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "下架失败", "err"); } finally { setLoading(false); } }
   function confirmRestoreProduct(p: AdminProduct) { setConfirm({ open: true, title: "确认恢复上架？", desc: `恢复上架 ${p.sku} 后商品会重新在前台显示。`, confirmText: "确认恢复", variant: "success", action: () => executeRestore(p) }); }
@@ -673,15 +725,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     const sku = quickSku();
     const parsedSizeStock = Object.keys(quickSizeStock).length > 0 ? quickSizeStock : parseSizeStockText(quickAdd.size_stock);
     const sizeKeys = Object.keys(parsedSizeStock);
-    const stock = sizeKeys.length > 0 ? sizeKeys.reduce((sum, key) => sum + parsedSizeStock[key], 0) : Math.max(0, Number(quickAdd.stock) || 0);
+    if (sizeKeys.length === 0) { toast("请先选择尺码并填写库存", "err"); return; }
+    const stock = sizeKeys.reduce((sum, key) => sum + parsedSizeStock[key], 0);
     const payload: Record<string, unknown> = {
       sku,
       category: quickAdd.category,
       subcategory: quickAdd.subcategory,
       price: Number(quickAdd.price),
       stock,
-      sizes: sizeKeys.length > 0 ? sortSizeKeys(sizeKeys).join(",") : quickAdd.sizes.trim(),
-      size_stock: sizeKeys.length > 0 ? parsedSizeStock : undefined,
+      sizes: sortSizeKeys(sizeKeys).join(","),
+      size_stock: parsedSizeStock,
       name_cn: quickAdd.name_cn.trim() || `${quickAdd.color ? `${quickAdd.color} ` : ""}${quickAdd.category} ${quickAdd.subcategory}`,
       description_cn: quickAdd.description_cn.trim() || quickAdd.notes.trim() || "请在保存后检查并补充商品描述。",
       name_en: quickAdd.name_en.trim(),
@@ -867,12 +920,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <Field label="一级分类"><select className="input" value={quickAdd.category} onChange={e => updateQuickAdd("category", e.target.value as ProductCategory)}>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select></Field>
                 <Field label="二级分类"><select className="input" value={quickAdd.subcategory} onChange={e => updateQuickAdd("subcategory", e.target.value)}>{subcategoryList[quickAdd.category].map(s => <option key={s} value={s}>{s}</option>)}</select></Field>
                 <Field label="价格"><input className="input" min="0" step="0.01" type="number" value={quickAdd.price} onChange={e => updateQuickAdd("price", Number(e.target.value))} /></Field>
-                <Field label="总库存"><input className="input" min="0" step="1" type="number" value={quickAdd.stock} onChange={e => updateQuickAdd("stock", Number(e.target.value))} /></Field>
+                <Field label="总库存"><div><input className="input bg-stone-50 text-stone-500 cursor-not-allowed" min="0" step="1" type="number" value={stockTotal(quickSizeStock)} readOnly /><p className="mt-1 text-[10px] text-stone-400">由尺码库存自动计算，不能手动填写</p></div></Field>
                 <div className="md:col-span-2 xl:col-span-3">
                   <label className="text-sm font-bold text-ink">尺码库存</label>
                   <div className="mt-2 rounded-lg border border-stone-200 bg-stone-50 p-3">
                     <div className="mb-3 flex flex-wrap gap-1.5">
-                      {(quickAdd.category === "shoes" ? ["35","36","37","38","39","40","41","42","43","44","45"] : ["XS","S","M","L","XL","XXL"]).map(size => (
+                      {sizeOptionsForCategory(quickAdd.category).map(size => (
                         <button className="rounded border border-stone-200 bg-white px-3 py-1.5 text-xs font-bold text-ink hover:bg-stone-100" key={size} onClick={() => addQuickSize(size)} type="button">+ {size}</button>
                       ))}
                     </div>
@@ -884,14 +937,14 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                             <button className="h-8 w-8 rounded border border-stone-200 text-sm font-black" onClick={() => setQuickSizeQty(size, quickSizeStock[size] - 1)} type="button">-</button>
                             <input className="h-8 w-16 rounded border border-stone-200 text-center text-base sm:text-sm" min="0" step="1" type="number" value={quickSizeStock[size]} onChange={e => setQuickSizeQty(size, Number(e.target.value))} />
                             <button className="h-8 w-8 rounded border border-stone-200 text-sm font-black" onClick={() => setQuickSizeQty(size, quickSizeStock[size] + 1)} type="button">+</button>
-                            <button className="ml-auto text-xs font-bold text-red-500" onClick={() => removeQuickSize(size)} type="button">删除</button>
+                            {sizeKindForCategory(quickAdd.category) !== "one" ? <button className="ml-auto text-xs font-bold text-red-500" onClick={() => removeQuickSize(size)} type="button">删除</button> : null}
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-xs text-stone-500">可不分尺码，只用总库存；如果有 S/M/L 库存，点击上方尺码添加。</p>
+                      <p className="text-xs text-stone-500">请先选择尺码并填写库存。首饰、包包、行李箱和其他类默认使用 ONE SIZE。</p>
                     )}
-                    <p className="mt-2 text-xs text-stone-400">已分配库存：{Object.values(quickSizeStock).reduce((sum, qty) => sum + qty, 0)}。设置尺码库存后会自动同步总库存和 sizes。</p>
+                    <p className="mt-2 text-xs text-stone-400">已分配库存：{stockTotal(quickSizeStock)}。保存时会自动同步总库存和 sizes。</p>
                   </div>
                 </div>
                 <Field label="颜色（选填）"><input className="input" value={quickAdd.color} onChange={e => updateQuickAdd("color", e.target.value)} placeholder="black / beige" /></Field>
@@ -920,7 +973,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="order-1 rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4 lg:sticky lg:top-4 lg:order-2 lg:self-start">
                 <h3 className="text-sm font-black text-ink">商品照片</h3>
                 <p className="mt-1 text-xs text-stone-500">主图必选；背面图、细节图会自动放进多图。</p>
-                <label className="mt-4 block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">选择 / 拍摄主图<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <label className="block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">拍摄主图<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
+                  <label className="block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">相册选择<input accept="image/*" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
+                </div>
                 {quickMainFile ? <p className="mt-2 truncate text-xs text-emerald-700">主图：{quickMainFile.name}</p> : <p className="mt-2 text-xs text-amber-600">还没有主图</p>}
                 <label className="mt-3 block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">选择背面 / 细节图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setQuickBackFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
                 {quickBackFiles.length > 0 ? <p className="mt-2 text-xs text-stone-500">多图：{quickBackFiles.length} 张</p> : null}
@@ -1208,24 +1264,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <Field label="二级分类"><select className="input" data-admin-field="subcategory" value={form.subcategory} onChange={e => updateField("subcategory", e.target.value)}>{(() => { if (dbSubs.length > 0) { const cat = dbCats.find(x => String(x.slug) === form.category); const list = cat ? dbSubs.filter(s => String(s.category_id) === String(cat.id)) : []; return list.map((s: Record<string, unknown>) => <option key={String(s.slug)} value={String(s.slug)}>{String(s.slug)}</option>); } if (form.category in subcategoryList) { return subcategoryList[form.category].map(s => <option key={s} value={s}>{s}</option>); } return null; })()}</select></Field>
                 <Field label="价格"><input className="input" data-admin-field="price" min="0" step="0.01" type="number" value={form.price} onChange={e => updateField("price", Number(e.target.value))} /></Field>
                 <Field label="库存">
-                  {Object.keys(sizeStock).length > 0 ? (
-                    <div>
-                      <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" data-admin-field="stock" min="0" step="1" type="number" value={Object.values(sizeStock).reduce((a,b)=>a+b,0)} readOnly />
-                      <p className="mt-1 text-[10px] text-stone-400">由尺码库存自动计算</p>
-                    </div>
-                  ) : (
-                    <input className="input" data-admin-field="stock" min="0" step="1" type="number" value={form.stock} onChange={e => updateField("stock", Number(e.target.value))} />
-                  )}
+                  <div>
+                    <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" data-admin-field="stock" min="0" step="1" type="number" value={Object.keys(sizeStock).length > 0 ? stockTotal(sizeStock) : form.stock} readOnly />
+                    <p className="mt-1 text-[10px] text-stone-400">由尺码库存自动计算，不能手动填写</p>
+                  </div>
                 </Field>
                 <Field label="尺码">
-                  {Object.keys(sizeStock).length > 0 ? (
-                    <div>
-                      <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" data-admin-field="sizes" value={sortSizeKeys(Object.keys(sizeStock)).join(",")} readOnly />
-                      <p className="mt-1 text-[10px] text-stone-400">由下方尺码库存自动同步</p>
-                    </div>
-                  ) : (
-                    <input className="input" data-admin-field="sizes" value={form.sizes} onChange={e => updateField("sizes", e.target.value)} />
-                  )}
+                  <div>
+                    <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" data-admin-field="sizes" value={Object.keys(sizeStock).length > 0 ? sortSizeKeys(Object.keys(sizeStock)).join(",") : form.sizes} readOnly />
+                    <p className="mt-1 text-[10px] text-stone-400">由下方尺码库存自动同步</p>
+                  </div>
                 </Field>
                 <Field label="上架"><select className="input" data-admin-field="is_active" value={form.is_active ? "true" : "false"} onChange={e => updateField("is_active", e.target.value === "true")}><option value="true">是</option><option value="false">否</option></select></Field>
               </div>
@@ -1237,12 +1285,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <p className="mb-3 text-xs text-stone-500">库存为 0 的尺码在前台显示为售罄。总库存由尺码库存自动计算。</p>
               {editingId && Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">该商品还没有尺码库存。旧总库存为 <b>{form.stock}</b>，sizes 为 "{form.sizes}"。请手动分配库存到各尺码后保存，保存后将自动计算总库存。</p> : null}
               <div className="mb-3 flex flex-wrap gap-1.5">
-                {(form.category === "shoes"
-                  ? ["35","36","37","38","39","40","41","42","43","44","45"]
-                  : ["XS","S","M","L","XL","XXL","XXXL"]
-                ).map(s => <button key={s} className="rounded border border-stone-200 px-2 py-1 text-[11px] font-bold hover:bg-stone-100" onClick={() => addSize(s)} type="button">{s}</button>)}
+                {sizeOptionsForCategory(form.category).map(s => <button key={s} className="rounded border border-stone-200 px-2 py-1 text-[11px] font-bold hover:bg-stone-100" onClick={() => addSize(s)} type="button">{s}</button>)}
                 <button className="rounded border border-dashed border-stone-300 px-2 py-1 text-[11px] font-bold text-stone-400 hover:border-stone-400" onClick={toggleSizeSummary} type="button">查看 sizes 尺码库存</button>
-                <button className="rounded border border-dashed border-stone-300 px-2 py-1 text-[11px] font-bold text-stone-400 hover:border-stone-400" onClick={addCustomSize} type="button">+ 自定义</button>
+                {sizeKindForCategory(form.category) !== "one" ? <button className="rounded border border-dashed border-stone-300 px-2 py-1 text-[11px] font-bold text-stone-400 hover:border-stone-400" onClick={addCustomSize} type="button">+ 自定义</button> : null}
               </div>
               {/* Size summary (lightweight, no duplicate table) */}
               {showSizeSummary ? (
@@ -1267,7 +1312,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           <td className="py-1.5 px-3 text-sm font-bold text-ink align-middle">{sz}</td>
                           <td className="py-1.5 px-3 align-middle"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm text-center" min="0" step="1" type="number" value={qty} onChange={e => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, parseInt(e.target.value) || 0) }))} /></td>
                           <td className="py-1.5 px-3 text-center align-middle">{qty > 0 ? <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800 whitespace-nowrap">有货</span> : <span className="inline-block rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-400 whitespace-nowrap">售罄</span>}</td>
-                          <td className="py-1.5 px-3 text-right"><button className="text-[11px] font-bold text-red-500 hover:text-red-700" onClick={() => setSizeStock(prev => { const n = { ...prev }; delete n[sz]; return n; })} type="button">×</button></td>
+                          <td className="py-1.5 px-3 text-right">{sizeKindForCategory(form.category) !== "one" ? <button className="text-[11px] font-bold text-red-500 hover:text-red-700" onClick={() => setSizeStock(prev => { const n = { ...prev }; delete n[sz]; return n; })} type="button">×</button> : null}</td>
                         </tr>
                       )})}
                     </tbody>
