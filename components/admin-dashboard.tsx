@@ -923,20 +923,20 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <Field label="总库存"><div><input className="input bg-stone-50 text-stone-500 cursor-not-allowed" min="0" step="1" type="number" value={stockTotal(quickSizeStock)} readOnly /><p className="mt-1 text-[10px] text-stone-400">由尺码库存自动计算，不能手动填写</p></div></Field>
                 <div className="md:col-span-2 xl:col-span-3">
                   <label className="text-sm font-bold text-ink">尺码库存</label>
-                  <div className="mt-2 rounded-lg border border-stone-200 bg-stone-50 p-3">
-                    <div className="mb-3 flex flex-wrap gap-1.5">
+                  <div className="mt-2 rounded-2xl border border-stone-200 bg-stone-50/70 p-3">
+                    <div className="mb-3 flex flex-wrap gap-2">
                       {sizeOptionsForCategory(quickAdd.category).map(size => (
-                        <button className="rounded border border-stone-200 bg-white px-3 py-1.5 text-xs font-bold text-ink hover:bg-stone-100" key={size} onClick={() => addQuickSize(size)} type="button">+ {size}</button>
+                        <button className="min-h-10 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-ink shadow-sm shadow-stone-900/5 hover:bg-stone-100" key={size} onClick={() => addQuickSize(size)} type="button">+ {size}</button>
                       ))}
                     </div>
                     {Object.keys(quickSizeStock).length > 0 ? (
                       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                         {sortSizeKeys(Object.keys(quickSizeStock)).map(size => (
-                          <div className="flex items-center gap-2 rounded-lg border border-stone-200 bg-white p-2" key={size}>
+                          <div className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white p-2 shadow-sm shadow-stone-900/5" key={size}>
                             <span className="w-12 text-sm font-black text-ink">{size}</span>
-                            <button className="h-8 w-8 rounded border border-stone-200 text-sm font-black" onClick={() => setQuickSizeQty(size, quickSizeStock[size] - 1)} type="button">-</button>
+                            <button className="h-9 w-9 rounded-lg border border-stone-200 text-sm font-black hover:bg-stone-50" onClick={() => setQuickSizeQty(size, quickSizeStock[size] - 1)} type="button">-</button>
                             <input className="h-8 w-16 rounded border border-stone-200 text-center text-base sm:text-sm" min="0" step="1" type="number" value={quickSizeStock[size]} onChange={e => setQuickSizeQty(size, Number(e.target.value))} />
-                            <button className="h-8 w-8 rounded border border-stone-200 text-sm font-black" onClick={() => setQuickSizeQty(size, quickSizeStock[size] + 1)} type="button">+</button>
+                            <button className="h-9 w-9 rounded-lg border border-stone-200 text-sm font-black hover:bg-stone-50" onClick={() => setQuickSizeQty(size, quickSizeStock[size] + 1)} type="button">+</button>
                             {sizeKindForCategory(quickAdd.category) !== "one" ? <button className="ml-auto text-xs font-bold text-red-500" onClick={() => removeQuickSize(size)} type="button">删除</button> : null}
                           </div>
                         ))}
@@ -952,13 +952,13 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <Field label="状态"><select className="input" value={quickAdd.is_active ? "yes" : "no"} onChange={e => updateQuickAdd("is_active", e.target.value === "yes")}><option value="yes">保存后上架</option><option value="no">先存草稿</option></select></Field>
                 <Field label="中文商品名（可空）"><input className="input" value={quickAdd.name_cn} onChange={e => updateQuickAdd("name_cn", e.target.value)} placeholder="可后续 AI 补全" /></Field>
                 <Field label="备注 / 描述（可空）"><textarea className="input min-h-24" value={quickAdd.description_cn} onChange={e => { updateQuickAdd("description_cn", e.target.value); updateQuickAdd("notes", e.target.value); }} placeholder="例如：薄款、适合夏天、宽松版型" /></Field>
-                <div className="md:col-span-2 xl:col-span-3 rounded-lg border border-violet-100 bg-violet-50/60 p-3">
+                <div className="md:col-span-2 xl:col-span-3 rounded-2xl border border-violet-100 bg-violet-50/70 p-4 shadow-sm shadow-violet-950/5">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-black text-ink">AI 一键生成商品资料</p>
                       <p className="mt-1 text-xs text-stone-500">根据分类、颜色、品牌、尺码、备注和图片文件名生成文案、材质、版型、关键词和风格标签。</p>
                     </div>
-                    <button className="w-full rounded-lg border border-violet-200 bg-white px-4 py-2.5 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50 sm:w-auto" disabled={aiQuickCopyLoading} onClick={() => void generateQuickProductCopy()} type="button">{aiQuickCopyLoading ? "生成中..." : "AI 生成商品资料"}</button>
+                    <button className="min-h-11 w-full rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-sm font-black text-violet-700 shadow-sm shadow-violet-950/5 hover:bg-violet-100 disabled:opacity-50 sm:w-auto sm:text-xs" disabled={aiQuickCopyLoading} onClick={() => void generateQuickProductCopy()} type="button">{aiQuickCopyLoading ? "生成中..." : "AI 生成商品资料"}</button>
                   </div>
                   {quickAdd.name_en || quickAdd.name_gr || quickAdd.description_en || quickAdd.description_gr || quickAdd.material || quickAdd.ai_keywords || quickAdd.style_tags ? (
                     <div className="mt-3 grid gap-2 text-xs text-stone-600 md:grid-cols-2">
@@ -970,15 +970,15 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   ) : null}
                 </div>
               </div>
-              <div className="order-1 rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4 lg:sticky lg:top-4 lg:order-2 lg:self-start">
+              <div className="order-1 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm shadow-stone-900/5 lg:sticky lg:top-4 lg:order-2 lg:self-start">
                 <h3 className="text-sm font-black text-ink">商品照片</h3>
                 <p className="mt-1 text-xs text-stone-500">主图必选；背面图、细节图会自动放进多图。</p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  <label className="block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">从相册选择主图<input accept="image/jpeg,image/png,image/webp" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
-                  <label className="block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">打开相机拍摄<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
+                  <label className="block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">从相册选择主图<input accept="image/jpeg,image/png,image/webp" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
+                  <label className="block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">打开相机拍摄<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
                 </div>
                 {quickMainFile ? <p className="mt-2 truncate text-xs text-emerald-700">主图：{quickMainFile.name}</p> : <p className="mt-2 text-xs text-amber-600">还没有主图</p>}
-                <label className="mt-3 block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">选择背面 / 细节图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setQuickBackFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
+                <label className="mt-3 block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">选择背面 / 细节图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setQuickBackFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
                 {quickBackFiles.length > 0 ? <p className="mt-2 text-xs text-stone-500">多图：{quickBackFiles.length} 张</p> : null}
                 <button className="mt-5 w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50" disabled={quickSaving || loading} type="submit">{quickSaving ? "保存中..." : "保存并上传图片"}</button>
                 <p className="mt-3 text-[11px] leading-relaxed text-stone-400">提示：不需要打印 SKU 标签。后台自动生成 SKU；实体店卖掉后用“快速售出”减库存。</p>
