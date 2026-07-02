@@ -1197,8 +1197,54 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
             ) : null}
 
-            {/* Table */}
-            <div className="overflow-x-auto">
+            {/* Mobile product cards */}
+            <div className="grid gap-3 lg:hidden">
+              {filteredProducts.slice(0, 100).map(p => (
+                <article className="rounded-2xl border border-stone-200/80 bg-white p-3 shadow-sm shadow-stone-900/5" key={p.id}>
+                  <div className="flex gap-3">
+                    <label className="pt-1">
+                      <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} />
+                    </label>
+                    <div className="h-24 w-20 shrink-0 overflow-hidden rounded-xl bg-stone-100">
+                      {p.image_url ? (
+                        <img alt="" className="h-full w-full object-cover" src={p.image_url} />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-stone-400">缺图</div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-2 text-sm font-black leading-5 text-ink">{p.name_cn || p.name_en || p.name_gr || p.sku}</p>
+                      <p className="mt-1 truncate font-mono text-[11px] font-bold text-stone-400">{p.sku}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-500">{p.category}/{p.subcategory}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${p.is_active ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-500"}`}>{p.is_active ? "上架" : "下架"}</span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <p className="text-base font-black text-terracotta">€{Number(p.price).toFixed(2)}</p>
+                        <p className="rounded-full bg-stone-50 px-2 py-1 text-[11px] font-bold text-stone-600">库存 {effectiveStock(p)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <button className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-ink shadow-sm hover:bg-stone-50" onClick={() => startEdit(p)} type="button">编辑</button>
+                    <button className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-ink shadow-sm hover:bg-stone-50" onClick={() => copyProduct(p)} type="button">复制</button>
+                    {p.is_active ? (
+                      <button className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-black text-red-600 hover:bg-red-100" onClick={() => confirmDeleteProduct(p)} type="button">下架</button>
+                    ) : (
+                      <button className="rounded-xl border border-green-100 bg-green-50 px-3 py-2 text-xs font-black text-green-700 hover:bg-green-100" onClick={() => confirmRestoreProduct(p)} type="button">上架</button>
+                    )}
+                  </div>
+                  {!p.is_active ? (
+                    <button className="mt-2 w-full rounded-xl border border-red-100 bg-white px-3 py-2 text-xs font-bold text-red-400 hover:bg-red-50" onClick={() => void permanentDelete(p)} type="button">永久删除</button>
+                  ) : null}
+                </article>
+              ))}
+              {filteredProducts.length === 0 ? <p className="py-10 text-center text-sm text-stone-400">没有匹配的商品</p> : null}
+              {filteredProducts.length > 100 ? <p className="py-3 text-center text-xs text-stone-400">显示前 100 条，使用搜索筛选查看更多</p> : null}
+            </div>
+
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto lg:block">
               <table className="w-full text-left">
                 <thead><tr className="bg-stone-50/80 text-stone-400">
                   <th className="py-2.5 pr-3 text-xs font-bold w-8"><input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === filteredProducts.slice(0, 100).length} onChange={selectAll} /></th>
