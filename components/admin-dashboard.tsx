@@ -1610,7 +1610,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {tab === "skroutz" ? (
           <section className="flex flex-col gap-5">
             {/* Header */}
-            <div className="rounded-xl border border-stone-100 bg-white p-5 shadow-sm">
+            <div className="admin-panel">
               <h2 className="text-lg font-black text-ink">Skroutz Feed 状态</h2>
               <p className="mt-1 text-xs text-stone-400">将此 Feed 链接提交给 Skroutz，用于同步商品名称、价格、库存、图片和商品链接。</p>
               <div className="mt-4 flex items-center gap-2">
@@ -1625,9 +1625,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 xl:grid-cols-5">
               {[{ label: "Feed 商品数", v: feedStats.total, color: "" }, { label: "缺公网主图", v: feedStats.noImage, color: feedStats.noImage > 0 ? "" : "" }, { label: "缺描述", v: feedStats.noDesc, color: "" }, { label: "无库存", v: feedStats.noStock, color: "" }, { label: "测试商品隐藏", v: feedStats.testHidden, color: "" }].map(s => (
-                <div key={s.label} className="rounded-xl border border-stone-100 bg-white p-5 text-center shadow-sm">
+                <div key={s.label} className="rounded-2xl border border-stone-100 bg-white p-3 text-center shadow-sm shadow-stone-900/5 sm:p-5">
                   <p className={`text-2xl font-black ${(s.label === "缺公网主图"||s.label==="缺描述") && s.v > 0 ? "text-amber-600" : s.label === "无库存" && s.v > 0 ? "text-red-500" : "text-ink"}`}>{s.v}</p>
                   <p className="mt-1 text-xs font-bold text-stone-400">{s.label}</p>
                   {s.label === "缺公网主图" ? <p className="mt-1 text-[10px] text-stone-400">缺公网主图不会进入 Feed</p> : null}
@@ -1639,29 +1639,29 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </div>
 
             {/* Feed link card */}
-            <div className="rounded-xl border border-stone-100 bg-white p-5 shadow-sm">
+            <div className="admin-panel">
               <h3 className="text-sm font-black text-ink">Feed 地址</h3>
               <p className="mt-1 text-xs text-stone-400">将此链接复制到 Skroutz 商家后台，用于同步商品名称、价格、库存、图片和链接。</p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-stone-50 p-4">
+              <div className="mt-3 grid gap-2 rounded-2xl bg-stone-50 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
                 <code className="flex-1 text-sm font-mono font-bold text-ink break-all">{typeof window !== "undefined" ? window.location.origin : ""}/feed.xml</code>
-                <button className="rounded-lg bg-ink px-4 py-2 text-xs font-bold text-white hover:bg-stone-800 transition" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/feed.xml`); toast("Feed 链接已复制"); }} type="button">复制链接</button>
-                <a className="rounded-lg border border-stone-200 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50 transition" href="/feed.xml" rel="noreferrer" target="_blank">打开 Feed</a>
+                <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white transition hover:bg-stone-800" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/feed.xml`); toast("Feed 链接已复制"); }} type="button">复制链接</button>
+                <a className="inline-flex min-h-11 items-center justify-center rounded-xl border border-stone-200 px-4 py-2.5 text-sm font-black text-ink transition hover:bg-stone-50" href="/feed.xml" rel="noreferrer" target="_blank">打开 Feed</a>
               </div>
             </div>
 
             {/* Quick checks */}
-            <div className="rounded-xl border border-stone-100 bg-white p-5 shadow-sm">
+            <div className="admin-panel">
               <h3 className="text-sm font-black text-ink">Feed 检查</h3>
               <p className="mt-1 text-xs text-stone-400">快速查看需要处理的商品，点击按钮跳转到商品列表并筛选。</p>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {[{k:"noimg",l:"查看缺图片商品"},{k:"nodesc",l:"查看缺描述商品"},{k:"nosizestock",l:"查看未分尺码商品"},{k:"nostock",l:"查看库存为0商品"}].map(b => (
-                  <button key={b.k} className="rounded-lg border border-stone-200 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50 transition" onClick={() => { setFilterStatus(b.k); setTab("dashboard"); }} type="button">{b.l}</button>
+                  <button key={b.k} className="min-h-11 rounded-xl border border-stone-200 px-4 py-2.5 text-sm font-black text-ink transition hover:bg-stone-50" onClick={() => { setFilterStatus(b.k); setTab("dashboard"); }} type="button">{b.l}</button>
                 ))}
               </div>
             </div>
 
             {/* How to use */}
-            <div className="rounded-xl border border-stone-100 bg-stone-50/50 p-5 shadow-sm">
+            <div className="rounded-2xl border border-stone-100 bg-stone-50/50 p-5 shadow-sm shadow-stone-900/5">
               <h3 className="text-sm font-black text-ink">如何使用这个 Feed？</h3>
               <div className="mt-3 space-y-2 text-xs text-stone-600">
                 <p>1. 确认商品信息完整（图片、价格、库存、描述）。</p>
