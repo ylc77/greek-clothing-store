@@ -1,42 +1,44 @@
-# 数据库升级补丁
+# Supabase 数据库升级补丁
 
-## 当前规则
+当前项目还没有正式售卖，也没有需要升级的老客户数据库。
 
-`supabase/client-init.sql` 是新客户完整初始化文件。
+## 新客户初始化
 
-`supabase/patches/` 目录用于已有客户数据库升级。已有真实数据的客户不要直接重新执行 `client-init.sql`。
-
-## 新客户
-
-只需要执行：
+新客户只需要执行：
 
 ```txt
 supabase/client-init.sql
 ```
 
-如需演示数据，再执行：
+如果需要演示商品，再执行：
 
 ```txt
 supabase/demo-products.sql
 ```
 
-## 老客户升级
+## 当前 patch 状态
 
-按时间顺序执行尚未执行过的 patch 文件。
+`supabase/patches/` 暂时不保留历史 SQL patch。
 
-patch 文件应遵守：
+原因：
+
+- 项目尚未交付给老客户使用。
+- 旧 patch 的字段和策略已经合并进 `supabase/client-init.sql`。
+- 保留旧 patch 容易让新客户误执行重复脚本。
+
+## 以后什么时候新增 patch
+
+等项目正式交付后，如果数据库结构再次升级，再按日期新增 patch 文件，例如：
+
+```txt
+2026-07-10-add-example-field.sql
+```
+
+未来 patch 应遵守：
 
 - 使用 `alter table ... add column if not exists`
 - 使用 `create index if not exists`
 - 使用 `drop policy if exists` 后再 `create policy`
 - 使用 `create or replace function`
-- 可重复执行，不应破坏已有真实数据
-
-## 历史 patch
-
-- `2026-06-23-add-ai-assistant-fields.sql`：为 AI 导购补充 `size_chart`、`fit_type`、`style_tags`、`ai_keywords`。
-- `2026-06-24-add-material-verified.sql`：为 AI 导购补充 `material_verified`。
-- `2026-06-24-add-image-dimensions.sql`：为图片合规检查补充 `image_width`、`image_height`。
-- `2026-06-25-restrict-public-product-read.sql`：限制公开 Supabase API 只读取上架商品，后台 service role 不受影响。
-
-以上字段和策略已经合并进 `supabase/client-init.sql`，新客户不需要单独执行这些 patch。
+- 可以重复执行
+- 不破坏已有真实客户数据
