@@ -1839,19 +1839,36 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
 
 function ResultTable({ results }: { results: ApiResult[] }) {
   return (
-    <div className="mt-4 overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead><tr className="border-b border-stone-200 text-stone-500"><th className="py-2 pr-3 text-xs font-bold">#</th><th className="py-2 pr-3 text-xs font-bold">SKU</th><th className="py-2 pr-3 text-xs font-bold">状态</th><th className="py-2 pr-3 text-xs font-bold">说明</th></tr></thead>
-        <tbody>
-          {results.map((r, i) => (
-            <tr className="border-b border-stone-50" key={`${r.sku}-${r.fileName || r.rowNumber || i}`}>
-              <td className="py-2 pr-3 text-xs">{r.fileName || `第 ${r.rowNumber} 行`}</td><td className="py-2 pr-3 text-xs font-mono">{r.sku}</td>
-              <td className={`py-2 pr-3 text-xs font-bold ${r.ok ? "text-green-700" : "text-red-600"}`}>{r.ok ? "成功" : "失败"}</td>
-              <td className="py-2 pr-3 text-xs">{r.message}{r.translateError ? <span className="ml-2 text-orange-600">翻译错误: {r.translateError}</span> : null}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="mt-4">
+      <div className="grid gap-2 lg:hidden">
+        {results.map((r, i) => (
+          <article className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5" key={`${r.sku}-card-${r.fileName || r.rowNumber || i}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-xs font-black text-stone-500">{r.fileName || `第 ${r.rowNumber} 行`}</p>
+                <p className="mt-1 truncate font-mono text-sm font-black text-ink">{r.sku || "无 SKU"}</p>
+              </div>
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black ${r.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{r.ok ? "成功" : "失败"}</span>
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-stone-600">{r.message || "-"}</p>
+            {r.translateError ? <p className="mt-1 text-xs font-bold text-orange-600">翻译错误: {r.translateError}</p> : null}
+          </article>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto lg:block">
+        <table className="w-full text-left text-sm">
+          <thead><tr className="border-b border-stone-200 text-stone-500"><th className="py-2 pr-3 text-xs font-bold">#</th><th className="py-2 pr-3 text-xs font-bold">SKU</th><th className="py-2 pr-3 text-xs font-bold">状态</th><th className="py-2 pr-3 text-xs font-bold">说明</th></tr></thead>
+          <tbody>
+            {results.map((r, i) => (
+              <tr className="border-b border-stone-50" key={`${r.sku}-${r.fileName || r.rowNumber || i}`}>
+                <td className="py-2 pr-3 text-xs">{r.fileName || `第 ${r.rowNumber} 行`}</td><td className="py-2 pr-3 text-xs font-mono">{r.sku}</td>
+                <td className={`py-2 pr-3 text-xs font-bold ${r.ok ? "text-green-700" : "text-red-600"}`}>{r.ok ? "成功" : "失败"}</td>
+                <td className="py-2 pr-3 text-xs">{r.message}{r.translateError ? <span className="ml-2 text-orange-600">翻译错误: {r.translateError}</span> : null}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
