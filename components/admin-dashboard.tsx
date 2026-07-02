@@ -1039,7 +1039,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <button className="rounded-lg bg-ink px-4 py-2 text-xs font-bold text-white hover:bg-stone-800 disabled:opacity-50" disabled={launchChecks.issueCount === 0} onClick={downloadLaunchCheckReport} type="button">导出检查报告</button>
                 </div>
               </div>
-              <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+              <div className="mt-5 grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4 xl:grid-cols-7">
                 {[
                   { label: "商品总数", value: products.length, tone: "text-ink" },
                   { label: "可前台展示", value: launchChecks.siteReady, tone: "text-emerald-700" },
@@ -1049,8 +1049,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   { label: "有阻断问题", value: launchChecks.blockers, tone: launchChecks.blockers > 0 ? "text-red-600" : "text-emerald-700" },
                   { label: "仅需优化", value: launchChecks.warnings, tone: launchChecks.warnings > 0 ? "text-amber-600" : "text-emerald-700" },
                 ].map(item => (
-                  <div className="rounded-xl border border-stone-100 bg-stone-50/60 p-4 text-center" key={item.label}>
-                    <p className={`text-2xl font-black ${item.tone}`}>{item.value}</p>
+                  <div className="rounded-2xl border border-stone-100 bg-stone-50/60 p-3 text-center sm:p-4" key={item.label}>
+                    <p className={`text-xl font-black sm:text-2xl ${item.tone}`}>{item.value}</p>
                     <p className="mt-1 text-xs font-bold text-stone-500">{item.label}</p>
                   </div>
                 ))}
@@ -1070,7 +1070,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   { k: "demo", l: "TEST / DEMO" },
                 ].map(button => (
                   <button
-                    className="rounded-lg border border-stone-200 px-4 py-2 text-xs font-bold text-ink transition hover:bg-stone-50"
+                    className="min-h-11 rounded-xl border border-stone-200 px-4 py-2 text-xs font-bold text-ink transition hover:bg-stone-50"
                     key={button.k}
                     onClick={() => { setFilterStatus(button.k); setTab("dashboard"); }}
                     type="button"
@@ -1089,7 +1089,47 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
                 <p className="text-xs font-bold text-stone-400">共 {launchChecks.issueCount} 件商品需要处理</p>
               </div>
-              <div className="overflow-x-auto">
+              <div className="grid gap-3 lg:hidden">
+                {launchChecks.rows
+                  .filter(row => row.issues.length > 0)
+                  .sort((a, b) => b.blockers.length - a.blockers.length || b.warnings.length - a.warnings.length)
+                  .slice(0, 120)
+                  .map(({ product, issues, blockers, feedReady }) => (
+                    <article className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm shadow-stone-900/5" key={product.id}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-mono text-xs font-black text-ink">{product.sku || "无 SKU"}</p>
+                          <p className="mt-1 line-clamp-2 text-sm font-black text-ink">{product.name_cn || product.name_en || product.name_gr || "未命名商品"}</p>
+                          <p className="mt-1 text-[11px] font-bold text-stone-400">{product.category || "无分类"} / {product.subcategory || "无二级分类"}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black ${blockers.length > 0 ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+                          {blockers.length > 0 ? "阻断" : "优化"}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {issues.map(issue => (
+                          <button className={`rounded-full px-2.5 py-1.5 text-[11px] font-bold ${issue.level === "block" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`} key={`${product.id}-mobile-${issue.code}`} onClick={() => handleIssueAction(product, issue.code)} type="button">
+                            {issue.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <button className="min-h-11 rounded-xl border border-stone-200 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => startEdit(product)} type="button">编辑商品</button>
+                        <button className="min-h-11 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={autoCompletingId === product.id} onClick={() => void startAiComplete(product)} type="button">
+                          {autoCompletingId === product.id ? "补全中..." : "AI 补全"}
+                        </button>
+                        {issues.some(issue => issue.code === "image" || issue.code === "image-quality") ? (
+                          <button className="min-h-11 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-800 hover:bg-amber-100" onClick={() => handleIssueAction(product, "image")} type="button">重新上传主图</button>
+                        ) : null}
+                      </div>
+                      <p className={`mt-3 text-[11px] font-black ${feedReady ? "text-blue-700" : "text-stone-400"}`}>
+                        {feedReady ? "当前会进入 Skroutz Feed" : "当前不会进入 Skroutz Feed"}
+                      </p>
+                    </article>
+                  ))}
+                {launchChecks.issueCount === 0 ? <p className="py-8 text-center text-sm font-bold text-emerald-700">当前没有发现上线阻断或明显缺失项。</p> : null}
+              </div>
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="bg-stone-50 text-xs font-bold text-stone-400">
