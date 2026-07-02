@@ -1730,12 +1730,12 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
   return (
     <section className="flex flex-col gap-5">
       {/* 一级分类 */}
-      <div className="rounded-xl border border-stone-100 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-3"><h2 className="text-lg font-black text-ink">一级分类</h2><button className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-bold hover:bg-stone-50" onClick={addCat} type="button">+ 新增</button></div>
+      <div className="admin-panel">
+        <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-lg font-black text-ink">一级分类</h2><button className="min-h-10 rounded-xl border border-stone-200 px-4 py-2 text-xs font-black hover:bg-stone-50" onClick={addCat} type="button">+ 新增</button></div>
         <p className="mb-3 text-xs text-stone-400">slug 只允许小写英文和横线。停用后前台不再显示，但已有商品不受影响。</p>
         <div className="grid gap-3 lg:hidden">
           {cats.map((c, i) => (
-            <div key={i} className="rounded-xl border border-stone-100 bg-stone-50 p-3">
+            <div key={i} className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <p className="min-w-0 truncate text-sm font-black text-ink">{String(c.name_cn || c.name_en || c.slug || "新分类")}</p>
                 <label className="flex shrink-0 items-center gap-1 text-xs font-bold text-stone-500">
@@ -1750,7 +1750,7 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
                 <label className="block text-xs font-bold text-stone-500">English<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.name_en||"")} onChange={e => updateCat(i, "name_en", e.target.value)} /></label>
                 <label className="block text-xs font-bold text-stone-500 sm:col-span-2">Ελληνικά<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.name_gr||"")} onChange={e => updateCat(i, "name_gr", e.target.value)} /></label>
               </div>
-              <button className="mt-3 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => removeCat(i)} type="button">删除分类</button>
+              <button className="mt-3 min-h-10 w-full rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600 hover:bg-red-50" onClick={() => removeCat(i)} type="button">删除分类</button>
             </div>
           ))}
         </div>
@@ -1773,14 +1773,14 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
       </div>
 
       {/* 二级分类 */}
-      <div className="rounded-xl border border-stone-100 bg-white p-5 shadow-sm">
+      <div className="admin-panel">
         <h2 className="mb-3 text-lg font-black text-ink">二级分类</h2>
         {cats.filter(c => c.is_active !== false).map((c, ci) => { const catId = String(c.id||""); const catSubs = subForCat(catId); const isOpen = !collapsed.has(catId) && (ci === 0 || collapsed.size <= ci); return (
-          <div key={catId} className="mb-3 last:mb-0 border border-stone-100 rounded-lg overflow-hidden">
-            <div className="flex items-center justify-between bg-stone-50 px-3 py-2 cursor-pointer" onClick={() => setCollapsed(prev => { const n = new Set(prev); if (n.has(catId)) n.delete(catId); else n.add(catId); return n; })}>
+          <div key={catId} className="mb-3 overflow-hidden rounded-2xl border border-stone-200 last:mb-0">
+            <div className="flex min-h-12 cursor-pointer items-center justify-between gap-3 bg-stone-50 px-3 py-2" onClick={() => setCollapsed(prev => { const n = new Set(prev); if (n.has(catId)) n.delete(catId); else n.add(catId); return n; })}>
               <h3 className="text-sm font-bold text-ink">{String(c.name_cn||c.name_en||c.slug)} <span className="text-xs text-stone-400 font-normal">({String(c.slug)}) — {catSubs.length} 个二级分类</span></h3>
               <div className="flex items-center gap-2">
-                <button className="rounded border border-stone-200 bg-white px-2 py-1 text-[11px] font-bold hover:bg-stone-100" onClick={e => { e.stopPropagation(); addSub(catId); }} type="button">+ 新增</button>
+                <button className="min-h-9 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-[11px] font-black hover:bg-stone-100" onClick={e => { e.stopPropagation(); addSub(catId); }} type="button">+ 新增</button>
                 <span className="text-xs text-stone-400">{isOpen ? "▲" : "▼"}</span>
               </div>
             </div>
@@ -1788,7 +1788,7 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
               <>
               <div className="grid gap-3 p-3 lg:hidden">
                 {catSubs.map((s) => { const gi = subs.findIndex(x => x === s); return (
-                  <div key={gi} className="rounded-xl border border-stone-100 bg-white p-3">
+                  <div key={gi} className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5">
                     <div className="mb-3 flex items-center justify-between gap-2">
                       <p className="min-w-0 truncate text-sm font-black text-ink">{String(s.name_cn || s.name_en || s.slug || "新二级分类")}</p>
                       <label className="flex shrink-0 items-center gap-1 text-xs font-bold text-stone-500">
@@ -1803,7 +1803,7 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
                       <label className="block text-xs font-bold text-stone-500">English<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(s.name_en||"")} onChange={e => updateSub(gi, "name_en", e.target.value)} /></label>
                       <label className="block text-xs font-bold text-stone-500 sm:col-span-2">Ελληνικά<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(s.name_gr||"")} onChange={e => updateSub(gi, "name_gr", e.target.value)} /></label>
                     </div>
-                    <button className="mt-3 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => removeSub(gi)} type="button">删除二级分类</button>
+                    <button className="mt-3 min-h-10 w-full rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600 hover:bg-red-50" onClick={() => removeSub(gi)} type="button">删除二级分类</button>
                   </div>
                 );})}
               </div>
@@ -1829,7 +1829,10 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
         );})}
       </div>
 
-      <button className="rounded-lg bg-ink px-8 py-3 text-sm font-bold text-white hover:bg-stone-800 transition self-start" onClick={save} disabled={loading}>保存全部</button>
+      <div className="admin-sticky-actions">
+        <button className="admin-button-primary w-full sm:w-auto" onClick={save} disabled={loading} type="button">保存全部分类</button>
+        <p className="text-xs font-bold text-stone-400">修改一级分类或二级分类后，请点击保存才会写入数据库。</p>
+      </div>
     </section>
   );
 }
