@@ -93,7 +93,7 @@ export function SiteHeader({
         <nav className="ui-container scrollbar-none flex snap-x gap-2 overflow-x-auto pb-3 pr-20 sm:pr-24 lg:justify-center lg:gap-1.5 xl:hidden">
           {categories.map((cat) => (
             <Link
-              className="shrink-0 snap-start rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-black text-stone-700 shadow-sm whitespace-nowrap transition hover:border-stone-300 active:scale-[0.98] lg:px-2.5 lg:text-xs"
+              className="inline-flex min-h-11 shrink-0 snap-start items-center rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-black text-stone-700 shadow-sm whitespace-nowrap transition hover:border-stone-300 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 lg:px-2.5 lg:text-xs"
               href={withLanguage(`/${cat.slug}`, language)}
               key={cat.slug}
             >
