@@ -74,29 +74,37 @@ export async function CategoryPage({
           </div>
         </div>
 
-        <nav className="scrollbar-none mb-6 flex gap-2 overflow-x-auto pb-2 sm:mb-7">
-          <Link
-            className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-black shadow-sm transition ${
-              !activeSubcategory ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink hover:border-stone-300"
-            }`}
-            href={categoryHref(category, language)}
-          >
-            {t.all}
-          </Link>
-          {subcategories.map((subcategory) => (
+        <div className="relative mb-6 sm:mb-7">
+          <nav className="scrollbar-none flex snap-x gap-2 overflow-x-auto pb-2 pr-8">
             <Link
-              className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-black shadow-sm transition ${
-                activeSubcategory === subcategory
-                  ? "border-ink bg-ink text-white"
-                  : "border-stone-200 bg-white text-ink hover:border-stone-300"
+              className={`min-h-11 shrink-0 snap-start rounded-full border px-4 py-2.5 text-sm font-black shadow-sm transition ${
+                !activeSubcategory ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink hover:border-stone-300"
               }`}
-              href={categoryHref(category, language, subcategory)}
-              key={subcategory}
+              href={categoryHref(category, language)}
             >
-              {subcategoryLabels[subcategory]?.[language] || subcategory}
+              {t.all}
             </Link>
-          ))}
-        </nav>
+            {subcategories.map((subcategory) => (
+              <Link
+                className={`min-h-11 shrink-0 snap-start rounded-full border px-4 py-2.5 text-sm font-black shadow-sm transition ${
+                  activeSubcategory === subcategory
+                    ? "border-ink bg-ink text-white"
+                    : "border-stone-200 bg-white text-ink hover:border-stone-300"
+                }`}
+                href={categoryHref(category, language, subcategory)}
+                key={subcategory}
+              >
+                {subcategoryLabels[subcategory]?.[language] || subcategory}
+              </Link>
+            ))}
+          </nav>
+          {subcategories.length > 3 ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute right-0 top-0 h-12 w-12 bg-gradient-to-l from-paper via-paper/85 to-transparent"
+            />
+          ) : null}
+        </div>
 
         {error ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
