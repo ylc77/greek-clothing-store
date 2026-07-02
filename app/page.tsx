@@ -50,21 +50,22 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     language === "en"
       ? settings.description_en
       : settings.description_gr || settings.description_en;
-  const heroImage = settings.hero_image_url || "";
+  const heroImage = settings.hero_image_url || "/images/category/women.svg";
 
   return (
     <main className="min-h-screen bg-paper">
       <SiteHeader language={language} settings={settings} />
 
       {/* ━━━ Hero ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <section className="mx-auto max-w-7xl px-4 pt-6 pb-10 sm:px-6 sm:pt-10 sm:pb-12 lg:py-16 lg:px-8">
-        <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14">
+      <section className="relative overflow-hidden border-b border-stone-200/70">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(183,95,61,0.08),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(100,115,74,0.10),transparent_34%)]" />
+        <div className="ui-container relative grid items-center gap-8 py-8 sm:py-12 lg:grid-cols-2 lg:gap-14 lg:py-16">
           {/* Left: text */}
           <div className="flex flex-col justify-center">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-olive">
+            <p className="ui-kicker">
               {t.eyebrow}
             </p>
-            <h1 className="mt-5 text-5xl font-black leading-[1.05] tracking-tight text-ink sm:text-6xl lg:text-7xl">
+            <h1 className="mt-5 text-5xl font-black leading-[0.98] tracking-tight text-ink sm:text-6xl lg:text-7xl">
               {siteName}
             </h1>
             <p className="mt-6 max-w-lg text-base leading-relaxed text-stone-500 sm:text-lg">
@@ -72,14 +73,14 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
-                className="inline-flex h-12 items-center rounded-full bg-ink px-7 text-sm font-bold text-white hover:bg-stone-800"
+                className="ui-button-primary"
                 href="#new-arrivals"
               >
                 {t.heroCTA}
               </Link>
               {settings.whatsapp ? (
                 <a
-                  className="inline-flex h-12 items-center rounded-full border border-stone-300 bg-white px-7 text-sm font-bold text-ink hover:border-ink hover:bg-stone-50"
+                  className="ui-button-secondary"
                   href={settings.whatsapp}
                   rel="noreferrer"
                   target="_blank"
@@ -95,7 +96,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             <div className="w-full max-w-lg">
               <SafeImage
                 alt={siteName}
-                className="aspect-[4/3] w-full rounded-2xl object-cover object-center shadow-2xl shadow-stone-900/10"
+                className="aspect-[4/3] w-full rounded-[1.75rem] object-cover object-center shadow-2xl shadow-stone-900/15 ring-1 ring-white/70"
                 fetchPriority="high"
                 loading="eager"
                 sizes="(max-width: 1024px) 100vw, 50vw"
@@ -107,10 +108,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       </section>
 
       {/* ━━━ Categories ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <section className="border-t border-stone-100 bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
+      <section className="bg-white">
+        <div className="ui-container py-14 sm:py-16">
           <div className="mb-10 text-center">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-olive">
+            <p className="ui-kicker">
               {t.categories}
             </p>
             <h2 className="mt-3 text-3xl font-black tracking-tight text-ink sm:text-4xl">
@@ -124,7 +125,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               return (
                 <Link
                   key={cat.slug}
-                  className="group relative overflow-hidden rounded-xl border border-stone-100 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-stone-900/5"
+                  className="group relative overflow-hidden rounded-2xl border border-stone-200/70 bg-white shadow-sm shadow-stone-900/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-stone-900/10"
                   href={withLanguage(`/${cat.slug}`, language)}
                 >
                   <div className="relative flex aspect-[3/4] items-center justify-center overflow-hidden bg-[#f3efe8]">
@@ -147,9 +148,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       </section>
 
       {/* ━━━ New Arrivals ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <section id="new-arrivals" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
+      <section id="new-arrivals" className="ui-container py-14 sm:py-16">
         <div className="mb-10 text-center">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-olive">
+          <p className="ui-kicker">
             {t.newArrivals}
           </p>
           <h2 className="mt-3 text-3xl font-black tracking-tight text-ink sm:text-4xl">
@@ -167,7 +168,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             {t.noProducts}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4 sm:gap-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4">
             {products.map((product) => (
               <ProductCard
                 key={product.sku}
@@ -180,7 +181,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
         <div className="mt-12 text-center">
           <Link
-            className="inline-flex h-11 items-center rounded-full border border-stone-300 bg-white px-8 text-sm font-bold text-ink hover:border-ink hover:bg-stone-50"
+            className="ui-button-secondary"
             href={withLanguage("/women", language)}
           >
             {t.browseCollection}

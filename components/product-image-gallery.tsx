@@ -26,7 +26,7 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
   if (!hasImages) {
     const t = text[(language || "el") as Language];
     return (
-      <div className="flex min-h-[320px] items-center justify-center rounded-md border border-dashed border-stone-300 bg-[#f5f5f3] text-sm text-stone-500 md:min-h-[680px]">
+      <div className="flex min-h-[340px] items-center justify-center rounded-2xl border border-dashed border-stone-300 bg-[#f5f1ea] text-sm font-bold text-stone-500 md:min-h-[680px]">
         {t.noImage}
       </div>
     );
@@ -34,13 +34,12 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
 
   return (
     <div className="flex flex-col gap-3 md:flex-row md:gap-4">
-      {/* Thumbnails — vertical on desktop (left), horizontal on mobile (below) */}
       {hasMultipleImages ? (
-        <div className="order-2 flex gap-2 overflow-x-auto pb-1 md:order-1 md:flex-col md:overflow-y-auto md:overflow-x-hidden md:pb-0 md:w-20 md:shrink-0 md:max-h-[680px]">
+        <div className="scrollbar-none order-2 flex snap-x gap-2 overflow-x-auto pb-1 md:order-1 md:max-h-[680px] md:w-20 md:shrink-0 md:flex-col md:overflow-x-hidden md:overflow-y-auto md:pb-0">
           {images.map((imageUrl, index) => (
             <button
               aria-label={`Show image ${index + 1}`}
-              className={`h-20 w-16 shrink-0 snap-start overflow-hidden rounded-md border bg-white transition md:h-24 md:w-20 ${
+              className={`h-20 w-16 shrink-0 snap-start overflow-hidden rounded-xl border bg-white shadow-sm transition md:h-24 md:w-20 ${
                 activeIndex === index ? "border-ink ring-2 ring-ink/15" : "border-stone-200 hover:border-stone-400"
               }`}
               key={`${imageUrl}-${index}`}
@@ -59,8 +58,7 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
         </div>
       ) : null}
 
-      {/* Main image */}
-      <div className="relative order-1 flex-1 overflow-hidden rounded-md border border-stone-200 bg-[#f5f5f3] min-h-[320px] md:min-h-[680px] md:order-2">
+      <div className="relative order-1 min-h-[340px] flex-1 overflow-hidden rounded-2xl border border-stone-200 bg-[#f5f1ea] shadow-sm shadow-stone-900/5 md:order-2 md:min-h-[680px]">
         <SafeImage
           alt={alt}
           className="h-full w-full object-contain object-center"
@@ -72,28 +70,39 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
 
         {hasMultipleImages ? (
           <>
-            <button
-              aria-label="Previous image"
-              className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-2xl font-bold text-ink shadow-sm transition hover:bg-white"
-              onClick={showPrevious}
-              type="button"
-            >
-              ‹
-            </button>
-            <button
-              aria-label="Next image"
-              className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-2xl font-bold text-ink shadow-sm transition hover:bg-white"
-              onClick={showNext}
-              type="button"
-            >
-              ›
-            </button>
-            <div className="absolute bottom-3 right-3 rounded-full bg-ink/80 px-3 py-1 text-xs font-bold text-white">
+            <GalleryButton label="Previous image" onClick={showPrevious} side="left" />
+            <GalleryButton label="Next image" onClick={showNext} side="right" />
+            <div className="absolute bottom-3 right-3 rounded-full bg-ink/85 px-3 py-1 text-xs font-black text-white shadow-sm">
               {activeIndex + 1} / {images.length}
             </div>
           </>
         ) : null}
       </div>
     </div>
+  );
+}
+
+function GalleryButton({
+  label,
+  onClick,
+  side,
+}: {
+  label: string;
+  onClick: () => void;
+  side: "left" | "right";
+}) {
+  return (
+    <button
+      aria-label={label}
+      className={`absolute top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-ink shadow-lg shadow-stone-900/10 backdrop-blur transition hover:bg-white ${
+        side === "left" ? "left-3" : "right-3"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      <svg aria-hidden="true" className={`h-5 w-5 ${side === "left" ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" viewBox="0 0 24 24">
+        <path d="M9 5l7 7-7 7" />
+      </svg>
+    </button>
   );
 }

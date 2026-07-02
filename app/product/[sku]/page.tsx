@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProductActions } from "@/components/product-actions";
@@ -114,7 +114,7 @@ export default async function ProductPage({
   const images = productImages(product);
   const description = productDescription(product, language);
   const stockQty = getTotalStock(product);
-  // Ensure size_stock survives server→client serialization
+  // Ensure size_stock survives server鈫抍lient serialization
   const ssRaw = (product as Record<string, unknown>).size_stock;
   const safeSizeStock: Record<string, number> | null =
     ssRaw && typeof ssRaw === "object" && !Array.isArray(ssRaw)
@@ -143,7 +143,7 @@ export default async function ProductPage({
       : null,
     isReal(product.brand) ? { label: t.brand, value: product.brand!.trim() } : null,
     isReal(ean) ? { label: t.ean, value: ean } : null,
-    isReal(product.material) ? { label: t.material, value: getLocalizedMaterial(product.material, language, (product as Record<string, unknown>).material_verified as boolean) || (language === "el" ? "—" : "—") } : null,
+    isReal(product.material) ? { label: t.material, value: getLocalizedMaterial(product.material, language, (product as Record<string, unknown>).material_verified as boolean) || "—" } : null,
     isReal(product.fit) ? { label: t.fit, value: product.fit!.trim() } : null,
     isReal(product.season) ? { label: t.season, value: product.season!.trim() } : null,
   ].filter(Boolean) as { label: string; value: string }[];
@@ -152,7 +152,7 @@ export default async function ProductPage({
     <main className="min-h-screen bg-paper">
       <SiteHeader language={language} settings={settings} />
 
-      <section className="mx-auto max-w-7xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <section className="ui-container py-4 sm:py-6">
         {/* Breadcrumb */}
         <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold text-stone-500 sm:mb-5 sm:text-sm">
           <Link
@@ -187,7 +187,7 @@ export default async function ProductPage({
           </div>
 
           {/* Right: info */}
-          <div className="flex flex-col">
+          <div className="flex flex-col rounded-3xl border border-stone-200/70 bg-white p-5 shadow-sm shadow-stone-900/5 sm:p-7 lg:sticky lg:top-28 lg:self-start">
             {/* SKU */}
             <p className="text-xs font-bold uppercase tracking-[0.15em] text-olive">
               {product.sku}
@@ -240,7 +240,7 @@ export default async function ProductPage({
 
             {/* Details (collapsible or always shown) */}
             {detailItems.length > 0 ? (
-              <div className="mt-6 border-t border-stone-100 pt-5">
+              <div className="mt-6 rounded-2xl border border-stone-200/70 bg-stone-50/70 p-4">
                 <h3 className="text-sm font-black text-ink">{t.details}</h3>
                 <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
                   {detailItems.map((d) => (

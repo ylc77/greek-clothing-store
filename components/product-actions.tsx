@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { text, type Language } from "@/lib/i18n";
@@ -124,7 +124,7 @@ export function ProductActions({ productName, productNameEn, productNameGr, sku,
           {t.viewSkroutz} ({t.outOfStockLabel})
         </button>
       ) : (
-        <a className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#2d7d46] px-6 py-3.5 text-sm font-black text-white shadow-sm transition hover:bg-[#236836] hover:shadow-md hover:-translate-y-0.5" href={skroutzHref} rel="noreferrer" target="_blank">
+        <a className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#2d7d46] px-6 py-3.5 text-sm font-black text-white shadow-sm shadow-green-900/10 transition hover:-translate-y-0.5 hover:bg-[#236836] hover:shadow-md" href={skroutzHref} rel="noreferrer" target="_blank">
           <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" /></svg>
           {t.viewSkroutz}
           <svg className="h-3.5 w-3.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M7 17L17 7M7 7h10v10" /></svg>

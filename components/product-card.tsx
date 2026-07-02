@@ -7,11 +7,12 @@ import type { Product } from "@/lib/types";
 export function ProductCard({ product, language }: { product: Product; language: Language }) {
   const t = text[language];
   const name = productName(product, language);
+  const stock = effectiveStock(product);
 
   return (
     <Link
       aria-label={name}
-      className="group flex flex-col overflow-hidden rounded-xl border border-stone-100 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-stone-900/5"
+      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-stone-200/70 bg-white shadow-sm shadow-stone-900/5 transition duration-300 hover:-translate-y-1 hover:border-stone-300 hover:shadow-xl hover:shadow-stone-900/10"
       href={withLanguage(`/product/${encodeURIComponent(product.sku)}`, language)}
     >
       <div className="relative overflow-hidden bg-[#f3efe8]">
@@ -22,19 +23,26 @@ export function ProductCard({ product, language }: { product: Product; language:
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
           src={product.image_url}
         />
+        <span
+          className={`absolute left-3 top-3 rounded-full px-3 py-1 text-[11px] font-black shadow-sm ${
+            stock > 0 ? "bg-white/90 text-ink" : "bg-stone-900/75 text-white"
+          }`}
+        >
+          {stock > 0 ? t.inStock : t.outOfStock}
+        </span>
       </div>
 
-      <div className="flex flex-1 flex-col justify-between gap-2 p-4">
-        <p className="line-clamp-2 text-sm font-bold leading-5 text-ink">
+      <div className="flex flex-1 flex-col justify-between gap-3 p-3 sm:p-4">
+        <p className="line-clamp-2 min-h-10 text-sm font-black leading-5 text-ink sm:text-[15px]">
           {name}
         </p>
-        <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
-          <p className="text-base font-black text-terracotta">
+        <div className="flex items-end justify-between gap-2">
+          <p className="text-lg font-black text-terracotta sm:text-xl">
             €{Number(product.price).toFixed(2)}
           </p>
-          <p className="text-[11px] font-medium text-stone-400">
-            {effectiveStock(product) > 0 ? t.inStock : t.outOfStock}
-          </p>
+          <span className="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-stone-500">
+            {product.category}
+          </span>
         </div>
       </div>
     </Link>

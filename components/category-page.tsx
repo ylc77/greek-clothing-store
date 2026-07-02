@@ -54,28 +54,30 @@ export async function CategoryPage({
     <main className="min-h-screen bg-paper">
       <SiteHeader language={language} settings={settings} />
 
-      <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-        <div className="mb-6 flex flex-col gap-4 border-b border-stone-200 pb-5 sm:mb-7 sm:flex-row sm:items-end sm:justify-between sm:pb-6">
-          <div>
-            <Link
-              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-black text-ink shadow-sm transition hover:border-stone-300 hover:bg-stone-50 hover:shadow active:scale-[0.98]"
-              href={withLanguage("/", language)}
-            >
-              <span aria-hidden="true">←</span>
-              {t.backHome}
-            </Link>
-            <p className="mt-4 text-sm font-black uppercase tracking-[0.18em] text-olive">{t.categories}</p>
-            <h1 className="mt-2 text-3xl font-black tracking-tight text-ink sm:text-5xl">{title}</h1>
+      <section className="ui-container py-6 sm:py-8">
+        <div className="mb-6 rounded-3xl border border-stone-200/70 bg-white p-5 shadow-sm shadow-stone-900/5 sm:mb-7 sm:p-7">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <Link
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-4 py-2 text-sm font-black text-ink shadow-sm transition hover:border-stone-300 hover:bg-white hover:shadow active:scale-[0.98]"
+                href={withLanguage("/", language)}
+              >
+                <span aria-hidden="true">←</span>
+                {t.backHome}
+              </Link>
+              <p className="ui-kicker mt-5">{t.categories}</p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight text-ink sm:text-5xl">{title}</h1>
+            </div>
+            <p className="w-fit rounded-full bg-stone-100 px-4 py-2 text-sm font-black text-stone-600">
+              {products.length} {t.items}
+            </p>
           </div>
-          <p className="text-sm font-bold text-stone-500">
-            {products.length} {t.items}
-          </p>
         </div>
 
-        <nav className="mb-6 flex gap-2 overflow-x-auto pb-2 sm:mb-7">
+        <nav className="scrollbar-none mb-6 flex gap-2 overflow-x-auto pb-2 sm:mb-7">
           <Link
-            className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black transition ${
-              !activeSubcategory ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink"
+            className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-black shadow-sm transition ${
+              !activeSubcategory ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink hover:border-stone-300"
             }`}
             href={categoryHref(category, language)}
           >
@@ -83,10 +85,10 @@ export async function CategoryPage({
           </Link>
           {subcategories.map((subcategory) => (
             <Link
-              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black transition ${
+              className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-black shadow-sm transition ${
                 activeSubcategory === subcategory
                   ? "border-ink bg-ink text-white"
-                  : "border-stone-200 bg-white text-ink"
+                  : "border-stone-200 bg-white text-ink hover:border-stone-300"
               }`}
               href={categoryHref(category, language, subcategory)}
               key={subcategory}
@@ -97,16 +99,16 @@ export async function CategoryPage({
         </nav>
 
         {error ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
             <strong>{t.cannotLoad}</strong>
             <p className="mt-2">{error}</p>
           </div>
         ) : products.length === 0 ? (
-          <div className="rounded-md border border-dashed border-stone-300 bg-white p-8 text-stone-600">
+          <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-10 text-center font-bold text-stone-500">
             {t.noCategoryProducts}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4">
             {products.map((product) => (
               <ProductCard key={product.sku} product={product} language={language} />
             ))}
