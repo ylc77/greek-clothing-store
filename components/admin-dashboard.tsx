@@ -1374,10 +1374,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <h2 className="mb-1 text-base font-black text-ink">尺码库存</h2>
               <p className="mb-3 text-xs text-stone-500">库存为 0 的尺码在前台显示为售罄。总库存由尺码库存自动计算。</p>
               {editingId && Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">该商品还没有尺码库存。旧总库存为 <b>{form.stock}</b>，sizes 为 "{form.sizes}"。请手动分配库存到各尺码后保存，保存后将自动计算总库存。</p> : null}
-              <div className="mb-3 flex flex-wrap gap-1.5">
-                {sizeOptionsForCategory(form.category).map(s => <button key={s} className="rounded border border-stone-200 px-2 py-1 text-[11px] font-bold hover:bg-stone-100" onClick={() => addSize(s)} type="button">{s}</button>)}
-                <button className="rounded border border-dashed border-stone-300 px-2 py-1 text-[11px] font-bold text-stone-400 hover:border-stone-400" onClick={toggleSizeSummary} type="button">查看 sizes 尺码库存</button>
-                {sizeKindForCategory(form.category) !== "one" ? <button className="rounded border border-dashed border-stone-300 px-2 py-1 text-[11px] font-bold text-stone-400 hover:border-stone-400" onClick={addCustomSize} type="button">+ 自定义</button> : null}
+              <div className="mb-3 flex flex-wrap gap-2">
+                {sizeOptionsForCategory(form.category).map(s => <button key={s} className="min-h-10 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black shadow-sm shadow-stone-900/5 hover:bg-stone-100" onClick={() => addSize(s)} type="button">{s}</button>)}
+                <button className="min-h-10 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-black text-stone-500 hover:border-stone-400" onClick={toggleSizeSummary} type="button">查看 sizes 尺码库存</button>
+                {sizeKindForCategory(form.category) !== "one" ? <button className="min-h-10 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-black text-stone-500 hover:border-stone-400" onClick={addCustomSize} type="button">+ 自定义</button> : null}
               </div>
               {/* Size summary (lightweight, no duplicate table) */}
               {showSizeSummary ? (
@@ -1480,11 +1480,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <p className="mt-1 text-xs text-stone-500">直接上传主图或多图，自动写入商品字段。</p>
                   <p className="mt-1 text-[10px] text-amber-700">Skroutz 要求图片至少一边 ≥ 1000px，建议 1200×1200 以上。</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">
+                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">
                       上传主图
                       <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" disabled={loading} onChange={e => { void uploadImages(e.target.files, { sku: form.sku, mode: "main" }); e.currentTarget.value = ""; }} type="file" />
                     </label>
-                    <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">
+                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">
                       上传多图
                       <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" disabled={loading} multiple onChange={e => { void uploadImages(e.target.files, { sku: form.sku, mode: "gallery" }); e.currentTarget.value = ""; }} type="file" />
                     </label>
@@ -1514,10 +1514,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="mb-4 rounded-lg border border-stone-200 bg-stone-50 p-4">
                   <p className="text-xs text-stone-500 mb-2">新商品图片会在保存时自动上传。</p>
                   <div className="flex flex-wrap gap-2">
-                    <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">从相册选择主图<input accept="image/jpeg,image/png,image/webp" className="hidden" type="file" onChange={e => setNewMainFile(e.target.files?.[0] || null)} /></label>
-                    <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">打开相机拍摄<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => setNewMainFile(e.target.files?.[0] || null)} /></label>
-                    <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-bold hover:bg-stone-50">选择多图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setNewGalleryFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
-                    {(newMainFile || newGalleryFiles.length > 0) ? <button className="rounded-lg border border-red-100 px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-50" onClick={() => { setNewMainFile(null); setNewGalleryFiles([]); }} type="button">清除</button> : null}
+                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">从相册选择主图<input accept="image/jpeg,image/png,image/webp" className="hidden" type="file" onChange={e => setNewMainFile(e.target.files?.[0] || null)} /></label>
+                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">打开相机拍摄<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => setNewMainFile(e.target.files?.[0] || null)} /></label>
+                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">选择多图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setNewGalleryFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
+                    {(newMainFile || newGalleryFiles.length > 0) ? <button className="min-h-11 rounded-xl border border-red-100 px-4 py-2.5 text-sm font-black text-red-500 hover:bg-red-50" onClick={() => { setNewMainFile(null); setNewGalleryFiles([]); }} type="button">清除</button> : null}
                   </div>
                   {newMainFile ? <p className="mt-2 text-xs text-stone-500">主图: {newMainFile.name}</p> : null}
                   {newGalleryFiles.length > 0 ? <p className="mt-1 text-xs text-stone-500">多图: {newGalleryFiles.map(f=>f.name).join(", ")}</p> : null}
@@ -1538,9 +1538,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
             {/* Save buttons — sticky at bottom */}
             <div className="admin-sticky-actions">
-              <div className="flex flex-wrap gap-3">
-                <button className="admin-button-primary" disabled={loading} type="submit">{editingId ? "保存修改" : "新增商品"}</button>
-                {editingId ? <button className="admin-button-secondary" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setTab("dashboard"); }} type="button">取消编辑</button> : null}
+              <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:gap-3">
+                <button className="admin-button-primary w-full sm:w-auto" disabled={loading} type="submit">{editingId ? "保存修改" : "新增商品"}</button>
+                {editingId ? <button className="admin-button-secondary w-full sm:w-auto" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setTab("dashboard"); }} type="button">取消编辑</button> : null}
               </div>
               <div className="flex flex-wrap gap-3">
                 {!form.sku.trim() ? <p className="text-xs text-amber-600">请填写 SKU</p> : null}
