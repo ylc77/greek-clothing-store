@@ -827,8 +827,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   /* ── Login gate ─────────────────────────────────────────── */
   if (!activePassword) {
     return (
-      <main className="min-h-screen bg-paper flex items-center justify-center px-4">
-        <section className="w-full max-w-sm rounded-xl border border-stone-200 bg-white p-8 shadow-sm text-center">
+      <main className="min-h-screen bg-gradient-to-br from-[#fbfaf6] via-white to-stone-100 flex items-center justify-center px-4 py-10">
+        <section className="w-full max-w-sm rounded-3xl border border-stone-200/80 bg-white p-8 text-center shadow-xl shadow-stone-900/10">
           <div className="mb-6">
             <svg className="mx-auto h-10 w-10 text-ink" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" /></svg>
           </div>
@@ -836,7 +836,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <p className="mt-2 text-sm text-stone-500">Fashion Store Admin</p>
           <form className="mt-6 space-y-4" onSubmit={e => { e.preventDefault(); setActivePassword(password); }}>
             <input className="input text-center" onChange={e => setPassword(e.target.value)} type="password" value={password} placeholder="管理密码" />
-            <button className="w-full rounded-lg bg-ink px-4 py-3 text-sm font-bold text-white hover:bg-stone-800">登录</button>
+            <button className="w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800">登录</button>
           </form>
         </section>
       </main>
@@ -845,10 +845,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
   /* ── Logged-in UI ────────────────────────────────────────── */
   return (
-    <main className="min-h-screen bg-paper">
-      <div className="mx-auto max-w-[96rem] px-4 py-6 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-gradient-to-b from-[#fbfaf6] via-white to-[#f6f1ea]">
+      <div className="mx-auto max-w-[96rem] px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
         {/* ── Top bar ────────────────────────────────────── */}
-        <header className="mb-6 flex flex-col gap-3 border-b border-stone-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <header className="mb-6 flex flex-col gap-4 rounded-3xl border border-stone-200/80 bg-white/95 p-4 shadow-sm shadow-stone-900/5 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div>
             <h1 className="text-2xl font-black text-ink">商品管理后台</h1>
             <p className="text-xs text-stone-400">管理商品、图片、库存、CSV 导入和 Skroutz Feed</p>
@@ -863,7 +863,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {/* ── Stats cards ────────────────────────────────── */}
         <div className="mb-6 grid grid-cols-3 gap-3 sm:grid-cols-6">
           {[{ label: "商品总数", v: stats.total, color: "bg-stone-500" }, { label: "已上架", v: stats.active, color: "bg-emerald-500" }, { label: "缺图片", v: stats.noImage, color: "bg-amber-400" }, { label: "库存为0", v: stats.noStock, color: "bg-rose-400" }, { label: "未分尺码", v: stats.noSizeStock, color: "bg-violet-400" }, { label: "分类数", v: stats.categories, color: "bg-sky-400" }].map(s => (
-            <div key={s.label} className="relative overflow-hidden rounded-xl border border-stone-100 bg-white p-4 shadow-sm">
+            <div key={s.label} className="relative overflow-hidden rounded-2xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5">
               <div className={`absolute top-0 left-0 w-1 h-full ${s.color} rounded-l-full`} />
               <p className="text-2xl font-black text-ink">{s.v}</p>
               <p className="mt-0.5 text-[11px] font-bold text-stone-400">{s.label}</p>
@@ -873,7 +873,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
         {/* ── Tab bar ─────────────────────────────────────── */}
         <nav className="mb-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-          <div className="rounded-xl border border-stone-100 bg-white p-2 shadow-sm">
+          <div className="rounded-2xl border border-stone-200/70 bg-white/95 p-2 shadow-sm shadow-stone-900/5">
             <p className="px-2 pb-1 text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">常用操作</p>
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
               {primaryTabKeys.map(key => (
@@ -888,7 +888,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               ))}
             </div>
           </div>
-          <div className="rounded-xl border border-stone-100 bg-white p-2 shadow-sm">
+          <div className="rounded-2xl border border-stone-200/70 bg-white/95 p-2 shadow-sm shadow-stone-900/5">
             <p className="px-2 pb-1 text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">管理工具</p>
             <div className="flex gap-1 overflow-x-auto">
               {managementTabKeys.map(key => (
@@ -907,7 +907,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
         {/* ── TAB: Launch check ─────────────────────────────── */}
         {tab === "quickAdd" ? (
-          <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+          <section className="admin-panel">
             <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 className="text-lg font-black text-ink">拍照快速上新</h2>
@@ -980,7 +980,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 {quickMainFile ? <p className="mt-2 truncate text-xs text-emerald-700">主图：{quickMainFile.name}</p> : <p className="mt-2 text-xs text-amber-600">还没有主图</p>}
                 <label className="mt-3 block cursor-pointer rounded-lg border border-stone-300 bg-white px-4 py-3 text-center text-sm font-bold text-ink hover:bg-stone-50">选择背面 / 细节图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setQuickBackFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
                 {quickBackFiles.length > 0 ? <p className="mt-2 text-xs text-stone-500">多图：{quickBackFiles.length} 张</p> : null}
-                <button className="mt-5 w-full rounded-lg bg-ink px-4 py-3 text-sm font-bold text-white hover:bg-stone-800 disabled:opacity-50" disabled={quickSaving || loading} type="submit">{quickSaving ? "保存中..." : "保存并上传图片"}</button>
+                <button className="mt-5 w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50" disabled={quickSaving || loading} type="submit">{quickSaving ? "保存中..." : "保存并上传图片"}</button>
                 <p className="mt-3 text-[11px] leading-relaxed text-stone-400">提示：不需要打印 SKU 标签。后台自动生成 SKU；实体店卖掉后用“快速售出”减库存。</p>
               </div>
             </form>
@@ -988,7 +988,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         ) : null}
 
         {tab === "quickSale" ? (
-          <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+          <section className="admin-panel">
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 className="text-lg font-black text-ink">快速售出减库存</h2>
@@ -1023,7 +1023,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
         {tab === "check" ? (
           <section className="flex flex-col gap-5">
-            <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <div className="admin-panel">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h2 className="text-lg font-black text-ink">商品上线检查</h2>
@@ -1053,7 +1053,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
             </div>
 
-            <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <div className="admin-panel">
               <h3 className="text-sm font-black text-ink">常见问题快速筛选</h3>
               <div className="mt-3 flex flex-wrap gap-2">
                 {[
@@ -1077,7 +1077,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
             </div>
 
-            <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <div className="admin-panel">
               <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h3 className="text-sm font-black text-ink">问题商品清单</h3>
@@ -1152,7 +1152,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
         {/* ── TAB: Dashboard ──────────────────────────────── */}
         {tab === "dashboard" ? (
-          <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+          <section className="admin-panel">
             {/* Health check */}
             <details className="mb-4 group">
               <summary className="cursor-pointer text-sm font-black text-ink hover:text-stone-600 select-none">商用上线检查</summary>
@@ -1247,7 +1247,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {tab === "add" ? (
           <form className="flex flex-col gap-5" onSubmit={submitProduct}>
             {/* Basic info card */}
-            <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <section className="admin-panel">
               <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <h2 className="text-base font-black text-ink">基础信息</h2>
                 <p className="text-xs font-bold text-stone-400">AI 补全后需要检查并点击保存才会写入数据库。</p>
@@ -1280,7 +1280,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </section>
 
             {/* Size-Stock card */}
-            <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <section className="admin-panel">
               <h2 className="mb-1 text-base font-black text-ink">尺码库存</h2>
               <p className="mb-3 text-xs text-stone-500">库存为 0 的尺码在前台显示为售罄。总库存由尺码库存自动计算。</p>
               {editingId && Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">该商品还没有尺码库存。旧总库存为 <b>{form.stock}</b>，sizes 为 "{form.sizes}"。请手动分配库存到各尺码后保存，保存后将自动计算总库存。</p> : null}
@@ -1323,7 +1323,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </section>
 
             {/* i18n card */}
-            <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <section className="admin-panel">
               <h2 className="mb-4 text-base font-black text-ink">多语言内容</h2>
               <div className="grid gap-3 lg:grid-cols-3">
                 <div className="space-y-3"><Field label="中文名"><input className="input" data-admin-field="name_cn" value={form.name_cn} onChange={e => updateField("name_cn", e.target.value)} /></Field><Field label="中文描述"><textarea className="input min-h-24" data-admin-field="description_cn" value={form.description_cn} onChange={e => updateField("description_cn", e.target.value)} /></Field></div>
@@ -1338,7 +1338,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </section>
 
             {/* AI 导购信息 card */}
-            <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <section className="admin-panel">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-black text-ink">AI 导购信息</h2>
                 <button className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiMetaLoading || !form.name_cn.trim() && !form.name_en.trim()} onClick={() => void generateAiMeta()} type="button">{aiMetaLoading ? "生成中..." : "自动生成 AI 导购信息"}</button>
@@ -1380,7 +1380,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </section>
 
             {/* Image & links card */}
-            <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <section className="admin-panel">
               <h2 className="mb-4 text-base font-black text-ink">图片与链接</h2>
 
               {/* Inline upload — only when editing */}
@@ -1463,7 +1463,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
         {/* ── TAB: CSV ────────────────────────────────────── */}
         {tab === "csv" ? (
-          <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+          <section className="admin-panel">
             <h2 className="mb-1 text-lg font-black text-ink">CSV 批量导入</h2>
             <p className="mb-4 text-xs text-stone-500">SKU 已存在则更新，不存在则新增。中文商品自动翻译英文和希腊语。</p>
             <div className="flex flex-wrap gap-2 mb-4">
@@ -1487,7 +1487,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {/* ── TAB: Bulk Images ──────────────────────────────── */}
         {tab === "images" ? (
           <section className="flex flex-col gap-5">
-            <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <div className="admin-panel">
               <h2 className="mb-1 text-lg font-black text-ink">选择商品上传</h2>
               <p className="mb-3 text-xs text-stone-500">用分类和搜索筛选商品，再上传主图或多图。Skroutz 建议图片最长边 1000-1600px。</p>
               <div className="mb-3 grid gap-2 md:grid-cols-4">
@@ -1501,7 +1501,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <label className="block"><span className="text-sm font-bold text-ink">上传多图</span><input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input mt-2" disabled={!selectedImageSku || loading} multiple onChange={e => { void uploadImages(e.target.files, { sku: selectedImageSku, mode: "gallery" }); e.currentTarget.value = ""; }} type="file" /></label>
               </div>
             </div>
-            <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <div className="admin-panel">
               <h2 className="mb-1 text-lg font-black text-ink">按文件名批量上传</h2>
               <p className="mb-3 text-xs text-stone-500">主图文件名：SKU.jpg，例如 women-shirts-001.jpg。多图文件名：SKU-1.jpg、SKU-2.jpg。上传后自动匹配 SKU 并写入商品图片字段。</p>
               <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input" disabled={loading} multiple onChange={e => { void uploadImages(e.target.files); e.currentTarget.value = ""; }} type="file" />
