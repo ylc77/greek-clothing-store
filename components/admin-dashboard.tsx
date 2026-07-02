@@ -1447,10 +1447,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </section>
 
             {/* Save buttons — sticky at bottom */}
-            <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-xl border border-stone-200 bg-white/95 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 shadow-md backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:p-4">
+            <div className="admin-sticky-actions">
               <div className="flex flex-wrap gap-3">
-                <button className="rounded-lg bg-ink px-10 py-3 text-sm font-bold text-white hover:bg-stone-800 shadow-sm" disabled={loading} type="submit">{editingId ? "保存修改" : "新增商品"}</button>
-                {editingId ? <button className="rounded-lg border border-stone-200 px-6 py-3 text-sm font-bold text-ink hover:bg-stone-50" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setTab("dashboard"); }} type="button">取消编辑</button> : null}
+                <button className="admin-button-primary" disabled={loading} type="submit">{editingId ? "保存修改" : "新增商品"}</button>
+                {editingId ? <button className="admin-button-secondary" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setTab("dashboard"); }} type="button">取消编辑</button> : null}
               </div>
               <div className="flex flex-wrap gap-3">
                 {!form.sku.trim() ? <p className="text-xs text-amber-600">请填写 SKU</p> : null}

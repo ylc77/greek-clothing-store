@@ -79,6 +79,18 @@ a {
   .admin-section-title {
     @apply text-base font-black text-ink;
   }
+
+  .admin-sticky-actions {
+    @apply sticky bottom-0 z-10 flex flex-col gap-3 rounded-2xl border border-stone-200/80 bg-white/95 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 shadow-lg shadow-stone-900/10 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:p-4;
+  }
+
+  .admin-button-primary {
+    @apply inline-flex min-h-11 items-center justify-center rounded-full bg-ink px-8 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50;
+  }
+
+  .admin-button-secondary {
+    @apply inline-flex min-h-11 items-center justify-center rounded-full border border-stone-200 bg-white px-6 text-sm font-black text-ink shadow-sm hover:bg-stone-50;
+  }
 }
 
 /* ── Refined transitions for all interactive elements ────── */
