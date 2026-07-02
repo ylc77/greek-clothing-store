@@ -1580,21 +1580,21 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <div className="admin-panel">
               <h2 className="mb-1 text-lg font-black text-ink">选择商品上传</h2>
               <p className="mb-3 text-xs text-stone-500">用分类和搜索筛选商品，再上传主图或多图。Skroutz 建议图片最长边 1000-1600px。</p>
-              <div className="mb-3 grid gap-2 md:grid-cols-4">
+              <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 <input className="input" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
                 <select className="input" value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部分类</option>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select>
                 <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoryList[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
               </div>
-              <div className="grid gap-3 md:grid-cols-[minmax(200px,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
-                <label className="block"><span className="text-sm font-bold text-ink">商品</span><select className="input mt-2" value={selectedImageSku} onChange={e => setSelectedImageSku(e.target.value)}><option value="">选择商品 SKU</option>{filteredProducts.map(p => <option key={p.id} value={p.sku}>{p.sku} - {p.name_cn || p.name_gr || p.name_en || "未命名"} - {p.category}/{p.subcategory}</option>)}</select></label>
-                <label className="block"><span className="text-sm font-bold text-ink">上传主图</span><input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input mt-2" disabled={!selectedImageSku || loading} onChange={e => { void uploadImages(e.target.files, { sku: selectedImageSku, mode: "main" }); e.currentTarget.value = ""; }} type="file" /></label>
-                <label className="block"><span className="text-sm font-bold text-ink">上传多图</span><input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input mt-2" disabled={!selectedImageSku || loading} multiple onChange={e => { void uploadImages(e.target.files, { sku: selectedImageSku, mode: "gallery" }); e.currentTarget.value = ""; }} type="file" /></label>
+              <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                <label className="block rounded-2xl border border-stone-200 bg-stone-50/70 p-3"><span className="text-sm font-bold text-ink">商品</span><select className="input mt-2" value={selectedImageSku} onChange={e => setSelectedImageSku(e.target.value)}><option value="">选择商品 SKU</option>{filteredProducts.map(p => <option key={p.id} value={p.sku}>{p.sku} - {p.name_cn || p.name_gr || p.name_en || "未命名"} - {p.category}/{p.subcategory}</option>)}</select></label>
+                <label className="block rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5"><span className="text-sm font-black text-ink">上传主图</span><span className="mt-1 block text-[11px] font-bold text-stone-400">会替换当前主图</span><input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input mt-2 min-h-12" disabled={!selectedImageSku || loading} onChange={e => { void uploadImages(e.target.files, { sku: selectedImageSku, mode: "main" }); e.currentTarget.value = ""; }} type="file" /></label>
+                <label className="block rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5"><span className="text-sm font-black text-ink">上传多图</span><span className="mt-1 block text-[11px] font-bold text-stone-400">背面图、细节图会追加到轮播</span><input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input mt-2 min-h-12" disabled={!selectedImageSku || loading} multiple onChange={e => { void uploadImages(e.target.files, { sku: selectedImageSku, mode: "gallery" }); e.currentTarget.value = ""; }} type="file" /></label>
               </div>
             </div>
             <div className="admin-panel">
               <h2 className="mb-1 text-lg font-black text-ink">按文件名批量上传</h2>
               <p className="mb-3 text-xs text-stone-500">主图文件名：SKU.jpg，例如 women-shirts-001.jpg。多图文件名：SKU-1.jpg、SKU-2.jpg。上传后自动匹配 SKU 并写入商品图片字段。</p>
-              <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input" disabled={loading} multiple onChange={e => { void uploadImages(e.target.files); e.currentTarget.value = ""; }} type="file" />
+              <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input min-h-12" disabled={loading} multiple onChange={e => { void uploadImages(e.target.files); e.currentTarget.value = ""; }} type="file" />
             </div>
             {imageResults.length > 0 ? <ResultTable results={imageResults} /> : null}
           </section>
