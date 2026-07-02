@@ -996,23 +996,27 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
               <button className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50" disabled={loading} onClick={() => void loadProducts()} type="button">刷新库存</button>
             </div>
-            <div className="mb-4 grid gap-2 md:grid-cols-3">
+            <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               <input className="input" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
               <select className="input" value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部分类</option>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select>
               <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoryList[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {filteredProducts.filter(p => p.is_active && effectiveStock(p) > 0).slice(0, 80).map(product => {
                 const raw = product as Record<string, unknown>;
                 const stockBySize = raw.size_stock && typeof raw.size_stock === "object" && !Array.isArray(raw.size_stock) ? raw.size_stock as Record<string, number> : null;
                 return (
-                  <article className="rounded-xl border border-stone-100 bg-stone-50 p-3" key={product.id}>
+                  <article className="rounded-2xl border border-stone-200/80 bg-white p-3 shadow-sm shadow-stone-900/5" key={product.id}>
                     <div className="flex gap-3">
-                      {product.image_url ? <img alt="" className="h-20 w-16 rounded-lg object-cover" src={product.image_url} /> : <div className="h-20 w-16 rounded-lg bg-stone-200" />}
-                      <div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-ink">{product.name_cn || product.name_en || product.name_gr || product.sku}</p><p className="mt-1 truncate text-[11px] font-bold text-stone-400">{product.sku}</p><p className="mt-1 text-xs font-bold text-emerald-700">库存 {effectiveStock(product)}</p></div>
+                      {product.image_url ? <img alt="" className="h-24 w-20 rounded-xl object-cover" src={product.image_url} /> : <div className="h-24 w-20 rounded-xl bg-stone-200" />}
+                      <div className="min-w-0 flex-1">
+                        <p className="line-clamp-2 text-sm font-black leading-snug text-ink">{product.name_cn || product.name_en || product.name_gr || product.sku}</p>
+                        <p className="mt-1 truncate text-[11px] font-bold text-stone-400">{product.sku}</p>
+                        <p className="mt-2 inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700">库存 {effectiveStock(product)}</p>
+                      </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {stockBySize ? sortSizeKeys(Object.keys(stockBySize)).map(size => <button className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-ink hover:bg-stone-100 disabled:opacity-40" disabled={(stockBySize[size] || 0) <= 0 || sellingSku === `${product.sku}:${size}`} key={size} onClick={() => void sellOne(product, size)} type="button">{size} -1 <span className="text-stone-400">({stockBySize[size] || 0})</span></button>) : <button className="w-full rounded-lg bg-ink px-4 py-2 text-xs font-bold text-white hover:bg-stone-800 disabled:opacity-50" disabled={sellingSku === `${product.sku}:`} onClick={() => void sellOne(product)} type="button">售出 1 件</button>}
+                      {stockBySize ? sortSizeKeys(Object.keys(stockBySize)).map(size => <button className="min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-xs font-black text-ink hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-40" disabled={(stockBySize[size] || 0) <= 0 || sellingSku === `${product.sku}:${size}`} key={size} onClick={() => void sellOne(product, size)} type="button">{size} -1 <span className="text-stone-400">({stockBySize[size] || 0})</span></button>) : <button className="min-h-11 w-full rounded-xl bg-ink px-4 py-2.5 text-xs font-black text-white hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50" disabled={sellingSku === `${product.sku}:`} onClick={() => void sellOne(product)} type="button">售出 1 件</button>}
                     </div>
                   </article>
                 );
