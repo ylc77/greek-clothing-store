@@ -13,6 +13,8 @@ import { getSupabaseClient } from "@/lib/supabase";
 import { getTotalStock } from "@/lib/product-stock";
 import type { Product, ProductCategory, ProductSubcategory } from "@/lib/types";
 import { siteUrl } from "@/lib/site";
+import { unstable_cache } from "next/cache";
+import { cacheTags } from "@/lib/cache-tags";
 
 /* ── Category paths (English, used in Skroutz feed) ─────────── */
 export const categoryPathEn: Record<ProductCategory, string> = {
@@ -93,16 +95,47 @@ function isAbsoluteHttpUrl(value: string | null | undefined) {
 }
 
 /* ── Data fetching ─────────────────────────────────────────── */
-export async function getFeedProducts(): Promise<Product[]> {
+const FEED_PRODUCT_SELECT = [
+  "id",
+  "sku",
+  "name_cn",
+  "name_gr",
+  "name_en",
+  "description_cn",
+  "description_gr",
+  "description_en",
+  "category",
+  "subcategory",
+  "price",
+  "stock",
+  "size_stock",
+  "sizes",
+  "image_url",
+  "image_urls",
+  "additional_image_urls",
+  "brand",
+  "barcode",
+  "ean",
+  "vat",
+  "color",
+  "mpn",
+  "availability",
+  "category_path_en",
+  "category_path_gr",
+  "is_active",
+  "created_at",
+].join(",");
+
+async function getFeedProductsRaw(): Promise<Product[]> {
   const supabase = getSupabaseClient();
   if (!supabase) return [];
   const { data } = await supabase
     .from("products")
-    .select("*")
+    .select(FEED_PRODUCT_SELECT)
     .or("is_active.is.null,is_active.eq.true")
     .gte("stock", 0)
     .order("created_at", { ascending: false });
-  const products = (data || []) as Product[];
+  const products = (data || []) as unknown as Product[];
   return products.filter(p => {
     const sku = p.sku.trim().toUpperCase();
     return !(
@@ -114,6 +147,16 @@ export async function getFeedProducts(): Promise<Product[]> {
       sku.startsWith("DEMO_")
     );
   });
+}
+
+const getFeedProductsCached = unstable_cache(
+  getFeedProductsRaw,
+  ["feed-products"],
+  { revalidate: 300, tags: [cacheTags.products] },
+);
+
+export async function getFeedProducts(): Promise<Product[]> {
+  return getFeedProductsCached();
 }
 
 /* ── Feed builder: Skroutz / MyWebstore ───────────────────── */

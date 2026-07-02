@@ -5,6 +5,7 @@ import {
   type AdminProductPayload,
   type ProductMutation,
 } from "@/lib/admin-products";
+import { invalidateProductsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { batchTranslateRows } from "@/lib/translate";
 
@@ -202,6 +203,10 @@ export async function POST(request: NextRequest) {
   }
 
   results.sort((a, b) => a.rowNumber - b.rowNumber);
+
+  if (results.some((result) => result.ok) && rowsToUpsert.length > 0) {
+    invalidateProductsCache();
+  }
 
   const translatedCount = results.filter((result) => result.translated).length;
   const translateFailureCount = results.filter(

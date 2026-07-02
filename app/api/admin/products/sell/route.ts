@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid, productForForm } from "@/lib/admin-products";
+import { invalidateProductsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { Product } from "@/lib/types";
 
@@ -94,6 +95,8 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  invalidateProductsCache(rawProduct.sku);
 
   return NextResponse.json({
     ok: true,

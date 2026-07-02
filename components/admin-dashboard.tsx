@@ -10,7 +10,7 @@ import {
   type ProductCategory,
   type ProductFormData,
 } from "@/lib/types";
-import { effectiveStock } from "@/lib/products";
+import { getTotalStock as effectiveStock } from "@/lib/product-stock";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/components/admin-toast";
 

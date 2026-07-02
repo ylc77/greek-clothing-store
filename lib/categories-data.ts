@@ -3,6 +3,8 @@
  * falls back to hardcoded categories if table doesn't exist yet.
  */
 
+import { unstable_cache } from "next/cache";
+import { cacheTags } from "@/lib/cache-tags";
 import { getSupabaseClient } from "@/lib/supabase";
 import type { ProductCategory } from "@/lib/types";
 
@@ -18,18 +20,17 @@ export interface DbSubcategory {
 type CatMap = Record<string, DbCategory>;
 type SubMap = Record<string, DbSubcategory[]>;
 
-let cached: { cats: CatMap; subs: SubMap } | null = null;
-let cacheTime = 0;
+const CATEGORY_SELECT = "id,slug,name_cn,name_en,name_gr,image_url,sort_order,is_active";
+const SUBCATEGORY_SELECT = "id,category_id,slug,name_cn,name_en,name_gr,sort_order,is_active";
 
-export async function loadCategories(): Promise<{ cats: CatMap; subs: SubMap }> {
-  if (cached && Date.now() - cacheTime < 60000) return cached;
+async function loadCategoriesRaw(): Promise<{ cats: CatMap; subs: SubMap }> {
   const supabase = getSupabaseClient();
   if (!supabase) return { cats: {}, subs: {} };
 
   try {
     const [cr, sr] = await Promise.all([
-      (supabase as any).from("product_categories").select("*").eq("is_active", true).order("sort_order"),
-      (supabase as any).from("product_subcategories").select("*").eq("is_active", true).order("sort_order"),
+      (supabase as any).from("product_categories").select(CATEGORY_SELECT).eq("is_active", true).order("sort_order"),
+      (supabase as any).from("product_subcategories").select(SUBCATEGORY_SELECT).eq("is_active", true).order("sort_order"),
     ]);
     const cats: CatMap = {};
     if (cr.data) for (const c of cr.data) cats[c.slug] = c as DbCategory;
@@ -39,10 +40,18 @@ export async function loadCategories(): Promise<{ cats: CatMap; subs: SubMap }> 
       if (!subs[slug]) subs[slug] = [];
       subs[slug].push(s as DbSubcategory);
     }
-    cached = { cats, subs };
-    cacheTime = Date.now();
-    return cached;
+    return { cats, subs };
   } catch { return { cats: {}, subs: {} }; }
+}
+
+const loadCategoriesCached = unstable_cache(
+  loadCategoriesRaw,
+  ["product-categories"],
+  { revalidate: 3600, tags: [cacheTags.categories] },
+);
+
+export async function loadCategories(): Promise<{ cats: CatMap; subs: SubMap }> {
+  return loadCategoriesCached();
 }
 
 export function getCategoryLabel(cat: DbCategory | undefined, lang: "el" | "en", fallback: string): string {

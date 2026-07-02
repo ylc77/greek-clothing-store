@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid } from "@/lib/admin-products";
+import { invalidateSettingsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
-import { clearSettingsCache, getBusinessSettings } from "@/lib/settings";
+import { getBusinessSettings, getBusinessSettingsUncached } from "@/lib/settings";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -74,7 +75,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  clearSettingsCache();
-  const settings = await getBusinessSettings();
+  invalidateSettingsCache();
+  const settings = await getBusinessSettingsUncached();
   return NextResponse.json(settings);
 }

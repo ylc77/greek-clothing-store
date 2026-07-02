@@ -1,7 +1,7 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
-import { SafeImage } from "@/components/safe-image";
 import { text, type Language } from "@/lib/i18n";
 
 type ProductImageGalleryProps = {
@@ -46,12 +46,15 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
               onClick={() => setActiveIndex(index)}
               type="button"
             >
-              <SafeImage
+              <Image
                 alt={`${alt} ${index + 1}`}
                 className="h-full w-full object-cover"
                 loading="lazy"
                 sizes="80px"
                 src={imageUrl}
+                width={80}
+                height={96}
+                unoptimized={isSvg(imageUrl)}
               />
             </button>
           ))}
@@ -59,13 +62,14 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
       ) : null}
 
       <div className="relative order-1 min-h-[360px] flex-1 overflow-hidden rounded-2xl border border-stone-200 bg-[#f5f1ea] shadow-sm shadow-stone-900/5 md:order-2 md:min-h-[680px]">
-        <SafeImage
+        <Image
           alt={alt}
-          className="h-full w-full object-contain object-center"
-          fetchPriority="high"
-          loading="eager"
+          className="object-contain object-center"
+          fill
+          priority
           sizes="(max-width: 768px) 100vw, 50vw"
           src={images[activeIndex]}
+          unoptimized={isSvg(images[activeIndex])}
         />
 
         {hasMultipleImages ? (
@@ -80,6 +84,10 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
       </div>
     </div>
   );
+}
+
+function isSvg(src: string) {
+  return /\.svg($|\?)/i.test(src);
 }
 
 function GalleryButton({

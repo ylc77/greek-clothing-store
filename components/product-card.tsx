@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { SafeImage } from "@/components/safe-image";
+import { OptimizedImage } from "@/components/optimized-image";
 import { productName, text, withLanguage, type Language } from "@/lib/i18n";
-import { effectiveStock } from "@/lib/products";
+import { getTotalStock as effectiveStock } from "@/lib/product-stock";
 import type { Product } from "@/lib/types";
 
 export function ProductCard({ product, language }: { product: Product; language: Language }) {
@@ -15,11 +15,12 @@ export function ProductCard({ product, language }: { product: Product; language:
       className="group flex h-full flex-col overflow-hidden rounded-2xl border border-stone-200/70 bg-white shadow-sm shadow-stone-900/5 transition duration-300 hover:-translate-y-1 hover:border-stone-300 hover:shadow-xl hover:shadow-stone-900/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2"
       href={withLanguage(`/product/${encodeURIComponent(product.sku)}`, language)}
     >
-      <div className="relative overflow-hidden bg-[#f3efe8]">
-        <SafeImage
+      <div className="relative aspect-[3/4] overflow-hidden bg-[#f3efe8]">
+        <OptimizedImage
           alt={name}
-          className="aspect-[3/4] w-full object-cover object-center transition duration-500 group-hover:scale-[1.04]"
-          loading="lazy"
+          className="absolute inset-0"
+          fill
+          imageClassName="object-cover object-center transition duration-500 group-hover:scale-[1.04]"
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
           src={product.image_url}
         />

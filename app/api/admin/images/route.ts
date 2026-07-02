@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid } from "@/lib/admin-products";
+import { invalidateProductsCache } from "@/lib/cache";
 import {
   productImagesBucket,
   removeStoragePaths,
@@ -180,6 +181,7 @@ export async function POST(request: NextRequest) {
   const selectedMode = stringValue(formData.get("mode"));
   const selectedUploadMode = selectedMode === "main" || selectedMode === "gallery" ? selectedMode : "";
   const results: ImageResult[] = [];
+  const changedSkus = new Set<string>();
 
   for (const [fileIndex, file] of files.entries()) {
     const fileName = file.name.trim();
@@ -255,7 +257,7 @@ export async function POST(request: NextRequest) {
     const storagePath = storagePathFor(sku, galleryIndex);
     const { error: uploadError } = await supabase.storage.from(productImagesBucket).upload(storagePath, webpBuffer, {
       upsert: true,
-      cacheControl: "0",
+      cacheControl: "31536000",
       contentType: webpContentType
     });
 
@@ -296,6 +298,8 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
+    changedSkus.add(sku);
+
     const baseMsg = galleryIndex === null ? "Main image" : "Gallery image";
     const dimMsg = imgW > 0 && imgH > 0 ? `${imgW}×${imgH}` : "";
     results.push({
@@ -305,6 +309,10 @@ export async function POST(request: NextRequest) {
       message: [baseMsg, dimMsg, sizeWarning].filter(Boolean).join(" · "),
       imageUrl
     });
+  }
+
+  if (changedSkus.size > 0) {
+    for (const sku of changedSkus) invalidateProductsCache(sku);
   }
 
   return NextResponse.json({
@@ -356,6 +364,8 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    invalidateProductsCache(sku);
+
     return NextResponse.json({ ok: true });
   }
 
@@ -374,6 +384,8 @@ export async function DELETE(request: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  invalidateProductsCache(sku);
 
   return NextResponse.json({ ok: true });
 }

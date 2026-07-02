@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid } from "@/lib/admin-products";
+import { invalidateProductsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 function unauthorized() {
@@ -29,6 +30,8 @@ export async function PUT(request: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  invalidateProductsCache();
 
   return NextResponse.json({
     ok: true,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { text, type Language } from "@/lib/i18n";
 
@@ -173,7 +174,18 @@ export function ChatAssistant({
 
       {productContext ? (
         <div className="mx-3 mt-2 flex shrink-0 gap-2 rounded-xl border border-violet-100 bg-violet-50/50 p-2 sm:mx-4 sm:mt-3 sm:gap-3 sm:p-3">
-          {productContext.imageUrl ? <img alt="" className="h-12 w-9 rounded-lg object-cover sm:h-16 sm:w-12" src={String(productContext.imageUrl)} /> : null}
+          {productContext.imageUrl ? (
+            <Image
+              alt=""
+              className="h-12 w-9 rounded-lg object-cover sm:h-16 sm:w-12"
+              height={64}
+              loading="lazy"
+              sizes="48px"
+              src={String(productContext.imageUrl)}
+              unoptimized={isSvg(String(productContext.imageUrl))}
+              width={48}
+            />
+          ) : null}
           <div className="min-w-0 flex-1">
             <p className="text-[9px] font-bold uppercase text-violet-600 sm:text-[10px]">{t.aiProductLabel}</p>
             <p className="mt-0.5 line-clamp-1 text-[11px] font-bold text-ink sm:text-xs">
@@ -212,7 +224,18 @@ export function ChatAssistant({
             </div>
             {message.products?.map((product) => (
               <Link key={product.sku} href={product.url} className="mt-2 block flex gap-3 rounded-xl border border-stone-100 bg-white p-3 transition hover:shadow-sm">
-                {product.image_url ? <img alt="" className={`rounded-lg object-cover ${isWide ? "h-24 w-16" : "h-20 w-14"}`} src={product.image_url} /> : null}
+                {product.image_url ? (
+                  <Image
+                    alt=""
+                    className={`rounded-lg object-cover ${isWide ? "h-24 w-16" : "h-20 w-14"}`}
+                    height={96}
+                    loading="lazy"
+                    sizes="64px"
+                    src={product.image_url}
+                    unoptimized={isSvg(product.image_url)}
+                    width={64}
+                  />
+                ) : null}
                 <div className="min-w-0 flex-1">
                   <p className={`line-clamp-1 font-bold text-ink ${isWide ? "text-sm" : "text-xs"}`}>{productName(product)}</p>
                   <p className="text-xs text-stone-500">€{product.price.toFixed(2)} · {product.sizes || "—"}</p>
@@ -241,4 +264,8 @@ export function ChatAssistant({
       </div>
     </div>
   );
+}
+
+function isSvg(src: string) {
+  return /\.svg($|\?)/i.test(src);
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid } from "@/lib/admin-products";
+import { invalidateCategoriesCache, invalidateProductsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 function unauth() { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
@@ -40,6 +41,9 @@ export async function PUT(request: NextRequest) {
       await (supabase as any).from("product_subcategories").upsert(s.id ? { id: s.id, ...payload } : payload, { onConflict: s.id ? "id" : "category_id,slug" });
     }
   }
+
+  invalidateCategoriesCache();
+  invalidateProductsCache();
 
   return NextResponse.json({ ok: true });
 }

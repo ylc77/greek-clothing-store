@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
 
   const { data: uploadData, error: uploadError } = await supabase.storage
     .from(bucket)
-    .upload(path, buffer, { contentType, upsert: true });
+    .upload(path, buffer, { contentType, cacheControl: "31536000", upsert: true });
 
   if (uploadError) {
     return NextResponse.json({ error: uploadError.message }, { status: 500 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid } from "@/lib/admin-products";
+import { invalidateProductsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 function unauthorized() {
@@ -24,6 +25,8 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
   // Delete from database
   const { error } = await (supabase as any).from("products").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  invalidateProductsCache(product?.sku as string | undefined);
 
   // Try to clean up storage images (non-blocking)
   if (product) {

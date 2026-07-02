@@ -1,3 +1,6 @@
+import { unstable_cache } from "next/cache";
+import { cacheTags } from "@/lib/cache-tags";
+import { getTotalStock } from "@/lib/product-stock";
 import { getSupabaseClient } from "./supabase";
 import { isProductSubcategory, type Product, type ProductCategory } from "./types";
 
@@ -6,10 +9,65 @@ export type ProductsResult = {
   error: string | null;
 };
 
-import { getTotalStock } from "@/lib/product-stock";
-
 /** @deprecated Use getTotalStock from lib/product-stock.ts instead */
 export const effectiveStock = getTotalStock;
+
+const PRODUCT_LIST_SELECT = [
+  "id",
+  "sku",
+  "name_cn",
+  "name_gr",
+  "name_en",
+  "category",
+  "subcategory",
+  "price",
+  "stock",
+  "sizes",
+  "size_stock",
+  "image_url",
+  "image_urls",
+  "is_active",
+  "created_at",
+].join(",");
+
+const PRODUCT_DETAIL_SELECT = [
+  "id",
+  "sku",
+  "name_cn",
+  "name_gr",
+  "name_en",
+  "description_cn",
+  "description_gr",
+  "description_en",
+  "category",
+  "subcategory",
+  "price",
+  "stock",
+  "sizes",
+  "size_stock",
+  "image_url",
+  "image_urls",
+  "brand",
+  "barcode",
+  "ean",
+  "vat",
+  "color",
+  "additional_image_urls",
+  "skroutz_url",
+  "material",
+  "fit",
+  "season",
+  "mpn",
+  "availability",
+  "category_path_en",
+  "category_path_gr",
+  "size_chart",
+  "fit_type",
+  "material_verified",
+  "is_active",
+  "updated_at",
+  "created_at",
+].join(",");
 
 function normalizeSlug(value: string) {
   return value.trim().toLowerCase();
@@ -37,7 +95,7 @@ function mapProduct(product: Product): Product {
   };
 }
 
-export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
+async function getLatestProductsRaw(limit = 8): Promise<ProductsResult> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     return {
@@ -48,7 +106,7 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
 
   const { data, error } = await supabase
     .from("products")
-    .select("*")
+    .select(PRODUCT_LIST_SELECT)
     .or("is_active.is.null,is_active.eq.true")
     .gte("stock", 0)
     .order("created_at", { ascending: false })
@@ -58,12 +116,23 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
     return { products: [], error: error.message };
   }
 
-  const filtered = (data || []).filter((p: Product) => !isClearlyTestProduct(p));
+  const rows = (data || []) as unknown as Product[];
+  const filtered = rows.filter((p) => !isClearlyTestProduct(p));
 
   return { products: filtered.slice(0, limit).map(mapProduct), error: null };
 }
 
-export async function getProductsByCategory(
+const getLatestProductsCached = unstable_cache(
+  getLatestProductsRaw,
+  ["latest-products"],
+  { revalidate: 300, tags: [cacheTags.products] },
+);
+
+export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
+  return getLatestProductsCached(limit);
+}
+
+async function getProductsByCategoryRaw(
   category: ProductCategory,
   subcategory?: string
 ): Promise<ProductsResult> {
@@ -80,7 +149,7 @@ export async function getProductsByCategory(
 
   let query = supabase
     .from("products")
-    .select("*")
+    .select(PRODUCT_LIST_SELECT)
     .ilike("category", normalizedCategory)
     .or("is_active.is.null,is_active.eq.true")
     .gte("stock", 0)
@@ -97,12 +166,26 @@ export async function getProductsByCategory(
     return { products: [], error: error.message };
   }
 
-  const filtered = (data || []).filter((p: Product) => !isClearlyTestProduct(p));
+  const rows = (data || []) as unknown as Product[];
+  const filtered = rows.filter((p) => !isClearlyTestProduct(p));
 
   return { products: filtered.map(mapProduct), error: null };
 }
 
-export async function getProductBySku(sku: string): Promise<{ product: Product | null; error: string | null }> {
+const getProductsByCategoryCached = unstable_cache(
+  getProductsByCategoryRaw,
+  ["products-by-category"],
+  { revalidate: 300, tags: [cacheTags.products] },
+);
+
+export async function getProductsByCategory(
+  category: ProductCategory,
+  subcategory?: string
+): Promise<ProductsResult> {
+  return getProductsByCategoryCached(category, subcategory);
+}
+
+async function getProductBySkuRaw(sku: string): Promise<{ product: Product | null; error: string | null }> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     return {
@@ -113,7 +196,7 @@ export async function getProductBySku(sku: string): Promise<{ product: Product |
 
   const { data, error } = await supabase
     .from("products")
-    .select("*")
+    .select(PRODUCT_DETAIL_SELECT)
     .eq("sku", sku)
     .or("is_active.is.null,is_active.eq.true")
     .maybeSingle();
@@ -122,7 +205,17 @@ export async function getProductBySku(sku: string): Promise<{ product: Product |
     return { product: null, error: error.message };
   }
 
-  return { product: data ? mapProduct(data as Product) : null, error: null };
+  return { product: data ? mapProduct(data as unknown as Product) : null, error: null };
+}
+
+const getProductBySkuCached = unstable_cache(
+  getProductBySkuRaw,
+  ["product-by-sku"],
+  { revalidate: 300, tags: [cacheTags.products, cacheTags.product] },
+);
+
+export async function getProductBySku(sku: string): Promise<{ product: Product | null; error: string | null }> {
+  return getProductBySkuCached(sku);
 }
 
 /** Static category cover images — independent of product uploads. */

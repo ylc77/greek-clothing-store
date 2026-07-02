@@ -6,6 +6,8 @@
  * breaks — deploy the SQL migration first, then re-deploy the app.
  */
 
+import { unstable_cache } from "next/cache";
+import { cacheTags } from "@/lib/cache-tags";
 import { getSupabaseClient } from "@/lib/supabase";
 
 export type BusinessSettings = {
@@ -50,26 +52,39 @@ const defaults: BusinessSettings = {
   feed_min_stock: 1,
 };
 
-let cached: BusinessSettings | null = null;
-let cacheTime = 0;
-const TTL = 30_000; // 30 seconds
+const SETTINGS_SELECT = [
+  "id",
+  "business_name",
+  "logo_url",
+  "hero_image_url",
+  "description_cn",
+  "description_en",
+  "description_gr",
+  "phone",
+  "whatsapp",
+  "instagram",
+  "facebook",
+  "tiktok",
+  "address",
+  "google_maps_url",
+  "opening_hours",
+  "footer_text",
+  "enable_skroutz",
+  "feed_min_stock",
+].join(",");
 
-export async function getBusinessSettings(): Promise<BusinessSettings> {
-  if (cached && Date.now() - cacheTime < TTL) return cached;
-
+async function loadBusinessSettings(): Promise<BusinessSettings> {
   const supabase = getSupabaseClient();
   if (!supabase) return defaults;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (supabase as any)
     .from("business_settings")
-    .select("*")
+    .select(SETTINGS_SELECT)
     .limit(1)
     .single();
 
   if (!data) {
-    cached = defaults;
-    cacheTime = Date.now();
     return defaults;
   }
 
@@ -94,13 +109,25 @@ export async function getBusinessSettings(): Promise<BusinessSettings> {
     feed_min_stock: Math.max(1, Number(data.feed_min_stock || defaults.feed_min_stock)),
   };
 
-  cached = settings;
-  cacheTime = Date.now();
   return settings;
+}
+
+const getBusinessSettingsCached = unstable_cache(
+  loadBusinessSettings,
+  ["business-settings"],
+  { revalidate: 3600, tags: [cacheTags.settings] },
+);
+
+export async function getBusinessSettings(): Promise<BusinessSettings> {
+  return getBusinessSettingsCached();
+}
+
+export async function getBusinessSettingsUncached(): Promise<BusinessSettings> {
+  return loadBusinessSettings();
 }
 
 /** Invalidate cache (call after admin update). Used in server actions too. */
 export function clearSettingsCache() {
-  cached = null;
-  cacheTime = 0;
+  // Kept for compatibility with older imports. Next cache invalidation is handled
+  // by revalidateTag(cacheTags.settings) from route handlers.
 }

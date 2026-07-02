@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { OptimizedImage } from "@/components/optimized-image";
 import { ProductCard } from "@/components/product-card";
-import { SafeImage } from "@/components/safe-image";
 import { SiteHeader } from "@/components/site-header";
 import { categoryLabels, getLanguage, localizeHours, text, withLanguage } from "@/lib/i18n";
 import { getCategoryImages, getLatestProducts } from "@/lib/products";
@@ -93,12 +93,14 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
           {/* Right: image */}
           <div className="flex items-center justify-center lg:justify-end">
-            <div className="w-full max-w-lg">
-              <SafeImage
+            <div className="relative aspect-[4/3] w-full max-w-lg overflow-hidden rounded-[1.75rem] shadow-2xl shadow-stone-900/15 ring-1 ring-white/70">
+              <OptimizedImage
                 alt={siteName}
-                className="aspect-[4/3] w-full rounded-[1.75rem] object-cover object-center shadow-2xl shadow-stone-900/15 ring-1 ring-white/70"
-                fetchPriority="high"
-                loading="eager"
+                className="absolute inset-0"
+                fallbackSrc="/images/category/women.svg"
+                fill
+                imageClassName="object-cover object-center"
+                priority
                 sizes="(max-width: 1024px) 100vw, 50vw"
                 src={heroImage}
               />
@@ -129,10 +131,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                   href={withLanguage(`/${cat.slug}`, language)}
                 >
                   <div className="relative flex aspect-[3/4] items-center justify-center overflow-hidden bg-[#f3efe8]">
-                    <SafeImage
+                    <OptimizedImage
                       alt={categoryLabels[cat.slug]?.[language] || cat.slug}
-                      className="absolute inset-0 h-full w-full object-cover object-center transition duration-500 group-hover:scale-[1.04]"
-                      loading="lazy"
+                      className="absolute inset-0"
+                      fill
+                      imageClassName="object-cover object-center transition duration-500 group-hover:scale-[1.04]"
                       sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                       src={img}
                     />

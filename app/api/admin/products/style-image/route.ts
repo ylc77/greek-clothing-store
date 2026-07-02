@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid } from "@/lib/admin-products";
+import { invalidateProductsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { productImagesBucket, storageSkuSegment } from "@/lib/storage-images";
 
@@ -129,7 +130,7 @@ export async function POST(request: NextRequest) {
   const path = `products/${safeSku}/ai/styling-${Date.now()}.webp`;
   const { error: uploadError } = await supabase.storage
     .from(productImagesBucket)
-    .upload(path, Buffer.from(b64, "base64"), { contentType: "image/webp", cacheControl: "0", upsert: true });
+    .upload(path, Buffer.from(b64, "base64"), { contentType: "image/webp", cacheControl: "31536000", upsert: true });
 
   if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
 
@@ -146,6 +147,8 @@ export async function POST(request: NextRequest) {
     .eq("sku", sku);
 
   if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+
+  invalidateProductsCache(sku);
 
   return NextResponse.json({
     ok: true,
