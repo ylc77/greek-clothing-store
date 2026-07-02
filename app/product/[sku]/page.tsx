@@ -187,7 +187,7 @@ export default async function ProductPage({
           </div>
 
           {/* Right: info */}
-          <div className="flex flex-col rounded-3xl border border-stone-200/70 bg-white p-5 shadow-sm shadow-stone-900/5 sm:p-7 lg:sticky lg:top-28 lg:self-start">
+          <div className="flex flex-col rounded-3xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5 sm:p-7 lg:sticky lg:top-28 lg:self-start">
             {/* SKU */}
             <p className="text-xs font-bold uppercase tracking-[0.15em] text-olive">
               {product.sku}
@@ -199,7 +199,7 @@ export default async function ProductPage({
             </h1>
 
             {/* Price */}
-            <p className="mt-4 text-2xl font-black text-terracotta sm:text-3xl">
+            <p className="mt-4 text-3xl font-black leading-none text-terracotta sm:text-3xl">
               €{Number(product.price).toFixed(2)}
             </p>
 
@@ -242,11 +242,11 @@ export default async function ProductPage({
             {detailItems.length > 0 ? (
               <div className="mt-6 rounded-2xl border border-stone-200/70 bg-stone-50/70 p-4">
                 <h3 className="text-sm font-black text-ink">{t.details}</h3>
-                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 sm:gap-x-4">
                   {detailItems.map((d) => (
-                    <p key={d.label} className="flex justify-between gap-2 text-xs sm:text-sm">
-                      <span className="text-stone-400">{d.label}</span>
-                      <span className="font-bold text-stone-700 text-right">{d.value}</span>
+                    <p key={d.label} className="flex items-start justify-between gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs sm:bg-transparent sm:px-0 sm:py-0 sm:text-sm">
+                      <span className="shrink-0 text-stone-400">{d.label}</span>
+                      <span className="min-w-0 text-right font-bold text-stone-700">{d.value}</span>
                     </p>
                   ))}
                 </div>
