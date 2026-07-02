@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     return unauthorized();
   }
 
-  const settings = await getBusinessSettings();
+  const settings = await getBusinessSettingsUncached();
   return NextResponse.json(settings);
 }
 
@@ -64,7 +64,7 @@ export async function PUT(request: NextRequest) {
   }
 
   // Get the existing row id
-  const existing = await getBusinessSettings();
+  const existing = await getBusinessSettingsUncached();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)

@@ -32,7 +32,7 @@ export type BusinessSettings = {
 };
 
 const defaults: BusinessSettings = {
-  id: crypto.randomUUID ? crypto.randomUUID() : "00000000-0000-0000-0000-000000000000",
+  id: "00000000-0000-0000-0000-000000000000",
   business_name: "Online Store",
   logo_url: "",
   hero_image_url: "",
@@ -115,7 +115,7 @@ async function loadBusinessSettings(): Promise<BusinessSettings> {
 const getBusinessSettingsCached = unstable_cache(
   loadBusinessSettings,
   ["business-settings"],
-  { revalidate: 3600, tags: [cacheTags.settings] },
+  { revalidate: 60, tags: [cacheTags.settings] },
 );
 
 export async function getBusinessSettings(): Promise<BusinessSettings> {
