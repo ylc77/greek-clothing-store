@@ -129,10 +129,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                   href={withLanguage(`/${cat.slug}`, language)}
                 >
                   <div className="relative flex aspect-[3/4] items-center justify-center overflow-hidden bg-[#f3efe8]">
-                    <div
-                      aria-hidden="true"
-                      className="absolute inset-0 bg-cover bg-center transition duration-500 group-hover:scale-[1.04]"
-                      style={{ backgroundImage: `url("${img}")` }}
+                    <SafeImage
+                      alt={categoryLabels[cat.slug]?.[language] || cat.slug}
+                      className="absolute inset-0 h-full w-full object-cover object-center transition duration-500 group-hover:scale-[1.04]"
+                      loading="lazy"
+                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                      src={img}
                     />
                     {/* gradient overlay for text readability */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />

@@ -90,6 +90,7 @@ npm run build
 - [部署说明](docs/deploy-client-zh.md)
 - [后台使用说明](docs/client-guide-zh.md)
 - [维护说明](docs/maintenance-zh.md)
+- [上线前检查清单](docs/launch-checklist-zh.md)
 
 ## 维护规则
 
