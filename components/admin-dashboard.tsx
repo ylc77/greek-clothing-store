@@ -1556,17 +1556,20 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <section className="admin-panel">
             <h2 className="mb-1 text-lg font-black text-ink">CSV 批量导入</h2>
             <p className="mb-4 text-xs text-stone-500">SKU 已存在则更新，不存在则新增。中文商品自动翻译英文和希腊语。</p>
-            <div className="flex flex-wrap gap-2 mb-4">
-              <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={downloadQuickCsvTemplate} type="button">下载快速 CSV 模板</button>
-              <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={downloadCsvTemplate} type="button">下载完整 CSV 模板</button>
-              <button className="rounded-lg bg-ink px-4 py-2 text-sm font-bold text-white hover:bg-stone-800 disabled:opacity-50" disabled={csvRows.length === 0 || loading} onClick={confirmImportCsv} type="button">导入 CSV</button>
+            <div className="mb-4 grid gap-2 sm:grid-cols-3">
+              <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black hover:bg-stone-50" onClick={downloadQuickCsvTemplate} type="button">下载快速 CSV 模板</button>
+              <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black hover:bg-stone-50" onClick={downloadCsvTemplate} type="button">下载完整 CSV 模板</button>
+              <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={csvRows.length === 0 || loading} onClick={confirmImportCsv} type="button">导入 CSV</button>
             </div>
-            <input accept=".csv,text/csv" className="input" onChange={e => void handleCsv(e.target.files?.[0] || null)} type="file" />
+            <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3">
+              <label className="block text-sm font-black text-ink">选择 CSV 文件</label>
+              <input accept=".csv,text/csv" className="input mt-2 min-h-12 bg-white" onChange={e => void handleCsv(e.target.files?.[0] || null)} type="file" />
+            </div>
             <p className="mt-2 text-xs text-stone-500">快速模板只保留日常上新字段，图片 URL 可以留空，之后用批量上传按 SKU 自动绑定；完整模板适合从备份迁移或填写 AI / 尺码表等高级字段。</p>
             <p className="mt-2 text-xs text-stone-400">字段：{csvFields.join(", ")}</p>
             {csvRows.length > 0 ? (
               <div className="mt-4">
-                <p className="text-sm font-bold text-ink">预览：有效 {csvSummary.valid}，错误 {csvSummary.invalid}{csvSummary.needsTranslation > 0 ? `，需翻译 ${csvSummary.needsTranslation}` : ""}</p>
+                <p className="rounded-2xl border border-stone-200 bg-white p-3 text-sm font-black text-ink shadow-sm shadow-stone-900/5">预览：有效 {csvSummary.valid}，错误 {csvSummary.invalid}{csvSummary.needsTranslation > 0 ? `，需翻译 ${csvSummary.needsTranslation}` : ""}</p>
                 <ResultTable results={csvRows.map(r => { const errs = validatePreviewRow(r); let msg = errs.length === 0 ? "OK" : errs.join("; "); if (errs.length === 0) { const nc = String(r.name_cn||"").trim(), dc = String(r.description_cn||"").trim(); if (nc||dc) { const ne = String(r.name_en||"").trim(), de = String(r.description_en||"").trim(), ng = String(r.name_gr||"").trim(), dg = String(r.description_gr||"").trim(); msg = ne&&de&&ng&&dg ? "OK，无需翻译" : "OK，需翻译"; } } return { rowNumber: Number(r.rowNumber), sku: String(r.sku||""), ok: errs.length === 0, message: msg }; })} />
               </div>
             ) : null}
