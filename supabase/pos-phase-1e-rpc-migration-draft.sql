@@ -497,7 +497,7 @@ begin
     0 - r.quantity,
     r.quantity_before,
     r.quantity_after,
-    'POS 销售',
+    'POS sale',
     'pos_sale',
     v_order_id::text,
     v_idempotency_key || ':' || r.variant_id::text,
