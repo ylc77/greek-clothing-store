@@ -21,7 +21,59 @@ type CsvRow = Record<string, string | number>;
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "add" | "csv" | "images" | "skroutz" | "categories";
+type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "inventory" | "add" | "csv" | "images" | "skroutz" | "categories";
+type InventoryItem = {
+  product_id: number;
+  product_name: string;
+  product_sku: string;
+  variant_id: string;
+  variant_sku: string;
+  size: string | null;
+  color: string | null;
+  barcode: string | null;
+  active: boolean;
+  quantity_on_hand: number;
+  quantity_reserved: number;
+  quantity_available: number;
+  legacy_stock: number;
+  erp_product_stock: number;
+  stock_matches_legacy: boolean;
+  size_stock_matches_legacy: boolean;
+};
+type InventoryMovement = {
+  id: string;
+  variant_id: string;
+  variant_sku: string;
+  product_sku: string;
+  product_name: string;
+  movement_type: string;
+  quantity_before: number;
+  quantity_after: number;
+  quantity_delta: number;
+  reason: string;
+  source_type: string | null;
+  source_id: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+type InventoryReconciliation = {
+  stockVsBalanceMismatches: unknown[];
+  sizeStockMismatches: unknown[];
+  productsWithoutVariants: unknown[];
+  variantsWithoutMainStoreBalance: unknown[];
+  duplicateVariantSkus: unknown[];
+  duplicateBarcodes: unknown[];
+  reservedExceedsOnHand: unknown[];
+  blankMovementReasons: unknown[];
+};
+type InventoryAdjustState = {
+  item: InventoryItem | null;
+  mode: "set_to" | "adjust_by";
+  quantity: string;
+  reason: string;
+  submitting: boolean;
+  message: string;
+};
 type QuickAddState = {
   category: ProductCategory;
   subcategory: string;
@@ -80,10 +132,11 @@ const csvFieldLabels: Record<string, string> = {
 };
 const csvHeaderAliases = new Map(Object.entries(csvFieldLabels).flatMap(([field, label]) => [[field, field], [label, field]]));
 const tabs: { key: Tab; label: string }[] = [
+  { key: "inventory", label: "库存管理" },
   { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
 const primaryTabKeys: Tab[] = ["quickAdd", "quickSale", "dashboard", "check"];
-const managementTabKeys: Tab[] = ["add", "images", "csv", "categories", "skroutz"];
+const managementTabKeys: Tab[] = ["inventory", "add", "images", "csv", "categories", "skroutz"];
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
 const clothingSizeOptions = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
 const shoeSizeOptions = ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45"];
@@ -103,6 +156,19 @@ function sizeOptionsForCategory(category: string) {
 }
 function stockTotal(stock: Record<string, number>) {
   return Object.values(stock).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+}
+function inventoryIssueCount(data: InventoryReconciliation | null) {
+  if (!data) return 0;
+  return Object.values(data).reduce((sum, value) => sum + (Array.isArray(value) ? value.length : 0), 0);
+}
+function formatAdminDate(value: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+function signedQuantity(value: number) {
+  return value > 0 ? `+${value}` : String(value);
 }
 const emptyQuickAdd: QuickAddState = {
   category: "men",
@@ -278,6 +344,17 @@ export function AdminDashboard() {
   const [styleImageModelType, setStyleImageModelType] = useState("adult fashion model");
   const [dbCats, setDbCats] = useState<Array<Record<string,unknown>>>([]);
   const [dbSubs, setDbSubs] = useState<Array<Record<string,unknown>>>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [inventoryMovements, setInventoryMovements] = useState<InventoryMovement[]>([]);
+  const [inventoryReconciliation, setInventoryReconciliation] = useState<InventoryReconciliation | null>(null);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [inventoryError, setInventoryError] = useState("");
+  const [inventoryQ, setInventoryQ] = useState("");
+  const [inventorySize, setInventorySize] = useState("");
+  const [inventoryZeroStock, setInventoryZeroStock] = useState(false);
+  const [inventoryInactive, setInventoryInactive] = useState(false);
+  const [movementVariantId, setMovementVariantId] = useState("");
+  const [adjustInventory, setAdjustInventory] = useState<InventoryAdjustState>({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" });
   useEffect(() => { if (activePassword) { fetch("/api/admin/categories", { headers: { "x-admin-password": activePassword } }).then(r => r.json()).then(d => { setDbCats((d.categories||[]).filter((c:Record<string,unknown>) => c.is_active !== false)); setDbSubs((d.subcategories||[]).filter((s:Record<string,unknown>) => s.is_active !== false)); }).catch(() => {}); } }, [activePassword, tab]);
 
   // Search / filter state
@@ -388,6 +465,94 @@ export function AdminDashboard() {
 
   async function loadProducts() { setLoading(true); try { const d = await api("/api/admin/products?limit=500"); setProducts(d.products||[]); } catch (e) { toast(e instanceof Error ? e.message : "商品读取失败", "err"); } finally { setLoading(false); } }
   useEffect(() => { if (activePassword) void loadProducts(); }, [activePassword]);
+
+  async function loadInventoryOverview() {
+    const params = new URLSearchParams();
+    if (inventoryQ.trim()) params.set("q", inventoryQ.trim());
+    if (inventorySize.trim()) params.set("size", inventorySize.trim());
+    if (inventoryZeroStock) params.set("zeroStock", "true");
+    if (inventoryInactive) params.set("inactive", "true");
+    params.set("limit", "500");
+    const d = await api(`/api/admin/inventory?${params.toString()}`);
+    setInventoryItems(d.items || []);
+  }
+  async function loadInventoryMovements(nextVariantId = movementVariantId) {
+    const params = new URLSearchParams();
+    params.set("limit", "50");
+    if (nextVariantId) params.set("variantId", nextVariantId);
+    const d = await api(`/api/admin/inventory/movements?${params.toString()}`);
+    setInventoryMovements(d.items || []);
+  }
+  async function loadInventoryReconciliation() {
+    const d = await api("/api/admin/inventory/reconciliation");
+    setInventoryReconciliation(d);
+  }
+  async function loadInventoryData(nextVariantId = movementVariantId) {
+    setInventoryLoading(true);
+    setInventoryError("");
+    try {
+      await Promise.all([loadInventoryOverview(), loadInventoryMovements(nextVariantId), loadInventoryReconciliation()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "库存数据加载失败";
+      setInventoryError(message);
+      toast(message, "err");
+    } finally {
+      setInventoryLoading(false);
+    }
+  }
+  useEffect(() => { if (activePassword && tab === "inventory") void loadInventoryData(); }, [activePassword, tab]);
+  function openInventoryAdjust(item: InventoryItem) {
+    setAdjustInventory({ item, mode: "set_to", quantity: String(item.quantity_on_hand), reason: "", submitting: false, message: "" });
+  }
+  async function executeInventoryAdjustment() {
+    const item = adjustInventory.item;
+    if (!item) return;
+    const quantity = Number(adjustInventory.quantity);
+    setAdjustInventory(prev => ({ ...prev, submitting: true, message: "" }));
+    try {
+      const result = await api("/api/admin/inventory/adjust", {
+        method: "POST",
+        body: JSON.stringify({
+          variantId: item.variant_id,
+          mode: adjustInventory.mode,
+          quantity,
+          reason: adjustInventory.reason.trim(),
+          clientRequestId: crypto.randomUUID(),
+        }),
+      });
+      const note = result.alreadyProcessed ? "这次调整已经处理过，没有重复写入。" : result.noChange ? "库存没有变化。" : "库存调整成功。";
+      const warning = result.legacySyncWarning ? ` 但旧库存同步需要检查：${result.legacySyncWarning}` : "";
+      toast(`${note}${warning}`, result.legacySyncWarning ? "err" : "ok");
+      setAdjustInventory({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" });
+      await loadInventoryData(item.variant_id);
+      await loadProducts();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "库存调整失败";
+      setAdjustInventory(prev => ({ ...prev, submitting: false, message }));
+      toast(message, "err");
+    }
+  }
+  function submitInventoryAdjustment() {
+    const item = adjustInventory.item;
+    if (!item) return;
+    const quantity = Number(adjustInventory.quantity);
+    const reason = adjustInventory.reason.trim();
+    if (!Number.isInteger(quantity)) { setAdjustInventory(prev => ({ ...prev, message: "数量必须是整数" })); return; }
+    if (reason.length < 3) { setAdjustInventory(prev => ({ ...prev, message: "请填写至少 3 个字的调整原因" })); return; }
+    const nextQuantity = adjustInventory.mode === "set_to" ? quantity : item.quantity_on_hand + quantity;
+    if (nextQuantity < 0) { setAdjustInventory(prev => ({ ...prev, message: "调整后库存不能小于 0" })); return; }
+    setConfirm({
+      open: true,
+      title: "确认调整库存",
+      desc: `${item.variant_sku} 当前库存 ${item.quantity_on_hand}，调整后 ${nextQuantity}。原因：${reason}`,
+      confirmText: "确认调整",
+      variant: "default",
+      action: () => {
+        setConfirm(c => ({ ...c, open: false }));
+        void executeInventoryAdjustment();
+      },
+    });
+  }
 
   function parseSizeStockText(value: string) {
     const out: Record<string, number> = {};
@@ -1034,6 +1199,175 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 );
               })}
             </div>
+          </section>
+        ) : null}
+
+        {tab === "inventory" ? (
+          <section className="flex flex-col gap-5">
+            <div className="admin-panel">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">ERP Inventory</p>
+                  <h2 className="mt-1 text-xl font-black text-ink">库存管理</h2>
+                  <p className="mt-1 text-xs text-stone-500">只管理 ERP 库存记录；前台和 Skroutz Feed 仍继续读取旧库存字段。</p>
+                </div>
+                <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={inventoryLoading} onClick={() => void loadInventoryData()} type="button">刷新库存</button>
+              </div>
+              {inventoryError ? <p className="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{inventoryError}</p> : null}
+              <div className={`mt-4 rounded-2xl border px-4 py-3 ${inventoryIssueCount(inventoryReconciliation) === 0 ? "border-emerald-100 bg-emerald-50 text-emerald-800" : "border-red-100 bg-red-50 text-red-700"}`}>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm font-black">{inventoryReconciliation ? inventoryIssueCount(inventoryReconciliation) === 0 ? "ERP 库存对账正常" : `ERP 库存有 ${inventoryIssueCount(inventoryReconciliation)} 个对账问题` : "正在读取 ERP 对账状态"}</p>
+                  <button className="rounded-lg border border-current/20 bg-white/70 px-3 py-1.5 text-xs font-black" disabled={inventoryLoading} onClick={() => void loadInventoryReconciliation()} type="button">重新检查</button>
+                </div>
+                {inventoryReconciliation ? (
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                    {[
+                      ["stock vs balance", inventoryReconciliation.stockVsBalanceMismatches.length],
+                      ["size_stock vs ERP", inventoryReconciliation.sizeStockMismatches.length],
+                      ["缺 variant", inventoryReconciliation.productsWithoutVariants.length],
+                      ["缺 MAIN_STORE", inventoryReconciliation.variantsWithoutMainStoreBalance.length],
+                      ["重复 variant SKU", inventoryReconciliation.duplicateVariantSkus.length],
+                      ["重复 barcode", inventoryReconciliation.duplicateBarcodes.length],
+                      ["预留异常", inventoryReconciliation.reservedExceedsOnHand.length],
+                      ["流水原因为空", inventoryReconciliation.blankMovementReasons.length],
+                    ].map(([label, count]) => (
+                      <div className="rounded-xl bg-white/70 px-3 py-2" key={String(label)}>
+                        <p className="font-black">{count}</p>
+                        <p className="mt-0.5 text-[11px] opacity-75">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="admin-panel">
+              <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_auto_auto_auto]">
+                <input className="input" placeholder="搜索商品名 / SKU / variant SKU / barcode" value={inventoryQ} onChange={e => setInventoryQ(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
+                <input className="input" placeholder="尺码，如 S / 38" value={inventorySize} onChange={e => setInventorySize(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
+                <label className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-200 px-3 text-sm font-bold text-stone-600"><input checked={inventoryZeroStock} onChange={e => setInventoryZeroStock(e.target.checked)} type="checkbox" /> 缺货</label>
+                <label className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-200 px-3 text-sm font-bold text-stone-600"><input checked={inventoryInactive} onChange={e => setInventoryInactive(e.target.checked)} type="checkbox" /> 已停用</label>
+                <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={inventoryLoading} onClick={() => void loadInventoryData()} type="button">搜索</button>
+              </div>
+              <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h3 className="text-base font-black text-ink">库存总览</h3>
+                  <p className="text-xs text-stone-500">共 {inventoryItems.length} 个 variant。调整库存会写 ERP 流水，并同步回旧库存字段。</p>
+                </div>
+                {inventoryLoading ? <p className="text-xs font-bold text-stone-400">加载中...</p> : null}
+              </div>
+              {inventoryItems.length === 0 && !inventoryLoading ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">暂无库存数据</p> : null}
+              <div className="overflow-x-auto rounded-2xl border border-stone-200">
+                <table className="min-w-[1120px] w-full text-left text-sm">
+                  <thead className="bg-stone-50 text-stone-500">
+                    <tr>
+                      <th className="px-3 py-2 text-xs font-black">商品</th>
+                      <th className="px-3 py-2 text-xs font-black">Product SKU</th>
+                      <th className="px-3 py-2 text-xs font-black">Variant SKU</th>
+                      <th className="px-3 py-2 text-xs font-black">尺码</th>
+                      <th className="px-3 py-2 text-xs font-black">颜色</th>
+                      <th className="px-3 py-2 text-xs font-black">Barcode</th>
+                      <th className="px-3 py-2 text-right text-xs font-black">现有</th>
+                      <th className="px-3 py-2 text-right text-xs font-black">预留</th>
+                      <th className="px-3 py-2 text-right text-xs font-black">可用</th>
+                      <th className="px-3 py-2 text-xs font-black">状态</th>
+                      <th className="px-3 py-2 text-xs font-black">对账</th>
+                      <th className="px-3 py-2 text-right text-xs font-black">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventoryItems.map(item => {
+                      const reconciled = item.stock_matches_legacy && item.size_stock_matches_legacy;
+                      return (
+                        <tr className="border-t border-stone-100 bg-white align-top" key={item.variant_id}>
+                          <td className="max-w-[220px] px-3 py-3"><p className="line-clamp-2 font-black text-ink">{item.product_name || "-"}</p></td>
+                          <td className="px-3 py-3 font-mono text-xs font-bold text-stone-600">{item.product_sku || "-"}</td>
+                          <td className="px-3 py-3 font-mono text-xs font-bold text-stone-600">{item.variant_sku || "-"}</td>
+                          <td className="px-3 py-3 text-xs font-bold">{item.size || "-"}</td>
+                          <td className="px-3 py-3 text-xs">{item.color || "-"}</td>
+                          <td className="px-3 py-3 font-mono text-xs">{item.barcode || "-"}</td>
+                          <td className="px-3 py-3 text-right text-sm font-black text-ink">{item.quantity_on_hand}</td>
+                          <td className="px-3 py-3 text-right text-sm font-bold text-stone-500">{item.quantity_reserved}</td>
+                          <td className={`px-3 py-3 text-right text-sm font-black ${item.quantity_available <= 0 ? "text-red-600" : item.quantity_available <= 2 ? "text-amber-600" : "text-emerald-700"}`}>{item.quantity_available}</td>
+                          <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${item.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}>{item.active ? "启用" : "停用"}</span></td>
+                          <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${reconciled ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{reconciled ? "正常" : "异常"}</span></td>
+                          <td className="px-3 py-3 text-right">
+                            <div className="flex justify-end gap-2">
+                              <button className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white hover:bg-stone-800" onClick={() => openInventoryAdjust(item)} type="button">调整库存</button>
+                              <button className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => { setMovementVariantId(item.variant_id); void loadInventoryMovements(item.variant_id); }} type="button">查看流水</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="admin-panel">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-base font-black text-ink">最近库存流水</h3>
+                  <p className="text-xs text-stone-500">{movementVariantId ? "当前只显示所选 variant 的流水。" : "默认显示最近 50 条库存流水。"}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {movementVariantId ? <button className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => { setMovementVariantId(""); void loadInventoryMovements(""); }} type="button">查看全部流水</button> : null}
+                  <button className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => void loadInventoryMovements()} type="button">刷新流水</button>
+                </div>
+              </div>
+              {inventoryMovements.length === 0 ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-6 text-center text-sm font-bold text-stone-400">暂无库存流水</p> : (
+                <div className="overflow-x-auto rounded-2xl border border-stone-200">
+                  <table className="min-w-[980px] w-full text-left text-sm">
+                    <thead className="bg-stone-50 text-stone-500"><tr><th className="px-3 py-2 text-xs font-black">时间</th><th className="px-3 py-2 text-xs font-black">商品</th><th className="px-3 py-2 text-xs font-black">Variant</th><th className="px-3 py-2 text-xs font-black">类型</th><th className="px-3 py-2 text-right text-xs font-black">Before</th><th className="px-3 py-2 text-right text-xs font-black">After</th><th className="px-3 py-2 text-right text-xs font-black">Delta</th><th className="px-3 py-2 text-xs font-black">原因</th><th className="px-3 py-2 text-xs font-black">来源</th></tr></thead>
+                    <tbody>
+                      {inventoryMovements.map(movement => (
+                        <tr className="border-t border-stone-100 bg-white" key={movement.id}>
+                          <td className="px-3 py-2 text-xs text-stone-500">{formatAdminDate(movement.created_at)}</td>
+                          <td className="px-3 py-2"><p className="line-clamp-1 text-xs font-black text-ink">{movement.product_name || "-"}</p><p className="font-mono text-[11px] text-stone-400">{movement.product_sku || "-"}</p></td>
+                          <td className="px-3 py-2 font-mono text-xs font-bold">{movement.variant_sku || "-"}</td>
+                          <td className="px-3 py-2 text-xs font-bold">{movement.movement_type}</td>
+                          <td className="px-3 py-2 text-right text-xs">{movement.quantity_before}</td>
+                          <td className="px-3 py-2 text-right text-xs">{movement.quantity_after}</td>
+                          <td className={`px-3 py-2 text-right text-xs font-black ${movement.quantity_delta < 0 ? "text-red-600" : "text-emerald-700"}`}>{signedQuantity(movement.quantity_delta)}</td>
+                          <td className="max-w-[240px] px-3 py-2 text-xs">{movement.reason || "-"}</td>
+                          <td className="px-3 py-2 text-xs text-stone-500">{movement.source_type || "-"}{movement.source_id ? ` / ${movement.source_id}` : ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {adjustInventory.item ? (
+              <div className="fixed inset-0 z-50 flex items-end justify-center bg-stone-950/40 p-3 sm:items-center">
+                <div className="w-full max-w-lg rounded-3xl border border-stone-200 bg-white p-5 shadow-2xl shadow-stone-950/20">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-black text-ink">调整库存</h3>
+                      <p className="mt-1 text-xs text-stone-500">{adjustInventory.item.product_name || "-"} / {adjustInventory.item.variant_sku}</p>
+                    </div>
+                    <button className="rounded-full border border-stone-200 px-3 py-1.5 text-xs font-black text-stone-500 hover:bg-stone-50" onClick={() => setAdjustInventory({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" })} type="button">关闭</button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 rounded-2xl bg-stone-50 p-3 text-center">
+                    <div><p className="text-lg font-black text-ink">{adjustInventory.item.quantity_on_hand}</p><p className="text-[11px] font-bold text-stone-400">当前</p></div>
+                    <div><p className="text-lg font-black text-stone-500">{adjustInventory.item.quantity_reserved}</p><p className="text-[11px] font-bold text-stone-400">预留</p></div>
+                    <div><p className="text-lg font-black text-emerald-700">{adjustInventory.item.quantity_available}</p><p className="text-[11px] font-bold text-stone-400">可用</p></div>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <Field label="调整模式"><select className="input" value={adjustInventory.mode} onChange={e => setAdjustInventory(prev => ({ ...prev, mode: e.target.value as "set_to" | "adjust_by" }))}><option value="set_to">设置为某个数量</option><option value="adjust_by">增加 / 减少数量</option></select></Field>
+                    <Field label={adjustInventory.mode === "set_to" ? "目标库存" : "增减数量"}><input className="input" step="1" type="number" value={adjustInventory.quantity} onChange={e => setAdjustInventory(prev => ({ ...prev, quantity: e.target.value, message: "" }))} /></Field>
+                    <div className="sm:col-span-2"><Field label="调整原因"><textarea className="input min-h-24" value={adjustInventory.reason} onChange={e => setAdjustInventory(prev => ({ ...prev, reason: e.target.value, message: "" }))} placeholder="例如：盘点修正 / 到货入库修正 / 破损丢失 / 系统同步修正" /></Field></div>
+                  </div>
+                  {adjustInventory.message ? <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{adjustInventory.message}</p> : null}
+                  <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button className="min-h-11 rounded-xl border border-stone-200 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50" onClick={() => setAdjustInventory({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" })} type="button">取消</button>
+                    <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={adjustInventory.submitting} onClick={submitInventoryAdjustment} type="button">{adjustInventory.submitting ? "提交中..." : "提交调整"}</button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
