@@ -63,6 +63,16 @@ export type SyncProductInventoryResult = {
   movementCount: number;
 };
 
+export type SyncProductVariantActiveError = {
+  productId: number;
+  message: string;
+};
+
+export type SyncProductVariantActiveResult = {
+  updatedCount: number;
+  warnings: SyncProductVariantActiveError[];
+};
+
 function adminClient() {
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
@@ -251,6 +261,73 @@ export async function getInventoryReconciliationForProduct(
     erpStock,
     difference: erpStock - legacyStock,
   };
+}
+
+export async function syncProductVariantActiveFromLegacy(
+  productIds: number[],
+): Promise<SyncProductVariantActiveResult> {
+  const ids = Array.from(
+    new Set(productIds.filter((id) => Number.isFinite(id)).map((id) => Math.trunc(id))),
+  );
+
+  if (ids.length === 0) {
+    return { updatedCount: 0, warnings: [] };
+  }
+
+  const supabase = adminClient() as any;
+  const warnings: SyncProductVariantActiveError[] = [];
+  let updatedCount = 0;
+
+  const { data: products, error: productsError } = await supabase
+    .from("products")
+    .select("id, is_active")
+    .in("id", ids);
+
+  if (productsError) {
+    throw new Error(`Failed to load products for active sync: ${productsError.message}`);
+  }
+
+  const productMap = new Map<number, boolean>();
+  for (const product of products || []) {
+    productMap.set(Number(product.id), product.is_active !== false);
+  }
+
+  for (const id of ids) {
+    const active = productMap.get(id);
+    if (active === undefined) {
+      warnings.push({ productId: id, message: "Product not found for variant active sync." });
+      continue;
+    }
+
+    const { data: variants, error: variantsError } = await supabase
+      .from("product_variants")
+      .select("id")
+      .eq("product_id", id);
+
+    if (variantsError) {
+      warnings.push({ productId: id, message: variantsError.message });
+      continue;
+    }
+
+    if (!variants || variants.length === 0) {
+      warnings.push({ productId: id, message: "Product has no ERP variants to sync." });
+      continue;
+    }
+
+    const { error: updateError } = await supabase
+      .from("product_variants")
+      .update({ active, updated_at: new Date().toISOString() })
+      .eq("product_id", id);
+
+    if (updateError) {
+      warnings.push({ productId: id, message: updateError.message });
+      continue;
+    }
+
+    updatedCount += variants.length;
+  }
+
+  return { updatedCount, warnings };
 }
 
 export function buildLegacyInventoryTargets(product: LegacyProductInventory): LegacyInventoryTarget[] {

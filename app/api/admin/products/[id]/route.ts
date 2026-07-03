@@ -4,6 +4,7 @@ import { invalidateProductsCache } from "@/lib/cache";
 import {
   hasInventoryMovementsForProduct,
   syncProductInventoryFromLegacy,
+  syncProductVariantActiveFromLegacy,
 } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { Product } from "@/lib/types";
@@ -153,7 +154,24 @@ export async function DELETE(request: NextRequest, context: ProductRouteContext)
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  let erpSyncWarning: string | undefined;
+  let erpSyncErrors: { productId: number; message: string }[] = [];
+  try {
+    const productId = Number(id);
+    if (!Number.isFinite(productId)) {
+      throw new Error("Invalid product ID for ERP variant active sync.");
+    }
+    const syncResult = await syncProductVariantActiveFromLegacy([productId]);
+    erpSyncErrors = syncResult.warnings;
+    if (syncResult.warnings.length > 0) {
+      erpSyncWarning = "商品已下架，但 ERP variant active 同步需要检查。";
+    }
+  } catch (syncError) {
+    erpSyncWarning =
+      syncError instanceof Error ? syncError.message : "ERP variant active sync failed.";
+  }
+
   invalidateProductsCache(product?.sku as string | undefined);
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, erpSyncWarning, erpSyncErrors });
 }

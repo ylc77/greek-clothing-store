@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
+import { syncProductVariantActiveFromLegacy } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 function unauthorized() {
@@ -31,11 +32,27 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  let erpSyncWarning: string | undefined;
+  let erpSyncErrors: { productId: number; message: string }[] = [];
+  try {
+    const productIds = ids.map((id) => Number(id)).filter((id) => Number.isFinite(id));
+    const syncResult = await syncProductVariantActiveFromLegacy(productIds);
+    erpSyncErrors = syncResult.warnings;
+    if (syncResult.warnings.length > 0) {
+      erpSyncWarning = "商品上下架已保存，但部分 ERP variant active 同步需要检查。";
+    }
+  } catch (syncError) {
+    erpSyncWarning =
+      syncError instanceof Error ? syncError.message : "ERP variant active sync failed.";
+  }
+
   invalidateProductsCache();
 
   return NextResponse.json({
     ok: true,
     count: ids.length,
     action: isActive ? "activated" : "deactivated",
+    erpSyncWarning,
+    erpSyncErrors,
   });
 }
