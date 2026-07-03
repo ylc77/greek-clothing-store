@@ -188,6 +188,12 @@ type PosOrderDetail = {
     created_at: string;
   }>;
 };
+type PosVoidDialogState = {
+  order: PosOrderListItem;
+  reason: string;
+  submitting: boolean;
+  message: string;
+};
 type QuickAddState = {
   category: ProductCategory;
   subcategory: string;
@@ -533,6 +539,7 @@ export function AdminDashboard() {
   const [posOrderDateRange, setPosOrderDateRange] = useState<PosDateRangeFilter>("today");
   const [posOrderDetail, setPosOrderDetail] = useState<PosOrderDetail | null>(null);
   const [posOrderDetailLoading, setPosOrderDetailLoading] = useState(false);
+  const [posVoidDialog, setPosVoidDialog] = useState<PosVoidDialogState | null>(null);
   useEffect(() => { if (activePassword) { fetch("/api/admin/categories", { headers: { "x-admin-password": activePassword } }).then(r => r.json()).then(d => { setDbCats((d.categories||[]).filter((c:Record<string,unknown>) => c.is_active !== false)); setDbSubs((d.subcategories||[]).filter((s:Record<string,unknown>) => s.is_active !== false)); }).catch(() => {}); } }, [activePassword, tab]);
 
   // Search / filter state
@@ -933,6 +940,43 @@ export function AdminDashboard() {
       toast(message, "err");
     } finally {
       setPosOrderDetailLoading(false);
+    }
+  }
+
+  function openPosVoidDialog(order: PosOrderListItem) {
+    setPosVoidDialog({ order, reason: "", submitting: false, message: "" });
+  }
+
+  async function submitPosVoid() {
+    if (!posVoidDialog) return;
+    const reason = posVoidDialog.reason.trim();
+    if (reason.length < 3) {
+      setPosVoidDialog(current => current ? { ...current, message: "请填写作废原因，至少 3 个字符。" } : current);
+      return;
+    }
+
+    setPosVoidDialog(current => current ? { ...current, submitting: true, message: "" } : current);
+    try {
+      const data = await posApi(`/api/admin/pos/orders/${posVoidDialog.order.id}/void`, {
+        method: "POST",
+        body: JSON.stringify({
+          reason,
+          clientRequestId: crypto.randomUUID(),
+        }),
+      });
+
+      toast(data.alreadyProcessed ? "该订单已作废。" : "订单已作废，库存已加回。", "ok");
+      setPosVoidDialog(null);
+      await loadPosOrders();
+      if (posOrderDetail?.order.id === posVoidDialog.order.id) {
+        await loadPosOrderDetail(posVoidDialog.order.id);
+      }
+      void loadInventoryData();
+      void loadProducts();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "POS 订单作废失败";
+      setPosVoidDialog(current => current ? { ...current, submitting: false, message } : current);
+      toast(message, "err");
     }
   }
 
@@ -2019,7 +2063,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                         <td className="px-4 py-3 font-bold text-stone-700">{order.items_count}</td>
                         <td className="px-4 py-3 text-xs font-bold text-stone-500">{order.created_by || "-"}</td>
                         <td className="px-4 py-3 text-right">
-                          <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => void loadPosOrderDetail(order.id)} type="button">查看详情</button>
+                          <div className="flex justify-end gap-2">
+                            <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => void loadPosOrderDetail(order.id)} type="button">查看详情</button>
+                            {order.status === "completed" ? (
+                              <button className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-100" onClick={() => openPosVoidDialog(order)} type="button">作废</button>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2040,7 +2089,18 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <h3 className="mt-1 text-xl font-black text-ink">{posOrderDetail.order.order_number}</h3>
                       <p className="mt-1 text-xs font-bold text-stone-500">{formatAdminDate(posOrderDetail.order.created_at)}</p>
                     </div>
-                    <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50" onClick={() => setPosOrderDetail(null)} type="button">关闭</button>
+                    <div className="flex flex-wrap gap-2">
+                      {posOrderDetail.order.status === "completed" ? (
+                        <button
+                          className="min-h-11 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-black text-red-700 hover:bg-red-100"
+                          onClick={() => openPosVoidDialog(posOrderDetail.order)}
+                          type="button"
+                        >
+                          作废订单
+                        </button>
+                      ) : null}
+                      <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50" onClick={() => setPosOrderDetail(null)} type="button">关闭</button>
+                    </div>
                   </div>
 
                   <div className="mt-5 grid gap-3 md:grid-cols-4">
@@ -2133,6 +2193,48 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   </div>
 
                   {posOrderDetailLoading ? <p className="mt-4 text-sm font-bold text-stone-500">正在读取详情...</p> : null}
+                </div>
+              </div>
+            ) : null}
+
+            {posVoidDialog ? (
+              <div className="fixed inset-0 z-[60] flex items-end bg-black/40 p-0 sm:items-center sm:justify-center sm:p-4">
+                <div className="w-full rounded-t-3xl bg-paper p-5 shadow-2xl sm:max-w-lg sm:rounded-3xl">
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-red-500">Void POS Order</p>
+                  <h3 className="mt-1 text-xl font-black text-ink">作废订单</h3>
+                  <p className="mt-2 text-sm font-bold text-stone-600">
+                    确认作废 {posVoidDialog.order.order_number}？这会把商品库存加回，并把订单和付款状态标记为作废。
+                  </p>
+                  <label className="mt-5 block">
+                    <span className="text-sm font-black text-ink">作废原因</span>
+                    <textarea
+                      className="mt-2 min-h-28 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-base font-bold outline-none focus:border-ink sm:text-sm"
+                      placeholder="例如：POS 测试订单作废，恢复测试库存"
+                      value={posVoidDialog.reason}
+                      onChange={e => setPosVoidDialog(current => current ? { ...current, reason: e.target.value, message: "" } : current)}
+                    />
+                  </label>
+                  {posVoidDialog.message ? (
+                    <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{posVoidDialog.message}</p>
+                  ) : null}
+                  <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button
+                      className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50"
+                      disabled={posVoidDialog.submitting}
+                      onClick={() => setPosVoidDialog(null)}
+                      type="button"
+                    >
+                      取消
+                    </button>
+                    <button
+                      className="min-h-11 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-black text-white hover:bg-red-700 disabled:opacity-50"
+                      disabled={posVoidDialog.submitting}
+                      onClick={() => void submitPosVoid()}
+                      type="button"
+                    >
+                      {posVoidDialog.submitting ? "作废中..." : "确认作废并加回库存"}
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : null}
