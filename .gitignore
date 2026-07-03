@@ -9,3 +9,5 @@ tsconfig.tsbuildinfo
 .vercel
 demo-videos/
 automation-reports/
+
+backups/*.sql
