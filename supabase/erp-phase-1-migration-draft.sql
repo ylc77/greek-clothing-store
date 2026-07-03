@@ -49,7 +49,7 @@ set name = excluded.name,
 
 create table if not exists public.product_variants (
   id uuid primary key default gen_random_uuid(),
-  product_id uuid not null references public.products(id) on delete cascade,
+  product_id bigint not null references public.products(id) on delete cascade,
   variant_sku text not null unique,
   barcode text,
   size text,
@@ -160,6 +160,12 @@ alter table public.product_variants enable row level security;
 alter table public.inventory_balances enable row level security;
 alter table public.stock_movements enable row level security;
 alter table public.audit_logs enable row level security;
+
+grant select, insert, update, delete on public.inventory_locations to service_role;
+grant select, insert, update, delete on public.product_variants to service_role;
+grant select, insert, update, delete on public.inventory_balances to service_role;
+grant select, insert, update, delete on public.stock_movements to service_role;
+grant select, insert, update, delete on public.audit_logs to service_role;
 
 commit;
 
