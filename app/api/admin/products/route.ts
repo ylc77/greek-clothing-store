@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid, productForForm, validateProductPayload } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
+import { syncProductInventoryFromLegacy } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { Product } from "@/lib/types";
 
@@ -79,7 +80,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  let erpSyncWarning: string | undefined;
+  try {
+    const productId = Number((data as Product).id);
+    if (!Number.isFinite(productId)) {
+      throw new Error("Invalid product ID for ERP inventory sync.");
+    }
+
+    await syncProductInventoryFromLegacy({
+      productId,
+      reason: "新增商品初始化库存",
+      sourceType: "admin_create",
+      sourceId: productId,
+      movementType: "manual_adjustment",
+      idempotencyKey: `admin_create:${productId}:${Date.now()}`,
+      createdBy: "admin",
+    });
+  } catch (syncError) {
+    erpSyncWarning =
+      syncError instanceof Error ? syncError.message : "ERP inventory sync failed.";
+  }
+
   invalidateProductsCache((data as Product).sku);
 
-  return NextResponse.json({ product: productForForm(data as Product) }, { status: 201 });
+  return NextResponse.json(
+    { product: productForForm(data as Product), erpSyncWarning },
+    { status: 201 },
+  );
 }

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { adminPasswordIsValid, productForForm } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
+import {
+  hasStockMovementForIdempotencyKey,
+  syncProductInventoryFromLegacy,
+} from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { Product } from "@/lib/types";
 
@@ -41,8 +46,40 @@ export async function POST(request: NextRequest) {
   const size = normalizeSize(payload.size);
   const quantity = Math.max(1, Math.trunc(Number(payload.quantity) || 1));
   const autoDeactivate = payload.autoDeactivate !== false;
+  const providedIdempotencyKey =
+    typeof payload.idempotencyKey === "string" && payload.idempotencyKey.trim()
+      ? payload.idempotencyKey.trim()
+      : typeof payload.clientRequestId === "string" && payload.clientRequestId.trim()
+        ? payload.clientRequestId.trim()
+        : "";
+  const operationKey =
+    providedIdempotencyKey ||
+    `quick_sell:${sku || "unknown"}:${size || "ONE_SIZE"}:${Date.now()}:${randomUUID()}`;
 
   if (!sku) return NextResponse.json({ error: "SKU is required" }, { status: 400 });
+
+  try {
+    const alreadyProcessed = await hasStockMovementForIdempotencyKey(operationKey);
+    if (alreadyProcessed) {
+      const { data: currentProduct } = await supabase
+        .from("products")
+        .select("*")
+        .eq("sku", sku)
+        .maybeSingle();
+
+      return NextResponse.json({
+        ok: true,
+        alreadyProcessed: true,
+        sold: 0,
+        size: size || null,
+        idempotencyKey: operationKey,
+        product: currentProduct ? productForForm(currentProduct as Product) : null,
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to check sale idempotency";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 
   const { data: product, error: productError } = await supabase
     .from("products")
@@ -96,12 +133,35 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  let erpSyncWarning: string | undefined;
+  try {
+    const productId = Number((data as Product).id);
+    if (!Number.isFinite(productId)) {
+      throw new Error("Invalid product ID for ERP inventory sync.");
+    }
+
+    await syncProductInventoryFromLegacy({
+      productId,
+      reason: "快速售出",
+      sourceType: "quick_sell",
+      sourceId: rawProduct.sku,
+      movementType: "sale",
+      idempotencyKey: operationKey,
+      createdBy: "admin",
+    });
+  } catch (syncError) {
+    erpSyncWarning =
+      syncError instanceof Error ? syncError.message : "ERP inventory sync failed.";
+  }
+
   invalidateProductsCache(rawProduct.sku);
 
   return NextResponse.json({
     ok: true,
     sold: quantity,
     size: soldSize || null,
+    idempotencyKey: operationKey,
+    erpSyncWarning,
     product: productForForm(data as Product),
   });
 }

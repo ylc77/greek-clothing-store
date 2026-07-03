@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid, productForForm, validateProductPayload } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
-import { hasInventoryMovementsForProduct } from "@/lib/erp-inventory";
+import {
+  hasInventoryMovementsForProduct,
+  syncProductInventoryFromLegacy,
+} from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { Product } from "@/lib/types";
 
@@ -92,9 +95,30 @@ export async function PUT(request: NextRequest, context: ProductRouteContext) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  let erpSyncWarning: string | undefined;
+  try {
+    const productId = Number((data as Product).id);
+    if (!Number.isFinite(productId)) {
+      throw new Error("Invalid product ID for ERP inventory sync.");
+    }
+
+    await syncProductInventoryFromLegacy({
+      productId,
+      reason: "后台编辑商品库存",
+      sourceType: "admin_edit",
+      sourceId: productId,
+      movementType: "correction",
+      idempotencyKey: `admin_edit:${productId}:${Date.now()}`,
+      createdBy: "admin",
+    });
+  } catch (syncError) {
+    erpSyncWarning =
+      syncError instanceof Error ? syncError.message : "ERP inventory sync failed.";
+  }
+
   invalidateProductsCache((data as Product).sku);
 
-  return NextResponse.json({ product: productForForm(data as Product) });
+  return NextResponse.json({ product: productForForm(data as Product), erpSyncWarning });
 }
 
 export async function DELETE(request: NextRequest, context: ProductRouteContext) {

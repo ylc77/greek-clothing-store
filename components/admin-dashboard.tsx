@@ -791,7 +791,19 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   async function sellOne(product: AdminProduct, size?: string) {
     setSellingSku(`${product.sku}:${size || ""}`);
     try {
-      await api("/api/admin/products/sell", { method: "POST", body: JSON.stringify({ sku: product.sku, size, quantity: 1, autoDeactivate: true }) });
+      const clientRequestId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `quick-sale-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const result = await api("/api/admin/products/sell", {
+        method: "POST",
+        body: JSON.stringify({ sku: product.sku, size, quantity: 1, autoDeactivate: true, clientRequestId }),
+      });
+      if (result.erpSyncWarning) {
+        toast(`旧库存已更新，但 ERP 库存同步需要检查：${result.erpSyncWarning}`, "err");
+      } else if (result.alreadyProcessed) {
+        toast("这次售出请求已经处理过，没有重复扣库存。");
+      }
       toast(size ? `${product.sku} / ${size} 已售出 1 件` : `${product.sku} 已售出 1 件`);
       await loadProducts();
     } catch (er) {
