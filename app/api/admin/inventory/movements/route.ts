@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
       q: url.searchParams.get("q") || undefined,
       variantId: url.searchParams.get("variantId") || undefined,
       movementType: url.searchParams.get("movementType") || undefined,
+      sourceType: url.searchParams.get("sourceType") || undefined,
       limit: Number(url.searchParams.get("limit")) || undefined,
       offset: Number(url.searchParams.get("offset")) || undefined,
     });

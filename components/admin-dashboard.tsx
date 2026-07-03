@@ -74,6 +74,8 @@ type InventoryAdjustState = {
   submitting: boolean;
   message: string;
 };
+type InventoryStatusFilter = "all" | "normal" | "low_stock" | "out_of_stock" | "inactive" | "mismatch";
+type InventorySort = "stock_asc" | "stock_desc" | "sku" | "updated";
 type QuickAddState = {
   category: ProductCategory;
   subcategory: string;
@@ -169,6 +171,17 @@ function formatAdminDate(value: string) {
 }
 function signedQuantity(value: number) {
   return value > 0 ? `+${value}` : String(value);
+}
+function inventoryStatusFor(item: InventoryItem, lowStockThreshold: number) {
+  const reconciled = item.stock_matches_legacy && item.size_stock_matches_legacy;
+  if (!reconciled) return { key: "mismatch", label: "对账异常", className: "bg-red-50 text-red-700" };
+  if (!item.active) return { key: "inactive", label: "停用", className: "bg-stone-100 text-stone-500" };
+  if (item.quantity_available <= 0) return { key: "out_of_stock", label: "缺货", className: "bg-red-50 text-red-700" };
+  if (item.quantity_available <= lowStockThreshold) return { key: "low_stock", label: "低库存", className: "bg-amber-50 text-amber-700" };
+  return { key: "normal", label: "正常", className: "bg-emerald-50 text-emerald-700" };
+}
+function inventoryCsvStatus(item: InventoryItem, lowStockThreshold: number) {
+  return inventoryStatusFor(item, lowStockThreshold).label;
 }
 const emptyQuickAdd: QuickAddState = {
   category: "men",
@@ -351,9 +364,14 @@ export function AdminDashboard() {
   const [inventoryError, setInventoryError] = useState("");
   const [inventoryQ, setInventoryQ] = useState("");
   const [inventorySize, setInventorySize] = useState("");
-  const [inventoryZeroStock, setInventoryZeroStock] = useState(false);
-  const [inventoryInactive, setInventoryInactive] = useState(false);
+  const [inventoryStatus, setInventoryStatus] = useState<InventoryStatusFilter>("all");
+  const [inventorySort, setInventorySort] = useState<InventorySort>("stock_asc");
+  const [lowStockThreshold, setLowStockThreshold] = useState(3);
   const [movementVariantId, setMovementVariantId] = useState("");
+  const [movementQ, setMovementQ] = useState("");
+  const [movementType, setMovementType] = useState("");
+  const [movementSourceType, setMovementSourceType] = useState("");
+  const [movementLimit, setMovementLimit] = useState(50);
   const [adjustInventory, setAdjustInventory] = useState<InventoryAdjustState>({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" });
   useEffect(() => { if (activePassword) { fetch("/api/admin/categories", { headers: { "x-admin-password": activePassword } }).then(r => r.json()).then(d => { setDbCats((d.categories||[]).filter((c:Record<string,unknown>) => c.is_active !== false)); setDbSubs((d.subcategories||[]).filter((s:Record<string,unknown>) => s.is_active !== false)); }).catch(() => {}); } }, [activePassword, tab]);
 
@@ -407,6 +425,32 @@ export function AdminDashboard() {
     };
   }, [products]);
 
+  const filteredInventoryItems = useMemo(() => {
+    const threshold = Math.max(0, Math.trunc(lowStockThreshold) || 0);
+    let list = inventoryItems.filter(item => inventoryStatus === "all" || inventoryStatusFor(item, threshold).key === inventoryStatus);
+    list = [...list].sort((a, b) => {
+      if (inventorySort === "stock_desc") return b.quantity_available - a.quantity_available;
+      if (inventorySort === "sku") return `${a.product_sku}-${a.variant_sku}`.localeCompare(`${b.product_sku}-${b.variant_sku}`);
+      return a.quantity_available - b.quantity_available;
+    });
+    return list;
+  }, [inventoryItems, inventoryStatus, inventorySort, lowStockThreshold]);
+
+  const inventorySummary = useMemo(() => {
+    const threshold = Math.max(0, Math.trunc(lowStockThreshold) || 0);
+    return inventoryItems.reduce((summary, item) => {
+      const status = inventoryStatusFor(item, threshold).key;
+      summary.totalVariants += 1;
+      summary.totalOnHand += item.quantity_on_hand;
+      summary.totalAvailable += item.quantity_available;
+      if (status === "out_of_stock") summary.outOfStock += 1;
+      if (status === "low_stock") summary.lowStock += 1;
+      if (status === "inactive") summary.inactive += 1;
+      if (status === "mismatch") summary.mismatch += 1;
+      return summary;
+    }, { totalVariants: 0, totalOnHand: 0, totalAvailable: 0, outOfStock: 0, lowStock: 0, inactive: 0, mismatch: 0 });
+  }, [inventoryItems, lowStockThreshold]);
+
   const launchChecks = useMemo(() => {
     const rows = products.map(product => {
       const issues = productIssues(product);
@@ -454,6 +498,51 @@ export function AdminDashboard() {
     URL.revokeObjectURL(url);
   }
 
+  function downloadInventoryCsv() {
+    const headers = [
+      "product_id",
+      "product_name",
+      "product_sku",
+      "variant_id",
+      "variant_sku",
+      "size",
+      "color",
+      "barcode",
+      "active",
+      "quantity_on_hand",
+      "quantity_reserved",
+      "quantity_available",
+      "stock_status",
+      "reconciliation_status",
+    ];
+    const rows = filteredInventoryItems.map(item => [
+      String(item.product_id),
+      item.product_name || "",
+      item.product_sku || "",
+      item.variant_id,
+      item.variant_sku || "",
+      item.size || "",
+      item.color || "",
+      item.barcode || "",
+      item.active ? "TRUE" : "FALSE",
+      String(item.quantity_on_hand),
+      String(item.quantity_reserved),
+      String(item.quantity_available),
+      inventoryCsvStatus(item, lowStockThreshold),
+      item.stock_matches_legacy && item.size_stock_matches_legacy ? "OK" : "MISMATCH",
+    ]);
+    const csv = [headers, ...rows].map(row => row.map(csvCell).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF", csv, "\n"], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `erp-inventory-export-${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
   /* ── API helper ───────────────────────────────────────── */
   async function api(path: string, init: RequestInit = {}) {
     const r = await fetch(path, { ...init, headers: { "Content-Type": "application/json", "x-admin-password": activePassword, ...(init.headers || {}) } });
@@ -470,15 +559,16 @@ export function AdminDashboard() {
     const params = new URLSearchParams();
     if (inventoryQ.trim()) params.set("q", inventoryQ.trim());
     if (inventorySize.trim()) params.set("size", inventorySize.trim());
-    if (inventoryZeroStock) params.set("zeroStock", "true");
-    if (inventoryInactive) params.set("inactive", "true");
     params.set("limit", "500");
     const d = await api(`/api/admin/inventory?${params.toString()}`);
     setInventoryItems(d.items || []);
   }
   async function loadInventoryMovements(nextVariantId = movementVariantId) {
     const params = new URLSearchParams();
-    params.set("limit", "50");
+    params.set("limit", String(movementLimit));
+    if (movementQ.trim()) params.set("q", movementQ.trim());
+    if (movementType) params.set("movementType", movementType);
+    if (movementSourceType) params.set("sourceType", movementSourceType);
     if (nextVariantId) params.set("variantId", nextVariantId);
     const d = await api(`/api/admin/inventory/movements?${params.toString()}`);
     setInventoryMovements(d.items || []);
@@ -1238,25 +1328,63 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     ))}
                   </div>
                 ) : null}
+                {inventoryReconciliation && inventoryIssueCount(inventoryReconciliation) > 0 ? (
+                  <div className="mt-3 rounded-xl bg-white/70 p-3 text-xs">
+                    <p className="mb-2 font-black">异常样例（只读，不自动修复）</p>
+                    {[
+                      ["stock vs balance", inventoryReconciliation.stockVsBalanceMismatches],
+                      ["size_stock vs ERP", inventoryReconciliation.sizeStockMismatches],
+                      ["缺 variant", inventoryReconciliation.productsWithoutVariants],
+                      ["缺 MAIN_STORE", inventoryReconciliation.variantsWithoutMainStoreBalance],
+                      ["重复 variant SKU", inventoryReconciliation.duplicateVariantSkus],
+                      ["重复 barcode", inventoryReconciliation.duplicateBarcodes],
+                      ["预留异常", inventoryReconciliation.reservedExceedsOnHand],
+                      ["流水原因为空", inventoryReconciliation.blankMovementReasons],
+                    ].filter(([, rows]) => Array.isArray(rows) && rows.length > 0).slice(0, 4).map(([label, rows]) => (
+                      <div className="mt-2" key={String(label)}>
+                        <p className="font-bold">{String(label)}：{Array.isArray(rows) ? rows.length : 0} 项</p>
+                        <pre className="mt-1 max-h-24 overflow-auto rounded-lg bg-stone-950/5 p-2 text-[11px]">{JSON.stringify(Array.isArray(rows) ? rows.slice(0, 3) : [], null, 2)}</pre>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
 
             <div className="admin-panel">
-              <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_auto_auto_auto]">
+              <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
+                {[
+                  { label: "Variant 总数", value: inventorySummary.totalVariants, tone: "text-ink" },
+                  { label: "总库存", value: inventorySummary.totalOnHand, tone: "text-ink" },
+                  { label: "可用库存", value: inventorySummary.totalAvailable, tone: "text-emerald-700" },
+                  { label: "缺货", value: inventorySummary.outOfStock, tone: inventorySummary.outOfStock > 0 ? "text-red-600" : "text-emerald-700" },
+                  { label: "低库存", value: inventorySummary.lowStock, tone: inventorySummary.lowStock > 0 ? "text-amber-600" : "text-emerald-700" },
+                  { label: "停用", value: inventorySummary.inactive, tone: "text-stone-500" },
+                  { label: "对账异常", value: inventorySummary.mismatch, tone: inventorySummary.mismatch > 0 ? "text-red-600" : "text-emerald-700" },
+                ].map(item => (
+                  <div className="rounded-2xl border border-stone-100 bg-stone-50/70 p-3 text-center" key={item.label}>
+                    <p className={`text-xl font-black ${item.tone}`}>{item.value}</p>
+                    <p className="mt-1 text-[11px] font-bold text-stone-500">{item.label}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mb-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_120px_150px_150px_150px_auto_auto_auto]">
                 <input className="input" placeholder="搜索商品名 / SKU / variant SKU / barcode" value={inventoryQ} onChange={e => setInventoryQ(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
                 <input className="input" placeholder="尺码，如 S / 38" value={inventorySize} onChange={e => setInventorySize(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
-                <label className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-200 px-3 text-sm font-bold text-stone-600"><input checked={inventoryZeroStock} onChange={e => setInventoryZeroStock(e.target.checked)} type="checkbox" /> 缺货</label>
-                <label className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-200 px-3 text-sm font-bold text-stone-600"><input checked={inventoryInactive} onChange={e => setInventoryInactive(e.target.checked)} type="checkbox" /> 已停用</label>
+                <select className="input" value={inventoryStatus} onChange={e => setInventoryStatus(e.target.value as InventoryStatusFilter)}><option value="all">全部状态</option><option value="normal">正常</option><option value="low_stock">低库存</option><option value="out_of_stock">缺货</option><option value="inactive">停用</option><option value="mismatch">对账异常</option></select>
+                <select className="input" value={inventorySort} onChange={e => setInventorySort(e.target.value as InventorySort)}><option value="stock_asc">库存从低到高</option><option value="stock_desc">库存从高到低</option><option value="sku">SKU</option></select>
+                <select className="input" value={lowStockThreshold} onChange={e => setLowStockThreshold(Math.max(1, Math.trunc(Number(e.target.value) || 3)))}><option value={1}>低库存 ≤ 1</option><option value={2}>低库存 ≤ 2</option><option value={3}>低库存 ≤ 3</option><option value={5}>低库存 ≤ 5</option><option value={10}>低库存 ≤ 10</option></select>
                 <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={inventoryLoading} onClick={() => void loadInventoryData()} type="button">搜索</button>
+                <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50" disabled={filteredInventoryItems.length === 0} onClick={downloadInventoryCsv} type="button">导出库存 CSV</button>
               </div>
               <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h3 className="text-base font-black text-ink">库存总览</h3>
-                  <p className="text-xs text-stone-500">共 {inventoryItems.length} 个 variant。调整库存会写 ERP 流水，并同步回旧库存字段。</p>
+                  <p className="text-xs text-stone-500">当前筛选结果 {filteredInventoryItems.length} 个 variant。调整库存会写 ERP 流水，并同步回旧库存字段。</p>
                 </div>
                 {inventoryLoading ? <p className="text-xs font-bold text-stone-400">加载中...</p> : null}
               </div>
-              {inventoryItems.length === 0 && !inventoryLoading ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">暂无库存数据</p> : null}
+              {filteredInventoryItems.length === 0 && !inventoryLoading ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">暂无库存数据</p> : null}
               <div className="overflow-x-auto rounded-2xl border border-stone-200">
                 <table className="min-w-[1120px] w-full text-left text-sm">
                   <thead className="bg-stone-50 text-stone-500">
@@ -1276,8 +1404,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     </tr>
                   </thead>
                   <tbody>
-                    {inventoryItems.map(item => {
+                    {filteredInventoryItems.map(item => {
                       const reconciled = item.stock_matches_legacy && item.size_stock_matches_legacy;
+                      const stockStatus = inventoryStatusFor(item, lowStockThreshold);
                       return (
                         <tr className="border-t border-stone-100 bg-white align-top" key={item.variant_id}>
                           <td className="max-w-[220px] px-3 py-3"><p className="line-clamp-2 font-black text-ink">{item.product_name || "-"}</p></td>
@@ -1288,8 +1417,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           <td className="px-3 py-3 font-mono text-xs">{item.barcode || "-"}</td>
                           <td className="px-3 py-3 text-right text-sm font-black text-ink">{item.quantity_on_hand}</td>
                           <td className="px-3 py-3 text-right text-sm font-bold text-stone-500">{item.quantity_reserved}</td>
-                          <td className={`px-3 py-3 text-right text-sm font-black ${item.quantity_available <= 0 ? "text-red-600" : item.quantity_available <= 2 ? "text-amber-600" : "text-emerald-700"}`}>{item.quantity_available}</td>
-                          <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${item.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}>{item.active ? "启用" : "停用"}</span></td>
+                          <td className={`px-3 py-3 text-right text-sm font-black ${item.quantity_available <= 0 ? "text-red-600" : item.quantity_available <= lowStockThreshold ? "text-amber-600" : "text-emerald-700"}`}>{item.quantity_available}</td>
+                          <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${stockStatus.className}`}>{stockStatus.label}</span></td>
                           <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${reconciled ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{reconciled ? "正常" : "异常"}</span></td>
                           <td className="px-3 py-3 text-right">
                             <div className="flex justify-end gap-2">
@@ -1309,12 +1438,37 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h3 className="text-base font-black text-ink">最近库存流水</h3>
-                  <p className="text-xs text-stone-500">{movementVariantId ? "当前只显示所选 variant 的流水。" : "默认显示最近 50 条库存流水。"}</p>
+                  <p className="text-xs text-stone-500">{movementVariantId ? "当前只显示所选 variant 的流水。" : `默认显示最近 ${movementLimit} 条库存流水。`}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {movementVariantId ? <button className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => { setMovementVariantId(""); void loadInventoryMovements(""); }} type="button">查看全部流水</button> : null}
                   <button className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => void loadInventoryMovements()} type="button">刷新流水</button>
                 </div>
+              </div>
+              <div className="mb-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_180px_220px_120px_auto]">
+                <input className="input" placeholder="搜索 SKU / 商品名 / reason" value={movementQ} onChange={e => setMovementQ(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryMovements(); }} />
+                <select className="input" value={movementType} onChange={e => setMovementType(e.target.value)}>
+                  <option value="">全部类型</option>
+                  <option value="initial_migration">initial_migration</option>
+                  <option value="sale">sale</option>
+                  <option value="manual_adjustment">manual_adjustment</option>
+                  <option value="correction">correction</option>
+                  <option value="return">return</option>
+                </select>
+                <select className="input" value={movementSourceType} onChange={e => setMovementSourceType(e.target.value)}>
+                  <option value="">全部来源</option>
+                  <option value="quick_sell">quick_sell</option>
+                  <option value="admin_create">admin_create</option>
+                  <option value="admin_edit">admin_edit</option>
+                  <option value="csv_import">csv_import</option>
+                  <option value="admin_inventory_adjustment">admin_inventory_adjustment</option>
+                </select>
+                <select className="input" value={movementLimit} onChange={e => setMovementLimit(Number(e.target.value) || 50)}>
+                  <option value={50}>50 条</option>
+                  <option value={100}>100 条</option>
+                  <option value={200}>200 条</option>
+                </select>
+                <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800" onClick={() => void loadInventoryMovements()} type="button">筛选流水</button>
               </div>
               {inventoryMovements.length === 0 ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-6 text-center text-sm font-bold text-stone-400">暂无库存流水</p> : (
                 <div className="overflow-x-auto rounded-2xl border border-stone-200">

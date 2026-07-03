@@ -105,6 +105,7 @@ export type InventoryMovementParams = {
   q?: string;
   variantId?: string;
   movementType?: string;
+  sourceType?: string;
   limit?: number;
   offset?: number;
 };
@@ -549,6 +550,9 @@ export async function getInventoryMovements(params: InventoryMovementParams = {}
   }
   if (params.movementType) {
     query = query.eq("movement_type", params.movementType);
+  }
+  if (params.sourceType) {
+    query = query.eq("source_type", params.sourceType);
   }
 
   const { data: movements, error: movementsError } = await query;
