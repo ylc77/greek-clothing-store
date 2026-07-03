@@ -16,6 +16,7 @@ type CheckoutBody = {
   items?: unknown;
   discountTotal?: unknown;
   notes?: unknown;
+  dryRun?: unknown;
 };
 
 type VariantRow = {
@@ -107,6 +108,18 @@ function productName(product: ProductRow) {
   );
 }
 
+function logCheckoutError(context: string, error: unknown, extra?: Record<string, unknown>) {
+  const details =
+    error && typeof error === "object"
+      ? {
+          message: "message" in error ? String((error as { message?: unknown }).message || "") : "",
+          code: "code" in error ? String((error as { code?: unknown }).code || "") : "",
+        }
+      : { message: String(error || "") };
+
+  console.error(`[POS checkout] ${context}`, { ...details, ...extra });
+}
+
 function orderNumber() {
   const now = new Date();
   const stamp = now
@@ -151,7 +164,8 @@ async function loadExistingOrder(supabase: any, idempotencyKey: string) {
     .maybeSingle();
 
   if (orderError) {
-    throw new Error(`Failed to check POS idempotency: ${orderError.message}`);
+    logCheckoutError("check checkout idempotency failed", orderError, { idempotencyKey });
+    throw new Error("Failed to check whether this POS checkout was already processed.");
   }
   if (!order) return null;
 
@@ -195,11 +209,15 @@ export async function POST(request: NextRequest) {
 
   const clientRequestId = text(payload.clientRequestId);
   const notes = text(payload.notes);
+  const dryRun = payload.dryRun === true;
   if (!clientRequestId) {
     return NextResponse.json({ error: "clientRequestId is required." }, { status: 400 });
   }
   if (!isPaymentMethod(payload.paymentMethod)) {
-    return NextResponse.json({ error: "paymentMethod must be cash, card, or other." }, { status: 400 });
+    return NextResponse.json(
+      { error: "paymentMethod must be one of: cash, card, other." },
+      { status: 400 },
+    );
   }
 
   let itemsInput: Array<{ variantId: string; quantity: number }>;
@@ -214,15 +232,6 @@ export async function POST(request: NextRequest) {
   const idempotencyKey = `pos_sale:${clientRequestId}`;
 
   try {
-    const existingOrder = await loadExistingOrder(supabase as any, idempotencyKey);
-    if (existingOrder) {
-      return NextResponse.json({
-        ok: true,
-        alreadyProcessed: true,
-        ...existingOrder,
-      });
-    }
-
     const location = await getMainInventoryLocation();
     const variantIds = itemsInput.map((item) => item.variantId);
     const { data: variants, error: variantsError } = await (supabase as any)
@@ -231,12 +240,20 @@ export async function POST(request: NextRequest) {
       .in("id", variantIds);
 
     if (variantsError) {
-      return NextResponse.json({ error: variantsError.message }, { status: 500 });
+      logCheckoutError("load variants failed", variantsError);
+      return NextResponse.json({ error: "Failed to load POS items." }, { status: 500 });
     }
 
     const variantRows = (variants || []) as VariantRow[];
     if (variantRows.length !== variantIds.length) {
-      return NextResponse.json({ error: "One or more POS items were not found." }, { status: 400 });
+      const foundIds = new Set(variantRows.map((variant) => variant.id));
+      return NextResponse.json(
+        {
+          error: "One or more POS items were not found.",
+          missingVariantIds: variantIds.filter((variantId) => !foundIds.has(variantId)),
+        },
+        { status: 400 },
+      );
     }
 
     const productIds = Array.from(new Set(variantRows.map((variant) => Number(variant.product_id)).filter(Number.isFinite)));
@@ -246,7 +263,8 @@ export async function POST(request: NextRequest) {
       .in("id", productIds);
 
     if (productsError) {
-      return NextResponse.json({ error: productsError.message }, { status: 500 });
+      logCheckoutError("load products failed", productsError);
+      return NextResponse.json({ error: "Failed to load POS product details." }, { status: 500 });
     }
 
     const productMap = new Map<number, ProductRow>();
@@ -261,7 +279,8 @@ export async function POST(request: NextRequest) {
       .in("variant_id", variantIds);
 
     if (balancesError) {
-      return NextResponse.json({ error: balancesError.message }, { status: 500 });
+      logCheckoutError("load inventory balances failed", balancesError);
+      return NextResponse.json({ error: "Failed to load POS inventory balances." }, { status: 500 });
     }
 
     const balanceMap = new Map<string, BalanceRow>();
@@ -278,23 +297,43 @@ export async function POST(request: NextRequest) {
       quantityBefore: number;
       quantityReserved: number;
       quantityAfter: number;
-      lineTotal: number;
     }> = [];
 
     for (const item of itemsInput) {
       const variant = variantRows.find((row) => row.id === item.variantId);
       if (!variant || variant.active === false) {
-        return NextResponse.json({ error: "One or more POS variants are inactive or missing." }, { status: 400 });
+        return NextResponse.json(
+          {
+            error: "POS variant is inactive or missing.",
+            variantId: item.variantId,
+            variant_sku: variant?.variant_sku || null,
+          },
+          { status: 400 },
+        );
       }
 
       const product = productMap.get(Number(variant.product_id));
       if (!product || product.is_active === false) {
-        return NextResponse.json({ error: `Product is inactive for variant ${variant.variant_sku}.` }, { status: 400 });
+        return NextResponse.json(
+          {
+            error: "Product is inactive and cannot be sold.",
+            sku: product?.sku || null,
+            variant_sku: variant.variant_sku,
+          },
+          { status: 400 },
+        );
       }
 
       const balance = balanceMap.get(variant.id);
       if (!balance) {
-        return NextResponse.json({ error: `Inventory balance is missing for ${variant.variant_sku}.` }, { status: 400 });
+        return NextResponse.json(
+          {
+            error: "Inventory balance is missing for this variant.",
+            variantId: variant.id,
+            variant_sku: variant.variant_sku,
+          },
+          { status: 400 },
+        );
       }
 
       const onHand = quantity(balance.quantity_on_hand);
@@ -303,9 +342,12 @@ export async function POST(request: NextRequest) {
       if (available < item.quantity) {
         return NextResponse.json(
           {
-            error: `库存不足：${variant.variant_sku || product.sku} 当前可用 ${available} 件。`,
+            error: "Insufficient stock for POS checkout.",
             variantId: variant.id,
-            quantityAvailable: available,
+            variant_sku: variant.variant_sku,
+            product_sku: product.sku,
+            requested: item.quantity,
+            available,
           },
           { status: 409 },
         );
@@ -336,7 +378,6 @@ export async function POST(request: NextRequest) {
         quantityBefore: onHand,
         quantityReserved: reserved,
         quantityAfter: onHand - item.quantity,
-        lineTotal,
       });
     }
 
@@ -345,6 +386,54 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "discountTotal cannot be greater than subtotal." }, { status: 400 });
     }
     const total = money(subtotal - discountTotal);
+
+    const previewItems = orderItems.map((item, index) => {
+      const change = balanceChanges[index];
+      return {
+        product_id: item.product_id,
+        variant_id: item.variant_id,
+        product_sku: item.product_sku,
+        variant_sku: item.variant_sku,
+        barcode: item.barcode,
+        name: item.name,
+        size: item.size,
+        color: item.color,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        discount_total: item.discount_total,
+        line_total: item.line_total,
+        quantity_on_hand: change.quantityBefore,
+        quantity_reserved: change.quantityReserved,
+        quantity_available: Math.max(0, change.quantityBefore - change.quantityReserved),
+        quantity_after: change.quantityAfter,
+      };
+    });
+
+    if (dryRun) {
+      return NextResponse.json({
+        ok: true,
+        dryRun: true,
+        alreadyProcessed: false,
+        paymentMethod: payload.paymentMethod,
+        stockCheck: {
+          ok: true,
+          itemCount: previewItems.length,
+        },
+        items: previewItems,
+        subtotal,
+        discount_total: discountTotal,
+        total,
+      });
+    }
+
+    const existingOrder = await loadExistingOrder(supabase as any, idempotencyKey);
+    if (existingOrder) {
+      return NextResponse.json({
+        ok: true,
+        alreadyProcessed: true,
+        ...existingOrder,
+      });
+    }
 
     let order: ExistingOrder | null = null;
     let orderInsertError: { message: string; code?: string } | null = null;
@@ -380,15 +469,14 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ ok: true, alreadyProcessed: true, ...existing });
         }
       } else {
+        logCheckoutError("create sales order failed", error, { idempotencyKey });
         break;
       }
     }
 
     if (!order) {
-      return NextResponse.json(
-        { error: orderInsertError?.message || "Failed to create POS order." },
-        { status: 500 },
-      );
+      logCheckoutError("create sales order failed", orderInsertError, { idempotencyKey });
+      return NextResponse.json({ error: "Failed to create POS order." }, { status: 500 });
     }
 
     const itemsToInsert = orderItems.map((item) => ({ ...item, order_id: order!.id }));
@@ -398,9 +486,10 @@ export async function POST(request: NextRequest) {
       .select("id, product_sku, variant_sku, name, size, color, quantity, unit_price, line_total");
 
     if (itemsError) {
+      logCheckoutError("create sales order items failed", itemsError, { orderId: order.id });
       return NextResponse.json(
         {
-          error: `POS order was created but order items failed: ${itemsError.message}`,
+          error: "POS order was created but order items failed. Please reconcile this order manually.",
           orderId: order.id,
           requiresManualReconciliation: true,
         },
@@ -421,9 +510,10 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (paymentError) {
+      logCheckoutError("create payment failed", paymentError, { orderId: order.id });
       return NextResponse.json(
         {
-          error: `POS order was created but payment failed: ${paymentError.message}`,
+          error: "POS order was created but payment failed. Please reconcile this order manually.",
           orderId: order.id,
           requiresManualReconciliation: true,
         },
@@ -447,10 +537,18 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
 
       if (updateBalanceError || !updatedBalance) {
+        if (updateBalanceError) {
+          logCheckoutError("update inventory balance failed", updateBalanceError, {
+            orderId: order.id,
+            variantId: change.variant.id,
+          });
+        }
         return NextResponse.json(
           {
-            error: `POS order was created but inventory changed before checkout completed for ${change.variant.variant_sku}.`,
+            error: "POS order was created but inventory changed before checkout completed.",
             orderId: order.id,
+            variantId: change.variant.id,
+            variant_sku: change.variant.variant_sku,
             requiresManualReconciliation: true,
           },
           { status: 409 },
@@ -473,9 +571,13 @@ export async function POST(request: NextRequest) {
       });
 
       if (movementError) {
+        logCheckoutError("write stock movement failed", movementError, {
+          orderId: order.id,
+          variantId: change.variant.id,
+        });
         return NextResponse.json(
           {
-            error: `POS order was created but stock movement failed: ${movementError.message}`,
+            error: "POS order was created but stock movement failed. Please reconcile this order manually.",
             orderId: order.id,
             requiresManualReconciliation: true,
           },
@@ -522,7 +624,7 @@ export async function POST(request: NextRequest) {
       legacySyncWarning: legacySyncWarnings.length > 0 ? legacySyncWarnings : undefined,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to complete POS checkout.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    logCheckoutError("unexpected checkout failure", error);
+    return NextResponse.json({ error: "Failed to complete POS checkout." }, { status: 500 });
   }
 }
