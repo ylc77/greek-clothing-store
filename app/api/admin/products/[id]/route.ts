@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid, productForForm, validateProductPayload } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
+import { hasInventoryMovementsForProduct } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { Product } from "@/lib/types";
 
@@ -41,6 +42,42 @@ export async function PUT(request: NextRequest, context: ProductRouteContext) {
 
   if (!mutation) {
     return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
+  }
+
+  const { data: existingProduct, error: existingProductError } = await supabase
+    .from("products")
+    .select("id, sku")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (existingProductError) {
+    return NextResponse.json({ error: existingProductError.message }, { status: 500 });
+  }
+
+  if (!existingProduct) {
+    return NextResponse.json({ error: "Product not found" }, { status: 404 });
+  }
+
+  const currentSku = typeof existingProduct.sku === "string" ? existingProduct.sku.trim() : "";
+  const nextSku = typeof mutation.sku === "string" ? mutation.sku.trim() : "";
+  if (nextSku && currentSku && nextSku !== currentSku) {
+    const productId = Number(existingProduct.id);
+    if (!Number.isFinite(productId)) {
+      return NextResponse.json({ error: "Invalid product ID" }, { status: 400 });
+    }
+
+    try {
+      const hasMovements = await hasInventoryMovementsForProduct(productId);
+      if (hasMovements) {
+        return NextResponse.json(
+          { error: "该商品已有库存记录，不能修改 SKU。请新建商品或联系管理员处理。" },
+          { status: 409 },
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to check inventory history";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
   }
 
   const { data, error } = await supabase

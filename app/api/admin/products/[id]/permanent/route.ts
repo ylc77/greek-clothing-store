@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminPasswordIsValid } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
+import { hasInventoryMovementsForProduct } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 function unauthorized() {
@@ -14,6 +15,23 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
   if (!supabase) return NextResponse.json({ error: "Admin client not configured" }, { status: 500 });
 
   const { id } = await context.params;
+  const productId = Number(id);
+  if (!Number.isFinite(productId)) {
+    return NextResponse.json({ error: "Invalid product ID" }, { status: 400 });
+  }
+
+  try {
+    const hasMovements = await hasInventoryMovementsForProduct(productId);
+    if (hasMovements) {
+      return NextResponse.json(
+        { error: "该商品已有库存记录，不能永久删除。请改为下架。" },
+        { status: 409 },
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to check inventory history";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 
   // Fetch product to get image URLs for storage cleanup
   const { data: product } = await (supabase as any)
