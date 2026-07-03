@@ -21,7 +21,7 @@ type CsvRow = Record<string, string | number>;
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "inventory" | "add" | "csv" | "images" | "skroutz" | "categories";
+type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "pos" | "inventory" | "add" | "csv" | "images" | "skroutz" | "categories";
 type InventoryItem = {
   product_id: number;
   product_name: string;
@@ -76,6 +76,52 @@ type InventoryAdjustState = {
 };
 type InventoryStatusFilter = "all" | "normal" | "low_stock" | "out_of_stock" | "inactive" | "mismatch";
 type InventorySort = "stock_asc" | "stock_desc" | "sku" | "updated";
+type PosPaymentMethod = "cash" | "card" | "other";
+type PosSearchItem = {
+  product_id: number;
+  variant_id: string;
+  product_sku: string;
+  variant_sku: string;
+  barcode: string | null;
+  name: string;
+  size: string | null;
+  color: string | null;
+  price: number;
+  quantity_on_hand: number;
+  quantity_reserved: number;
+  quantity_available: number;
+  product_active: boolean;
+  variant_active: boolean;
+  image_url: string;
+  outOfStock?: boolean;
+};
+type PosCartItem = PosSearchItem & { cartQuantity: number };
+type PosOrderResult = {
+  order?: {
+    id: string;
+    order_number: string;
+    total: number;
+    subtotal: number;
+    discount_total: number;
+    payment_status: string;
+    status: string;
+    created_at: string;
+  };
+  items?: Array<{
+    id?: string;
+    product_sku?: string;
+    variant_sku?: string;
+    name?: string;
+    size?: string | null;
+    color?: string | null;
+    quantity?: number;
+    unit_price?: number;
+    line_total?: number;
+  }>;
+  payments?: Array<{ method?: string; amount?: number; status?: string }>;
+  alreadyProcessed?: boolean;
+  legacySyncWarning?: string[];
+};
 type QuickAddState = {
   category: ProductCategory;
   subcategory: string;
@@ -134,10 +180,11 @@ const csvFieldLabels: Record<string, string> = {
 };
 const csvHeaderAliases = new Map(Object.entries(csvFieldLabels).flatMap(([field, label]) => [[field, field], [label, field]]));
 const tabs: { key: Tab; label: string }[] = [
+  { key: "pos", label: "POS 收银" },
   { key: "inventory", label: "库存管理" },
   { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
-const primaryTabKeys: Tab[] = ["quickAdd", "quickSale", "dashboard", "check"];
+const primaryTabKeys: Tab[] = ["quickAdd", "pos", "quickSale", "dashboard", "check"];
 const managementTabKeys: Tab[] = ["inventory", "add", "images", "csv", "categories", "skroutz"];
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
 const clothingSizeOptions = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
@@ -398,6 +445,17 @@ export function AdminDashboard() {
   const [movementSourceType, setMovementSourceType] = useState("");
   const [movementLimit, setMovementLimit] = useState(50);
   const [adjustInventory, setAdjustInventory] = useState<InventoryAdjustState>({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" });
+  const posSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const [posQuery, setPosQuery] = useState("");
+  const [posResults, setPosResults] = useState<PosSearchItem[]>([]);
+  const [posCart, setPosCart] = useState<PosCartItem[]>([]);
+  const [posPaymentMethod, setPosPaymentMethod] = useState<PosPaymentMethod>("cash");
+  const [posDiscountTotal, setPosDiscountTotal] = useState("0");
+  const [posLoading, setPosLoading] = useState(false);
+  const [posCheckoutLoading, setPosCheckoutLoading] = useState(false);
+  const [posMessage, setPosMessage] = useState("");
+  const [posPreview, setPosPreview] = useState<Record<string, unknown> | null>(null);
+  const [posLastOrder, setPosLastOrder] = useState<PosOrderResult | null>(null);
   useEffect(() => { if (activePassword) { fetch("/api/admin/categories", { headers: { "x-admin-password": activePassword } }).then(r => r.json()).then(d => { setDbCats((d.categories||[]).filter((c:Record<string,unknown>) => c.is_active !== false)); setDbSubs((d.subcategories||[]).filter((s:Record<string,unknown>) => s.is_active !== false)); }).catch(() => {}); } }, [activePassword, tab]);
 
   // Search / filter state
@@ -475,6 +533,12 @@ export function AdminDashboard() {
       return summary;
     }, { totalVariants: 0, totalOnHand: 0, totalAvailable: 0, outOfStock: 0, lowStock: 0, inactive: 0, mismatch: 0 });
   }, [inventoryItems, lowStockThreshold]);
+
+  const posSubtotal = useMemo(() => {
+    return posCart.reduce((sum, item) => sum + item.price * item.cartQuantity, 0);
+  }, [posCart]);
+  const posDiscount = useMemo(() => Math.max(0, Number(posDiscountTotal) || 0), [posDiscountTotal]);
+  const posTotal = useMemo(() => Math.max(0, posSubtotal - posDiscount), [posSubtotal, posDiscount]);
 
   const launchChecks = useMemo(() => {
     const rows = products.map(product => {
@@ -577,6 +641,188 @@ export function AdminDashboard() {
   }
   async function readJson(r: Response, fallback: string) { const ct = r.headers.get("Content-Type")||""; if (ct.includes("json")) return r.json(); const t = await r.text(); throw new Error(t ? `${fallback}: ${t.slice(0, 160)}` : fallback); }
 
+  function posErrorMessage(data: Record<string, unknown>, fallback: string) {
+    if (data.variant_sku && data.requested !== undefined && data.available !== undefined) {
+      return `${data.error || fallback} ${data.variant_sku}：需要 ${data.requested}，可用 ${data.available}`;
+    }
+    if (data.sku || data.variant_sku) {
+      return `${data.error || fallback} ${data.sku || ""} ${data.variant_sku || ""}`.trim();
+    }
+    return String(data.error || fallback);
+  }
+
+  async function posApi(path: string, init: RequestInit = {}) {
+    const response = await fetch(path, {
+      ...init,
+      headers: { "Content-Type": "application/json", "x-admin-password": activePassword, ...(init.headers || {}) },
+    });
+    const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!response.ok) throw new Error(posErrorMessage(data, "POS 请求失败"));
+    return data;
+  }
+
+  function formatEuro(value: number) {
+    return `€${Number(value || 0).toFixed(2)}`;
+  }
+
+  function addPosItem(item: PosSearchItem) {
+    if (item.outOfStock || item.quantity_available <= 0) {
+      const message = `${item.variant_sku || item.product_sku} 当前无可用库存`;
+      setPosMessage(message);
+      toast(message, "err");
+      return;
+    }
+    setPosCart(current => {
+      const existing = current.find(cartItem => cartItem.variant_id === item.variant_id);
+      if (existing) {
+        const nextQty = Math.min(existing.cartQuantity + 1, item.quantity_available);
+        if (nextQty === existing.cartQuantity) toast("购物车数量不能超过当前可用库存", "err");
+        return current.map(cartItem => cartItem.variant_id === item.variant_id ? { ...cartItem, ...item, cartQuantity: nextQty } : cartItem);
+      }
+      return [...current, { ...item, cartQuantity: 1 }];
+    });
+    setPosPreview(null);
+    setPosMessage(`${item.variant_sku || item.product_sku} 已加入购物车`);
+    window.setTimeout(() => posSearchInputRef.current?.focus(), 30);
+  }
+
+  function setPosCartQuantity(variantId: string, quantity: number) {
+    setPosCart(current => current.map(item => {
+      if (item.variant_id !== variantId) return item;
+      const nextQty = Math.max(1, Math.min(Math.trunc(quantity) || 1, item.quantity_available));
+      return { ...item, cartQuantity: nextQty };
+    }));
+    setPosPreview(null);
+  }
+
+  function removePosCartItem(variantId: string) {
+    setPosCart(current => current.filter(item => item.variant_id !== variantId));
+    setPosPreview(null);
+  }
+
+  async function searchPosProducts(autoAdd = false) {
+    setPosLoading(true);
+    setPosMessage("");
+    try {
+      const params = new URLSearchParams();
+      if (posQuery.trim()) params.set("q", posQuery.trim());
+      const data = await posApi(`/api/admin/pos/search?${params.toString()}`);
+      const items = (Array.isArray(data.items) ? data.items : []) as PosSearchItem[];
+      setPosResults(items);
+      if (items.length === 0) {
+        setPosMessage("没有找到商品，请检查条码、SKU 或商品名。");
+        return;
+      }
+      if (autoAdd) {
+        const q = posQuery.trim().toLowerCase();
+        const exact = items.find(item =>
+          item.barcode?.toLowerCase() === q ||
+          item.variant_sku.toLowerCase() === q ||
+          item.product_sku.toLowerCase() === q
+        );
+        if (exact || items.length === 1) {
+          addPosItem(exact || items[0]);
+          setPosQuery("");
+        } else {
+          setPosMessage(`找到 ${items.length} 个结果，请选择要加入购物车的商品。`);
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "POS 搜索失败";
+      setPosMessage(message);
+      toast(message, "err");
+    } finally {
+      setPosLoading(false);
+    }
+  }
+
+  async function runPosDryRun(silent = false) {
+    if (posCart.length === 0) {
+      const message = "请先加入商品到购物车。";
+      setPosMessage(message);
+      if (!silent) toast(message, "err");
+      return false;
+    }
+    if (posDiscount > posSubtotal) {
+      const message = "折扣不能大于小计金额。";
+      setPosMessage(message);
+      if (!silent) toast(message, "err");
+      return false;
+    }
+    setPosCheckoutLoading(true);
+    setPosMessage("");
+    try {
+      const preview = await posApi("/api/admin/pos/checkout", {
+        method: "POST",
+        body: JSON.stringify({
+          clientRequestId: crypto.randomUUID(),
+          paymentMethod: posPaymentMethod,
+          dryRun: true,
+          discountTotal: posDiscount,
+          items: posCart.map(item => ({ variantId: item.variant_id, quantity: item.cartQuantity })),
+        }),
+      });
+      setPosPreview(preview);
+      setPosMessage("预检通过：库存和金额正常。");
+      if (!silent) toast("POS 预检通过");
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "POS 预检失败";
+      setPosPreview(null);
+      setPosMessage(message);
+      toast(message, "err");
+      return false;
+    } finally {
+      setPosCheckoutLoading(false);
+    }
+  }
+
+  async function executePosCheckout() {
+    setPosCheckoutLoading(true);
+    try {
+      const result = (await posApi("/api/admin/pos/checkout", {
+        method: "POST",
+        body: JSON.stringify({
+          clientRequestId: crypto.randomUUID(),
+          paymentMethod: posPaymentMethod,
+          discountTotal: posDiscount,
+          items: posCart.map(item => ({ variantId: item.variant_id, quantity: item.cartQuantity })),
+        }),
+      })) as PosOrderResult;
+
+      setPosLastOrder(result);
+      setPosCart([]);
+      setPosPreview(null);
+      setPosMessage(result.alreadyProcessed ? "该订单已处理，没有重复扣库存。" : "收银完成，库存已扣减。");
+      toast(result.alreadyProcessed ? "该订单已处理" : "收银完成");
+      await loadProducts();
+      if (inventoryItems.length > 0) await loadInventoryData();
+      window.setTimeout(() => posSearchInputRef.current?.focus(), 60);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "POS 收银失败";
+      setPosMessage(message);
+      toast(message, "err");
+    } finally {
+      setPosCheckoutLoading(false);
+    }
+  }
+
+  async function confirmPosCheckout() {
+    const ok = await runPosDryRun(true);
+    if (!ok) return;
+    setConfirm({
+      open: true,
+      title: "确认完成收银",
+      desc: `确认完成收银？这会创建订单并扣减库存。金额：${formatEuro(posTotal)}，付款方式：${posPaymentMethod}。`,
+      confirmText: "确认收银并扣库存",
+      variant: "danger",
+      action: () => {
+        setConfirm(c => ({ ...c, open: false }));
+        void executePosCheckout();
+      },
+    });
+  }
+
   async function loadProducts() { setLoading(true); try { const d = await api("/api/admin/products?limit=500"); setProducts(d.products||[]); } catch (e) { toast(e instanceof Error ? e.message : "商品读取失败", "err"); } finally { setLoading(false); } }
   useEffect(() => { if (activePassword) void loadProducts(); }, [activePassword]);
 
@@ -616,6 +862,11 @@ export function AdminDashboard() {
     }
   }
   useEffect(() => { if (activePassword && tab === "inventory") void loadInventoryData(); }, [activePassword, tab]);
+  useEffect(() => {
+    if (tab === "pos") {
+      window.setTimeout(() => posSearchInputRef.current?.focus(), 50);
+    }
+  }, [tab]);
   function openInventoryAdjust(item: InventoryItem) {
     setAdjustInventory({ item, mode: "set_to", quantity: String(item.quantity_on_hand), reason: "", submitting: false, message: "" });
   }
@@ -1321,6 +1572,248 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 );
               })}
             </div>
+          </section>
+        ) : null}
+
+        {tab === "pos" ? (
+          <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <div className="admin-panel">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">POS Checkout</p>
+                  <h2 className="mt-1 text-xl font-black text-ink">POS 收银</h2>
+                  <p className="mt-1 text-xs text-stone-500">扫码枪输入条码后按 Enter，可快速搜索并加入购物车；完成收银前会先预检库存。</p>
+                </div>
+                <button
+                  className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50"
+                  onClick={() => {
+                    setPosQuery("");
+                    setPosResults([]);
+                    setPosMessage("");
+                    window.setTimeout(() => posSearchInputRef.current?.focus(), 30);
+                  }}
+                  type="button"
+                >
+                  清空搜索
+                </button>
+              </div>
+
+              <form
+                className="mt-5 flex flex-col gap-3 sm:flex-row"
+                onSubmit={e => {
+                  e.preventDefault();
+                  void searchPosProducts(true);
+                }}
+              >
+                <input
+                  ref={posSearchInputRef}
+                  className="input min-h-12 flex-1 text-base"
+                  placeholder="扫码 / 输入 barcode、variant SKU、商品 SKU 或商品名"
+                  value={posQuery}
+                  onChange={e => setPosQuery(e.target.value)}
+                />
+                <button
+                  className="min-h-12 rounded-xl bg-ink px-5 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50"
+                  disabled={posLoading}
+                  type="submit"
+                >
+                  {posLoading ? "搜索中..." : "搜索并加入"}
+                </button>
+                <button
+                  className="min-h-12 rounded-xl border border-stone-300 px-5 py-3 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50"
+                  disabled={posLoading}
+                  onClick={() => void searchPosProducts(false)}
+                  type="button"
+                >
+                  只搜索
+                </button>
+              </form>
+
+              {posMessage ? (
+                <p className="mt-4 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-bold text-stone-700">{posMessage}</p>
+              ) : null}
+
+              <div className="mt-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-sm font-black text-ink">搜索结果</h3>
+                  <span className="text-xs font-bold text-stone-400">{posResults.length} 个结果</span>
+                </div>
+                {posResults.length > 0 ? (
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {posResults.map(item => {
+                      const disabled = item.outOfStock || item.quantity_available <= 0 || !item.product_active || !item.variant_active;
+                      return (
+                        <article className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5" key={item.variant_id}>
+                          <div className="flex gap-3">
+                            {item.image_url ? <img alt="" className="h-24 w-20 rounded-xl object-cover" src={item.image_url} /> : <div className="h-24 w-20 rounded-xl bg-stone-100" />}
+                            <div className="min-w-0 flex-1">
+                              <p className="line-clamp-2 text-sm font-black leading-snug text-ink">{item.name || item.product_sku}</p>
+                              <p className="mt-1 truncate text-[11px] font-bold text-stone-400">{item.product_sku} / {item.variant_sku}</p>
+                              <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-bold text-stone-500">
+                                {item.barcode ? <span className="rounded-full bg-stone-100 px-2 py-1">{item.barcode}</span> : null}
+                                {item.size ? <span className="rounded-full bg-stone-100 px-2 py-1">{item.size}</span> : null}
+                                {item.color ? <span className="rounded-full bg-stone-100 px-2 py-1">{item.color}</span> : null}
+                              </div>
+                              <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-black text-copper">{formatEuro(item.price)}</span>
+                                <span className={`rounded-full px-2.5 py-1 text-xs font-black ${disabled ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>
+                                  可售 {item.quantity_available}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            className="mt-3 min-h-11 w-full rounded-xl bg-ink px-4 py-2.5 text-xs font-black text-white hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-500"
+                            disabled={disabled}
+                            onClick={() => addPosItem(item)}
+                            type="button"
+                          >
+                            {disabled ? "库存不足 / 已停用" : "加入购物车"}
+                          </button>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50/70 px-4 py-8 text-center text-sm font-bold text-stone-400">
+                    输入条码、SKU 或商品名后开始搜索。
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <aside className="admin-panel xl:sticky xl:top-4 xl:self-start">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Cart</p>
+                  <h3 className="mt-1 text-lg font-black text-ink">购物车</h3>
+                </div>
+                <button
+                  className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50 disabled:opacity-40"
+                  disabled={posCart.length === 0 || posCheckoutLoading}
+                  onClick={() => {
+                    setPosCart([]);
+                    setPosPreview(null);
+                    setPosLastOrder(null);
+                  }}
+                  type="button"
+                >
+                  清空
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {posCart.length > 0 ? posCart.map(item => (
+                  <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5" key={item.variant_id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="line-clamp-2 text-sm font-black text-ink">{item.name || item.product_sku}</p>
+                        <p className="mt-1 truncate text-[11px] font-bold text-stone-400">{item.variant_sku}{item.size ? ` / ${item.size}` : ""}{item.color ? ` / ${item.color}` : ""}</p>
+                        <p className="mt-1 text-xs font-bold text-stone-500">可售 {item.quantity_available} · {formatEuro(item.price)}</p>
+                      </div>
+                      <button className="text-xs font-black text-red-500" onClick={() => removePosCartItem(item.variant_id)} type="button">删除</button>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <button className="h-10 w-10 rounded-xl border border-stone-300 text-sm font-black hover:bg-stone-50" onClick={() => setPosCartQuantity(item.variant_id, item.cartQuantity - 1)} type="button">-</button>
+                        <input
+                          className="h-10 w-16 rounded-xl border border-stone-300 text-center text-base font-black"
+                          min="1"
+                          max={item.quantity_available}
+                          step="1"
+                          type="number"
+                          value={item.cartQuantity}
+                          onChange={e => setPosCartQuantity(item.variant_id, Number(e.target.value))}
+                        />
+                        <button className="h-10 w-10 rounded-xl border border-stone-300 text-sm font-black hover:bg-stone-50" onClick={() => setPosCartQuantity(item.variant_id, item.cartQuantity + 1)} type="button">+</button>
+                      </div>
+                      <p className="text-sm font-black text-ink">{formatEuro(item.price * item.cartQuantity)}</p>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50/70 px-4 py-8 text-center text-sm font-bold text-stone-400">
+                    购物车为空。
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
+                <div className="space-y-2 text-sm font-bold text-stone-600">
+                  <div className="flex justify-between"><span>Subtotal</span><span>{formatEuro(posSubtotal)}</span></div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Discount</span>
+                    <input
+                      className="h-10 w-28 rounded-xl border border-stone-300 bg-white px-3 text-right text-base font-black sm:text-sm"
+                      min="0"
+                      step="0.01"
+                      type="number"
+                      value={posDiscountTotal}
+                      onChange={e => {
+                        setPosDiscountTotal(e.target.value);
+                        setPosPreview(null);
+                      }}
+                    />
+                  </div>
+                  <div className="flex justify-between border-t border-stone-200 pt-3 text-lg font-black text-ink"><span>Total</span><span>{formatEuro(posTotal)}</span></div>
+                </div>
+
+                <div className="mt-4">
+                  <p className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-stone-400">付款方式</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["cash", "card", "other"] as PosPaymentMethod[]).map(method => (
+                      <button
+                        className={`min-h-11 rounded-xl border px-3 py-2 text-xs font-black transition ${posPaymentMethod === method ? "border-ink bg-ink text-white" : "border-stone-300 bg-white text-ink hover:bg-stone-50"}`}
+                        key={method}
+                        onClick={() => setPosPaymentMethod(method)}
+                        type="button"
+                      >
+                        {method === "cash" ? "现金" : method === "card" ? "刷卡" : "其他"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {posPreview ? (
+                <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
+                  <p className="font-black">预检通过</p>
+                  <p className="mt-1 font-bold">后端确认金额：{formatEuro(Number((posPreview as { total?: number }).total ?? posTotal))}</p>
+                </div>
+              ) : null}
+
+              {posLastOrder?.order ? (
+                <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
+                  <p className="font-black">{posLastOrder.alreadyProcessed ? "订单已处理" : "收银完成"}</p>
+                  <p className="mt-1 font-bold">订单号：{posLastOrder.order.order_number}</p>
+                  <p className="font-bold">金额：{formatEuro(Number(posLastOrder.order.total || 0))}</p>
+                  <p className="font-bold">付款：{posLastOrder.payments?.[0]?.method || posPaymentMethod}</p>
+                  {posLastOrder.legacySyncWarning?.length ? <p className="mt-2 text-xs font-bold text-amber-700">库存兼容字段同步警告：{posLastOrder.legacySyncWarning.join("；")}</p> : null}
+                </div>
+              ) : null}
+
+              <div className="mt-5 grid gap-2">
+                <button
+                  className="min-h-12 rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50"
+                  disabled={posCheckoutLoading || posCart.length === 0}
+                  onClick={() => void runPosDryRun(false)}
+                  type="button"
+                >
+                  {posCheckoutLoading ? "处理中..." : "预检订单"}
+                </button>
+                <button
+                  className="min-h-12 rounded-xl bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50"
+                  disabled={posCheckoutLoading || posCart.length === 0}
+                  onClick={() => void confirmPosCheckout()}
+                  type="button"
+                >
+                  完成收银并扣库存
+                </button>
+              </div>
+
+              <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs font-bold leading-relaxed text-amber-700">
+                提醒：真实收银会创建订单并扣减 ERP 库存。首次验证请使用测试商品。
+              </p>
+            </aside>
           </section>
         ) : null}
 
