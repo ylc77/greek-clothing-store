@@ -99,7 +99,7 @@ size_stock_mismatches as (
   left join erp_totals et on et.product_id = p.id
   where p.size_stock is not null
     and jsonb_typeof(p.size_stock) = 'object'
-    and jsonb_object_length(p.size_stock) > 0
+    and exists (select 1 from jsonb_each_text(p.size_stock))
     and coalesce(lst.size_stock_total, 0)::int <> coalesce(et.erp_stock, 0)::int
 ),
 products_without_variants as (
