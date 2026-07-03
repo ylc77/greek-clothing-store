@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import {
   adminPasswordIsValid,
   validateProductPayload,
@@ -6,6 +7,7 @@ import {
   type ProductMutation,
 } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
+import { syncProductInventoryFromLegacy } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { batchTranslateRows } from "@/lib/translate";
 
@@ -26,6 +28,12 @@ type ImportResult = {
 type ValidImportRow = {
   rowNumber: number;
   mutation: ProductMutation;
+};
+
+type ErpSyncError = {
+  sku: string;
+  productId?: number;
+  message: string;
 };
 
 function unauthorized() {
@@ -99,9 +107,11 @@ export async function POST(request: NextRequest) {
 
   const body = (await request.json()) as { rows?: ImportRow[] };
   const rows = Array.isArray(body.rows) ? body.rows : [];
+  const batchId = randomUUID();
 
   const validRows: ValidImportRow[] = [];
   const results: ImportResult[] = [];
+  const erpSyncErrors: ErpSyncError[] = [];
 
   rows.forEach((row, index) => {
     const rowNumber = Number(row.rowNumber || index + 2);
@@ -182,6 +192,72 @@ export async function POST(request: NextRequest) {
         });
       });
     } else {
+      const affectedSkus = Array.from(
+        new Set(rowsToUpsert.map((row) => row.mutation.sku.trim()).filter(Boolean)),
+      );
+
+      if (affectedSkus.length > 0) {
+        const { data: affectedProducts, error: affectedProductsError } = await supabase
+          .from("products")
+          .select("id, sku")
+          .in("sku", affectedSkus);
+
+        if (affectedProductsError) {
+          erpSyncErrors.push({
+            sku: affectedSkus.join(", "),
+            message: affectedProductsError.message,
+          });
+        } else {
+          for (const product of affectedProducts || []) {
+            const productId = Number(product.id);
+            const productSku = typeof product.sku === "string" ? product.sku : "";
+
+            if (!Number.isFinite(productId)) {
+              erpSyncErrors.push({
+                sku: productSku,
+                message: "Invalid product ID for ERP inventory sync.",
+              });
+              continue;
+            }
+
+            try {
+              await syncProductInventoryFromLegacy({
+                productId,
+                reason: "CSV 导入同步库存",
+                sourceType: "csv_import",
+                sourceId: batchId,
+                movementType: "correction",
+                idempotencyKey: `csv_import:${batchId}:${productId}`,
+                createdBy: "admin",
+              });
+            } catch (syncError) {
+              erpSyncErrors.push({
+                sku: productSku,
+                productId,
+                message:
+                  syncError instanceof Error
+                    ? syncError.message
+                    : "ERP inventory sync failed.",
+              });
+            }
+          }
+
+          const syncedSkuSet = new Set(
+            (affectedProducts || [])
+              .map((product) => (typeof product.sku === "string" ? product.sku : ""))
+              .filter(Boolean),
+          );
+          affectedSkus
+            .filter((sku) => !syncedSkuSet.has(sku))
+            .forEach((sku) => {
+              erpSyncErrors.push({
+                sku,
+                message: "Product was upserted but could not be loaded for ERP sync.",
+              });
+            });
+        }
+      }
+
       validRows.forEach((row, index) => {
         const translated = translateResults[index];
         const isLastDuplicate = lastIndexBySku.get(skuKey(row.mutation.sku)) === index;
@@ -218,6 +294,11 @@ export async function POST(request: NextRequest) {
     failureCount: results.filter((result) => !result.ok).length,
     translatedCount,
     translateFailureCount,
+    erpSyncWarning:
+      erpSyncErrors.length > 0
+        ? "CSV 已导入，但部分商品 ERP 库存同步失败，请运行对账 SQL 检查。"
+        : undefined,
+    erpSyncErrors,
     results,
   });
 }
