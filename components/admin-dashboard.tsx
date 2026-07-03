@@ -21,7 +21,7 @@ type CsvRow = Record<string, string | number>;
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "pos" | "inventory" | "add" | "csv" | "images" | "skroutz" | "categories";
+type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "pos" | "posOrders" | "inventory" | "add" | "csv" | "images" | "skroutz" | "categories";
 type InventoryItem = {
   product_id: number;
   product_name: string;
@@ -122,6 +122,72 @@ type PosOrderResult = {
   alreadyProcessed?: boolean;
   legacySyncWarning?: string[];
 };
+type PosOrdersView = "checkout" | "history";
+type PosOrderStatusFilter = "all" | "completed" | "voided" | "refunded";
+type PosPaymentFilter = "all" | "cash" | "card" | "other";
+type PosDateRangeFilter = "today" | "yesterday" | "last7days" | "all";
+type PosOrderListItem = {
+  id: string;
+  order_number: string;
+  status: string;
+  payment_status: string;
+  source: string;
+  total: number;
+  currency: string;
+  created_at: string;
+  completed_at: string | null;
+  payment_method: string | null;
+  payment_method_status: string | null;
+  items_count: number;
+  created_by: string | null;
+  notes: string | null;
+};
+type PosOrderDetail = {
+  order: PosOrderListItem & {
+    subtotal?: number;
+    discount_total?: number;
+    updated_at?: string;
+    voided_at?: string | null;
+    refunded_at?: string | null;
+  };
+  items: Array<{
+    id: string;
+    product_sku: string;
+    variant_sku: string;
+    barcode: string | null;
+    name: string;
+    size: string | null;
+    color: string | null;
+    quantity: number;
+    unit_price: number;
+    discount_total: number;
+    line_total: number;
+    created_at: string;
+  }>;
+  payments: Array<{
+    id: string;
+    method: string;
+    amount: number;
+    currency: string;
+    status: string;
+    provider: string | null;
+    provider_reference: string | null;
+    created_at: string;
+  }>;
+  stock_movements: Array<{
+    id: string;
+    variant_id: string;
+    movement_type: string;
+    quantity_before: number;
+    quantity_after: number;
+    quantity_delta: number;
+    reason: string;
+    source_type: string | null;
+    source_id: string | null;
+    created_by: string | null;
+    created_at: string;
+  }>;
+};
 type QuickAddState = {
   category: ProductCategory;
   subcategory: string;
@@ -181,10 +247,11 @@ const csvFieldLabels: Record<string, string> = {
 const csvHeaderAliases = new Map(Object.entries(csvFieldLabels).flatMap(([field, label]) => [[field, field], [label, field]]));
 const tabs: { key: Tab; label: string }[] = [
   { key: "pos", label: "POS 收银" },
+  { key: "posOrders", label: "POS 订单" },
   { key: "inventory", label: "库存管理" },
   { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
-const primaryTabKeys: Tab[] = ["quickAdd", "pos", "quickSale", "dashboard", "check"];
+const primaryTabKeys: Tab[] = ["quickAdd", "pos", "posOrders", "quickSale", "dashboard", "check"];
 const managementTabKeys: Tab[] = ["inventory", "add", "images", "csv", "categories", "skroutz"];
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
 const clothingSizeOptions = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
@@ -456,6 +523,16 @@ export function AdminDashboard() {
   const [posMessage, setPosMessage] = useState("");
   const [posPreview, setPosPreview] = useState<Record<string, unknown> | null>(null);
   const [posLastOrder, setPosLastOrder] = useState<PosOrderResult | null>(null);
+  const [posView, setPosView] = useState<PosOrdersView>("checkout");
+  const [posOrders, setPosOrders] = useState<PosOrderListItem[]>([]);
+  const [posOrdersLoading, setPosOrdersLoading] = useState(false);
+  const [posOrdersMessage, setPosOrdersMessage] = useState("");
+  const [posOrderQ, setPosOrderQ] = useState("");
+  const [posOrderStatus, setPosOrderStatus] = useState<PosOrderStatusFilter>("all");
+  const [posOrderPaymentMethod, setPosOrderPaymentMethod] = useState<PosPaymentFilter>("all");
+  const [posOrderDateRange, setPosOrderDateRange] = useState<PosDateRangeFilter>("today");
+  const [posOrderDetail, setPosOrderDetail] = useState<PosOrderDetail | null>(null);
+  const [posOrderDetailLoading, setPosOrderDetailLoading] = useState(false);
   useEffect(() => { if (activePassword) { fetch("/api/admin/categories", { headers: { "x-admin-password": activePassword } }).then(r => r.json()).then(d => { setDbCats((d.categories||[]).filter((c:Record<string,unknown>) => c.is_active !== false)); setDbSubs((d.subcategories||[]).filter((s:Record<string,unknown>) => s.is_active !== false)); }).catch(() => {}); } }, [activePassword, tab]);
 
   // Search / filter state
@@ -823,6 +900,42 @@ export function AdminDashboard() {
     });
   }
 
+  async function loadPosOrders() {
+    setPosOrdersLoading(true);
+    setPosOrdersMessage("");
+    try {
+      const params = new URLSearchParams();
+      if (posOrderQ.trim()) params.set("q", posOrderQ.trim());
+      params.set("status", posOrderStatus);
+      params.set("paymentMethod", posOrderPaymentMethod);
+      params.set("dateRange", posOrderDateRange);
+      params.set("limit", "100");
+      const data = await posApi(`/api/admin/pos/orders?${params.toString()}`);
+      const orders = (Array.isArray(data.orders) ? data.orders : []) as PosOrderListItem[];
+      setPosOrders(orders);
+      if (orders.length === 0) setPosOrdersMessage("没有找到符合条件的 POS 订单。");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "POS 订单读取失败";
+      setPosOrdersMessage(message);
+      toast(message, "err");
+    } finally {
+      setPosOrdersLoading(false);
+    }
+  }
+
+  async function loadPosOrderDetail(orderId: string) {
+    setPosOrderDetailLoading(true);
+    try {
+      const data = await posApi(`/api/admin/pos/orders/${orderId}`);
+      setPosOrderDetail(data as PosOrderDetail);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "POS 订单详情读取失败";
+      toast(message, "err");
+    } finally {
+      setPosOrderDetailLoading(false);
+    }
+  }
+
   async function loadProducts() { setLoading(true); try { const d = await api("/api/admin/products?limit=500"); setProducts(d.products||[]); } catch (e) { toast(e instanceof Error ? e.message : "商品读取失败", "err"); } finally { setLoading(false); } }
   useEffect(() => { if (activePassword) void loadProducts(); }, [activePassword]);
 
@@ -867,6 +980,11 @@ export function AdminDashboard() {
       window.setTimeout(() => posSearchInputRef.current?.focus(), 50);
     }
   }, [tab]);
+  useEffect(() => {
+    if (activePassword && tab === "posOrders") {
+      void loadPosOrders();
+    }
+  }, [activePassword, tab, posOrderStatus, posOrderPaymentMethod, posOrderDateRange]);
   function openInventoryAdjust(item: InventoryItem) {
     setAdjustInventory({ item, mode: "set_to", quantity: String(item.quantity_on_hand), reason: "", submitting: false, message: "" });
   }
@@ -1814,6 +1932,210 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 提醒：真实收银会创建订单并扣减 ERP 库存。首次验证请使用测试商品。
               </p>
             </aside>
+          </section>
+        ) : null}
+
+        {tab === "posOrders" ? (
+          <section className="flex flex-col gap-5">
+            <div className="admin-panel">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">POS Orders</p>
+                  <h2 className="mt-1 text-xl font-black text-ink">POS 订单历史</h2>
+                  <p className="mt-1 text-xs text-stone-500">只读查看 POS 订单、付款、商品明细和库存流水。本页不会作废、退款或修改库存。</p>
+                </div>
+                <button
+                  className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50"
+                  disabled={posOrdersLoading}
+                  onClick={() => void loadPosOrders()}
+                  type="button"
+                >
+                  {posOrdersLoading ? "刷新中..." : "刷新订单"}
+                </button>
+              </div>
+
+              <form
+                className="mt-5 grid gap-2 md:grid-cols-5"
+                onSubmit={e => {
+                  e.preventDefault();
+                  void loadPosOrders();
+                }}
+              >
+                <input
+                  className="input md:col-span-2"
+                  placeholder="搜索订单号 / SKU / 商品名"
+                  value={posOrderQ}
+                  onChange={e => setPosOrderQ(e.target.value)}
+                />
+                <select className="input" value={posOrderDateRange} onChange={e => setPosOrderDateRange(e.target.value as PosDateRangeFilter)}>
+                  <option value="today">今天</option>
+                  <option value="yesterday">昨天</option>
+                  <option value="last7days">最近 7 天</option>
+                  <option value="all">全部</option>
+                </select>
+                <select className="input" value={posOrderStatus} onChange={e => setPosOrderStatus(e.target.value as PosOrderStatusFilter)}>
+                  <option value="all">全部状态</option>
+                  <option value="completed">completed</option>
+                  <option value="voided">voided</option>
+                  <option value="refunded">refunded</option>
+                </select>
+                <select className="input" value={posOrderPaymentMethod} onChange={e => setPosOrderPaymentMethod(e.target.value as PosPaymentFilter)}>
+                  <option value="all">全部付款</option>
+                  <option value="cash">cash</option>
+                  <option value="card">card</option>
+                  <option value="other">other</option>
+                </select>
+                <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50 md:col-span-5" disabled={posOrdersLoading} type="submit">
+                  查询 POS 订单
+                </button>
+              </form>
+
+              {posOrdersMessage ? <p className="mt-4 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-bold text-stone-700">{posOrdersMessage}</p> : null}
+
+              <div className="mt-5 overflow-x-auto rounded-2xl border border-stone-200 bg-white">
+                <table className="min-w-[920px] w-full text-left">
+                  <thead className="bg-stone-50 text-xs font-black uppercase tracking-[0.08em] text-stone-500">
+                    <tr>
+                      <th className="px-4 py-3">订单号</th>
+                      <th className="px-4 py-3">时间</th>
+                      <th className="px-4 py-3">金额</th>
+                      <th className="px-4 py-3">付款</th>
+                      <th className="px-4 py-3">支付状态</th>
+                      <th className="px-4 py-3">订单状态</th>
+                      <th className="px-4 py-3">件数</th>
+                      <th className="px-4 py-3">操作人</th>
+                      <th className="px-4 py-3 text-right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100 text-sm">
+                    {posOrders.map(order => (
+                      <tr className="hover:bg-stone-50/80" key={order.id}>
+                        <td className="px-4 py-3 font-black text-ink">{order.order_number}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-stone-500">{formatAdminDate(order.created_at)}</td>
+                        <td className="px-4 py-3 font-black text-copper">{formatEuro(order.total)}</td>
+                        <td className="px-4 py-3 font-bold text-stone-700">{order.payment_method || "-"}</td>
+                        <td className="px-4 py-3"><span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-black text-stone-700">{order.payment_status}</span></td>
+                        <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-black ${order.status === "completed" ? "bg-emerald-50 text-emerald-700" : order.status === "voided" ? "bg-stone-100 text-stone-600" : "bg-amber-50 text-amber-700"}`}>{order.status}</span></td>
+                        <td className="px-4 py-3 font-bold text-stone-700">{order.items_count}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-stone-500">{order.created_by || "-"}</td>
+                        <td className="px-4 py-3 text-right">
+                          <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => void loadPosOrderDetail(order.id)} type="button">查看详情</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {posOrders.length === 0 ? (
+                      <tr><td className="px-4 py-8 text-center text-sm font-bold text-stone-400" colSpan={9}>暂无 POS 订单。</td></tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {posOrderDetail ? (
+              <div className="fixed inset-0 z-50 flex items-end bg-black/35 p-0 sm:items-center sm:justify-center sm:p-4">
+                <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl bg-paper p-5 shadow-2xl sm:max-w-5xl sm:rounded-3xl">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">POS Order Detail</p>
+                      <h3 className="mt-1 text-xl font-black text-ink">{posOrderDetail.order.order_number}</h3>
+                      <p className="mt-1 text-xs font-bold text-stone-500">{formatAdminDate(posOrderDetail.order.created_at)}</p>
+                    </div>
+                    <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50" onClick={() => setPosOrderDetail(null)} type="button">关闭</button>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 md:grid-cols-4">
+                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <p className="text-xs font-bold text-stone-400">订单状态</p>
+                      <p className="mt-1 text-lg font-black text-ink">{posOrderDetail.order.status}</p>
+                    </div>
+                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <p className="text-xs font-bold text-stone-400">支付状态</p>
+                      <p className="mt-1 text-lg font-black text-ink">{posOrderDetail.order.payment_status}</p>
+                    </div>
+                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <p className="text-xs font-bold text-stone-400">付款方式</p>
+                      <p className="mt-1 text-lg font-black text-ink">{posOrderDetail.payments[0]?.method || "-"}</p>
+                    </div>
+                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <p className="text-xs font-bold text-stone-400">总金额</p>
+                      <p className="mt-1 text-lg font-black text-copper">{formatEuro(posOrderDetail.order.total)}</p>
+                    </div>
+                  </div>
+
+                  {posOrderDetail.order.voided_at || posOrderDetail.order.refunded_at ? (
+                    <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700">
+                      {posOrderDetail.order.voided_at ? `作废时间：${formatAdminDate(posOrderDetail.order.voided_at)}` : ""}
+                      {posOrderDetail.order.refunded_at ? `退款时间：${formatAdminDate(posOrderDetail.order.refunded_at)}` : ""}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+                    <div className="rounded-2xl border border-stone-200 bg-white">
+                      <div className="border-b border-stone-100 px-4 py-3">
+                        <h4 className="text-sm font-black text-ink">商品明细</h4>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-[720px] w-full text-left text-sm">
+                          <thead className="bg-stone-50 text-xs font-black uppercase tracking-[0.08em] text-stone-500">
+                            <tr>
+                              <th className="px-4 py-3">商品</th>
+                              <th className="px-4 py-3">Variant</th>
+                              <th className="px-4 py-3">尺码/颜色</th>
+                              <th className="px-4 py-3">数量</th>
+                              <th className="px-4 py-3">单价</th>
+                              <th className="px-4 py-3">小计</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-stone-100">
+                            {posOrderDetail.items.map(item => (
+                              <tr key={item.id}>
+                                <td className="px-4 py-3"><p className="font-black text-ink">{item.name}</p><p className="text-xs font-bold text-stone-400">{item.product_sku}</p></td>
+                                <td className="px-4 py-3 font-bold text-stone-700">{item.variant_sku}</td>
+                                <td className="px-4 py-3 text-stone-600">{item.size || "-"} / {item.color || "-"}</td>
+                                <td className="px-4 py-3 font-black text-ink">{item.quantity}</td>
+                                <td className="px-4 py-3">{formatEuro(item.unit_price)}</td>
+                                <td className="px-4 py-3 font-black text-copper">{formatEuro(item.line_total)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                        <h4 className="text-sm font-black text-ink">付款信息</h4>
+                        <div className="mt-3 space-y-2">
+                          {posOrderDetail.payments.map(payment => (
+                            <div className="rounded-xl bg-stone-50 p-3 text-sm" key={payment.id}>
+                              <p className="font-black text-ink">{payment.method} · {formatEuro(payment.amount)}</p>
+                              <p className="mt-1 text-xs font-bold text-stone-500">{payment.status} · {formatAdminDate(payment.created_at)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                        <h4 className="text-sm font-black text-ink">库存流水</h4>
+                        <div className="mt-3 space-y-2">
+                          {posOrderDetail.stock_movements.length > 0 ? posOrderDetail.stock_movements.map(movement => (
+                            <div className="rounded-xl bg-stone-50 p-3 text-sm" key={movement.id}>
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="font-black text-ink">{movementTypeLabel(movement.movement_type)}</p>
+                                <span className={`text-sm font-black ${movement.quantity_delta < 0 ? "text-red-600" : "text-emerald-700"}`}>{signedQuantity(movement.quantity_delta)}</span>
+                              </div>
+                              <p className="mt-1 text-xs font-bold text-stone-500">{movement.quantity_before} → {movement.quantity_after} · {sourceTypeLabel(movement.source_type)}</p>
+                              <p className="mt-1 text-xs text-stone-500">{movement.reason}</p>
+                            </div>
+                          )) : <p className="rounded-xl bg-stone-50 p-3 text-xs font-bold text-stone-400">没有关联库存流水。</p>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {posOrderDetailLoading ? <p className="mt-4 text-sm font-bold text-stone-500">正在读取详情...</p> : null}
+                </div>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
