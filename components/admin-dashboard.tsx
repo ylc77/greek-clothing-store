@@ -172,6 +172,31 @@ function formatAdminDate(value: string) {
 function signedQuantity(value: number) {
   return value > 0 ? `+${value}` : String(value);
 }
+function movementTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    initial_migration: "初始迁移",
+    sale: "销售出库",
+    manual_adjustment: "手动调整",
+    correction: "库存修正",
+    return: "退货入库",
+    transfer_in: "调拨入库",
+    transfer_out: "调拨出库",
+    reservation: "预留库存",
+    release_reservation: "释放预留",
+  };
+  return labels[value] || value || "-";
+}
+function sourceTypeLabel(value: string | null) {
+  if (!value) return "-";
+  const labels: Record<string, string> = {
+    quick_sell: "快速售出",
+    admin_create: "后台新增",
+    admin_edit: "后台编辑",
+    csv_import: "CSV 导入",
+    admin_inventory_adjustment: "库存调整",
+  };
+  return labels[value] || value;
+}
 function inventoryStatusFor(item: InventoryItem, lowStockThreshold: number) {
   const reconciled = item.stock_matches_legacy && item.size_stock_matches_legacy;
   if (!reconciled) return { key: "mismatch", label: "对账异常", className: "bg-red-50 text-red-700" };
@@ -610,7 +635,14 @@ export function AdminDashboard() {
           clientRequestId: crypto.randomUUID(),
         }),
       });
-      const note = result.alreadyProcessed ? "这次调整已经处理过，没有重复写入。" : result.noChange ? "库存没有变化。" : "库存调整成功。";
+      const before = Number(result.quantityBefore ?? item.quantity_on_hand);
+      const after = Number(result.quantityAfter ?? before);
+      const reason = adjustInventory.reason.trim();
+      const note = result.alreadyProcessed
+        ? `这次调整已经处理过，没有重复写入。库存 ${before} → ${after}。`
+        : result.noChange
+          ? `库存没有变化（${before} → ${after}）。原因：${reason}`
+          : `库存调整成功：${before} → ${after}。原因：${reason}`;
       const warning = result.legacySyncWarning ? ` 但旧库存同步需要检查：${result.legacySyncWarning}` : "";
       toast(`${note}${warning}`, result.legacySyncWarning ? "err" : "ok");
       setAdjustInventory({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" });
@@ -1352,6 +1384,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </div>
 
             <div className="admin-panel">
+              <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+                建议先用测试 SKU 验证库存调整流程，确认流水、对账和前台库存都正常后，再处理真实商品。
+              </div>
+              <p className="mb-2 text-xs font-black uppercase tracking-[0.16em] text-stone-400">当前筛选结果统计</p>
               <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
                 {[
                   { label: "Variant 总数", value: inventorySummary.totalVariants, tone: "text-ink" },
@@ -1380,7 +1416,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h3 className="text-base font-black text-ink">库存总览</h3>
-                  <p className="text-xs text-stone-500">当前筛选结果 {filteredInventoryItems.length} 个 variant。调整库存会写 ERP 流水，并同步回旧库存字段。</p>
+                  <p className="text-xs text-stone-500">当前筛选结果 {filteredInventoryItems.length} 个 variant。上方统计只代表当前筛选结果，不是全库统计。调整库存会写 ERP 流水，并同步回旧库存字段。</p>
                 </div>
                 {inventoryLoading ? <p className="text-xs font-bold text-stone-400">加载中...</p> : null}
               </div>
@@ -1480,12 +1516,18 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           <td className="px-3 py-2 text-xs text-stone-500">{formatAdminDate(movement.created_at)}</td>
                           <td className="px-3 py-2"><p className="line-clamp-1 text-xs font-black text-ink">{movement.product_name || "-"}</p><p className="font-mono text-[11px] text-stone-400">{movement.product_sku || "-"}</p></td>
                           <td className="px-3 py-2 font-mono text-xs font-bold">{movement.variant_sku || "-"}</td>
-                          <td className="px-3 py-2 text-xs font-bold">{movement.movement_type}</td>
+                          <td className="px-3 py-2">
+                            <p className="text-xs font-black text-ink">{movementTypeLabel(movement.movement_type)}</p>
+                            <p className="font-mono text-[11px] text-stone-400">{movement.movement_type}</p>
+                          </td>
                           <td className="px-3 py-2 text-right text-xs">{movement.quantity_before}</td>
                           <td className="px-3 py-2 text-right text-xs">{movement.quantity_after}</td>
                           <td className={`px-3 py-2 text-right text-xs font-black ${movement.quantity_delta < 0 ? "text-red-600" : "text-emerald-700"}`}>{signedQuantity(movement.quantity_delta)}</td>
                           <td className="max-w-[240px] px-3 py-2 text-xs">{movement.reason || "-"}</td>
-                          <td className="px-3 py-2 text-xs text-stone-500">{movement.source_type || "-"}{movement.source_id ? ` / ${movement.source_id}` : ""}</td>
+                          <td className="px-3 py-2">
+                            <p className="text-xs font-bold text-stone-700">{sourceTypeLabel(movement.source_type)}</p>
+                            <p className="font-mono text-[11px] text-stone-400">{movement.source_type || "-"}{movement.source_id ? ` / ${movement.source_id}` : ""}</p>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
