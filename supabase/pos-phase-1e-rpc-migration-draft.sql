@@ -161,7 +161,7 @@ as $$
   where o.id = p_order_id;
 $$;
 
-create or replace function app_private.pos_checkout_rpc(
+create or replace function public.pos_checkout_rpc(
   p_client_request_id text,
   p_payment_method text,
   p_items jsonb,
@@ -515,7 +515,7 @@ begin
 end;
 $$;
 
-create or replace function app_private.pos_void_rpc(
+create or replace function public.pos_void_rpc(
   p_order_id uuid,
   p_client_request_id text,
   p_reason text,
@@ -768,19 +768,20 @@ begin
 end;
 $$;
 
+drop function if exists app_private.pos_checkout_rpc(text, text, jsonb, numeric, text, text);
+drop function if exists app_private.pos_void_rpc(uuid, text, text, text);
+
 revoke all on function app_private.pos_sync_legacy_stock_from_erp(bigint) from public;
 revoke all on function app_private.pos_order_payload(uuid, boolean) from public;
-revoke all on function app_private.pos_checkout_rpc(text, text, jsonb, numeric, text, text) from public;
-revoke all on function app_private.pos_void_rpc(uuid, text, text, text) from public;
+revoke all on function public.pos_checkout_rpc(text, text, jsonb, numeric, text, text) from public;
+revoke all on function public.pos_void_rpc(uuid, text, text, text) from public;
 
 revoke execute on function app_private.pos_sync_legacy_stock_from_erp(bigint) from anon, authenticated;
 revoke execute on function app_private.pos_order_payload(uuid, boolean) from anon, authenticated;
-revoke execute on function app_private.pos_checkout_rpc(text, text, jsonb, numeric, text, text) from anon, authenticated;
-revoke execute on function app_private.pos_void_rpc(uuid, text, text, text) from anon, authenticated;
+revoke execute on function public.pos_checkout_rpc(text, text, jsonb, numeric, text, text) from anon, authenticated;
+revoke execute on function public.pos_void_rpc(uuid, text, text, text) from anon, authenticated;
 
-grant execute on function app_private.pos_sync_legacy_stock_from_erp(bigint) to service_role;
-grant execute on function app_private.pos_order_payload(uuid, boolean) to service_role;
-grant execute on function app_private.pos_checkout_rpc(text, text, jsonb, numeric, text, text) to service_role;
-grant execute on function app_private.pos_void_rpc(uuid, text, text, text) to service_role;
+grant execute on function public.pos_checkout_rpc(text, text, jsonb, numeric, text, text) to service_role;
+grant execute on function public.pos_void_rpc(uuid, text, text, text) to service_role;
 
 commit;

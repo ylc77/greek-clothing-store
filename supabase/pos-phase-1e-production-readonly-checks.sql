@@ -210,3 +210,80 @@ with duplicate_movement_keys as (
 select 'duplicate stock_movements idempotency_key' as check_name, count(*) as issue_count
 from duplicate_movement_keys
 having count(*) > 0;
+
+-- 11. Public POS RPC entry functions and private helpers should exist.
+with expected_functions(schema_name, function_name, args) as (
+  values
+    ('public', 'pos_checkout_rpc', 'p_client_request_id text, p_payment_method text, p_items jsonb, p_discount_total numeric, p_notes text, p_created_by text'),
+    ('public', 'pos_void_rpc', 'p_order_id uuid, p_client_request_id text, p_reason text, p_created_by text'),
+    ('app_private', 'pos_order_payload', 'p_order_id uuid, p_already_processed boolean'),
+    ('app_private', 'pos_sync_legacy_stock_from_erp', 'p_product_id bigint')
+),
+missing_functions as (
+  select e.schema_name, e.function_name
+  from expected_functions e
+  left join pg_namespace n on n.nspname = e.schema_name
+  left join pg_proc p
+    on p.pronamespace = n.oid
+   and p.proname = e.function_name
+   and pg_get_function_identity_arguments(p.oid) = e.args
+  where p.oid is null
+)
+select 'missing POS RPC function' as check_name, count(*) as issue_count
+from missing_functions
+having count(*) > 0;
+
+-- 12. Old app_private POS RPC entry functions should not remain.
+with old_private_entries as (
+  select p.oid
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'app_private'
+    and p.proname in ('pos_checkout_rpc', 'pos_void_rpc')
+)
+select 'old app_private POS RPC entry still exists' as check_name, count(*) as issue_count
+from old_private_entries
+having count(*) > 0;
+
+-- 13. Browser roles should not be able to execute POS RPC functions.
+with exposed_role_access as (
+  select r.role_name, n.nspname as schema_name, p.proname as function_name
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  cross join (values ('anon'), ('authenticated')) as r(role_name)
+  where ((
+      n.nspname = 'public'
+      and p.proname in ('pos_checkout_rpc', 'pos_void_rpc')
+    )
+    or (
+      n.nspname = 'app_private'
+      and p.proname in ('pos_order_payload', 'pos_sync_legacy_stock_from_erp')
+    ))
+    and has_function_privilege(r.role_name, p.oid, 'EXECUTE')
+)
+select 'browser role can execute POS RPC function' as check_name, count(*) as issue_count
+from exposed_role_access
+having count(*) > 0;
+
+-- 14. service_role should be able to execute public POS RPC entry functions.
+with service_role_missing_access as (
+  select p.oid
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.proname in ('pos_checkout_rpc', 'pos_void_rpc')
+    and not has_function_privilege('service_role', p.oid, 'EXECUTE')
+)
+select 'service_role cannot execute public POS RPC entry' as check_name, count(*) as issue_count
+from service_role_missing_access
+having count(*) > 0;
+
+-- 15. app_private should not be exposed to browser roles.
+with browser_schema_access as (
+  select role_name
+  from (values ('anon'), ('authenticated')) as r(role_name)
+  where has_schema_privilege(role_name, 'app_private', 'USAGE')
+)
+select 'browser role can use app_private schema' as check_name, count(*) as issue_count
+from browser_schema_access
+having count(*) > 0;

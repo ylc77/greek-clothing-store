@@ -1,6 +1,6 @@
-# POS Phase 1-E-A RPC Transaction Test Plan
+# POS Phase 1-E-A2 RPC Transaction Test Plan
 
-This plan verifies the PostgreSQL RPC draft for POS checkout and POS void.
+This plan verifies the PostgreSQL RPC draft for POS checkout and POS void after moving the external RPC entry points to the public schema.
 
 Do not run this plan directly on production first. Do not switch `USE_POS_RPC` during this phase.
 
@@ -44,6 +44,12 @@ Expected:
 - POS and ERP tables exist.
 - `products.id` is bigint.
 - `sales_order_items.product_id` is bigint.
+- `public.pos_checkout_rpc` exists.
+- `public.pos_void_rpc` exists.
+- `app_private.pos_order_payload` exists.
+- `app_private.pos_sync_legacy_stock_from_erp` exists.
+- `anon` and `authenticated` cannot execute POS RPC functions.
+- `service_role` can execute public POS RPC entry functions.
 - ERP reconciliation has 0 issues.
 - Completed POS orders have `sale / pos_sale` movements.
 - Voided POS orders have `return / pos_void` movements.
@@ -85,28 +91,41 @@ Expected functions:
 
 - `app_private.pos_sync_legacy_stock_from_erp(bigint)`
 - `app_private.pos_order_payload(uuid, boolean)`
-- `app_private.pos_checkout_rpc(text, text, jsonb, numeric, text, text)`
-- `app_private.pos_void_rpc(uuid, text, text, text)`
+- `public.pos_checkout_rpc(text, text, jsonb, numeric, text, text)`
+- `public.pos_void_rpc(uuid, text, text, text)`
 
 Expected security:
 
 - `app_private` schema exists.
+- `public` contains only the external RPC entry points.
+- `app_private` contains only internal helper functions.
 - Functions are `SECURITY DEFINER`.
-- Functions are not executable by `anon`.
-- Functions are not executable by `authenticated`.
-- Functions are executable by `service_role`.
+- `public.pos_checkout_rpc` is not executable by `anon`.
+- `public.pos_checkout_rpc` is not executable by `authenticated`.
+- `public.pos_void_rpc` is not executable by `anon`.
+- `public.pos_void_rpc` is not executable by `authenticated`.
+- `app_private` helper functions are not executable by `anon`.
+- `app_private` helper functions are not executable by `authenticated`.
+- `public.pos_checkout_rpc` is executable by `service_role`.
+- `public.pos_void_rpc` is executable by `service_role`.
+- `app_private` does not need to be added to exposed schemas.
 
 ## Step 4: Permission Verification
 
 Verify:
 
-- `anon` cannot execute `app_private.pos_checkout_rpc`.
-- `authenticated` cannot execute `app_private.pos_checkout_rpc`.
-- `anon` cannot execute `app_private.pos_void_rpc`.
-- `authenticated` cannot execute `app_private.pos_void_rpc`.
-- `service_role` can execute both RPC functions.
+- `anon` cannot execute `public.pos_checkout_rpc`.
+- `authenticated` cannot execute `public.pos_checkout_rpc`.
+- `anon` cannot execute `public.pos_void_rpc`.
+- `authenticated` cannot execute `public.pos_void_rpc`.
+- `anon` cannot execute app_private helper functions.
+- `authenticated` cannot execute app_private helper functions.
+- `service_role` can execute both public RPC entry functions.
+- A service-role Supabase JS client can call:
+  - `supabase.rpc("pos_checkout_rpc", ...)`
+  - `supabase.rpc("pos_void_rpc", ...)`
 
-Do not expose any RPC function to public browser clients.
+Do not expose any RPC function to public browser clients. Do not add `app_private` to exposed schemas.
 
 ## Step 5: Checkout RPC Tests
 
@@ -200,7 +219,7 @@ Expected:
 
 ## Step 6: Void RPC Tests
 
-Use an order created by `pos_checkout_rpc`.
+Use an order created by `public.pos_checkout_rpc`.
 
 ### 6.1 Normal Void
 
@@ -297,6 +316,8 @@ Database rollback, if needed in a later migration:
 ```sql
 drop function if exists app_private.pos_void_rpc(uuid, text, text, text);
 drop function if exists app_private.pos_checkout_rpc(text, text, jsonb, numeric, text, text);
+drop function if exists public.pos_void_rpc(uuid, text, text, text);
+drop function if exists public.pos_checkout_rpc(text, text, jsonb, numeric, text, text);
 drop function if exists app_private.pos_order_payload(uuid, boolean);
 drop function if exists app_private.pos_sync_legacy_stock_from_erp(bigint);
 ```
@@ -321,10 +342,10 @@ This phase does not change API routes. Later:
 1. Add `USE_POS_RPC=false`.
 2. In checkout route:
    - Keep dryRun on current JS preview path.
-   - If `USE_POS_RPC=true`, call `app_private.pos_checkout_rpc`.
+   - If `USE_POS_RPC=true`, call `supabase.rpc("pos_checkout_rpc", ...)` with the service-role client.
    - If false, keep current JS multi-step logic.
 3. In void route:
-   - If `USE_POS_RPC=true`, call `app_private.pos_void_rpc`.
+   - If `USE_POS_RPC=true`, call `supabase.rpc("pos_void_rpc", ...)` with the service-role client.
    - If false, keep current JS multi-step logic.
 4. RPC returns `affected_skus` and `affected_product_ids`.
 5. API route refreshes product cache after successful RPC.
