@@ -263,6 +263,7 @@ const tabs: { key: Tab; label: string }[] = [
 ];
 const primaryTabKeys: Tab[] = ["quickAdd", "pos", "posOrders", "quickSale", "dashboard", "check"];
 const managementTabKeys: Tab[] = ["inventory", "labels", "add", "images", "csv", "categories", "skroutz"];
+const mobileHiddenTabKeys = new Set<Tab>(["check", "labels", "add", "images", "csv", "categories", "skroutz"]);
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
 const clothingSizeOptions = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
 const shoeSizeOptions = ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45"];
@@ -1682,14 +1683,22 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         </div>
 
         {/* ── Tab bar ─────────────────────────────────────── */}
-        <nav className="mb-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-          <div className="rounded-2xl border border-stone-200/70 bg-white/95 p-2 shadow-sm shadow-stone-900/5">
-            <p className="px-2 pb-1 text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">常用操作</p>
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+        <nav className="mb-6 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.72fr)]">
+          <div className="overflow-hidden rounded-2xl border border-stone-200/70 bg-white/95 shadow-sm shadow-stone-900/5">
+            <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-4 py-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Daily workflow</p>
+                <p className="mt-0.5 text-sm font-black text-ink">常用操作</p>
+              </div>
+              <span className="hidden rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-500 sm:inline-flex">
+                当前：{tabLabelByKey.get(tab) || tab}
+              </span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto p-2 sm:grid sm:grid-cols-3 lg:grid-cols-6">
               {primaryTabKeys.map(key => (
                 <button
                   key={key}
-                  className={`min-h-12 rounded-lg px-4 py-3 text-sm font-black transition sm:min-h-0 sm:py-2.5 ${tab === key ? "bg-ink text-white shadow-sm" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
+                  className={`min-h-14 min-w-[132px] shrink-0 items-center justify-center rounded-xl px-4 py-3 text-center text-sm font-black transition sm:min-w-0 ${mobileHiddenTabKeys.has(key) ? "hidden sm:flex" : "flex"} ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
                   onClick={() => setTab(key)}
                   type="button"
                 >
@@ -1698,13 +1707,20 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               ))}
             </div>
           </div>
-          <div className="rounded-2xl border border-stone-200/70 bg-white/95 p-2 shadow-sm shadow-stone-900/5">
-            <p className="px-2 pb-1 text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">管理工具</p>
-            <div className="flex gap-1 overflow-x-auto">
+          <div className="overflow-hidden rounded-2xl border border-stone-200/70 bg-white/95 shadow-sm shadow-stone-900/5">
+            <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-4 py-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Management</p>
+                <p className="mt-0.5 text-sm font-black text-ink">管理工具</p>
+              </div>
+              <span className="hidden text-xs font-bold text-stone-400 sm:inline">库存、图片、分类、Feed</span>
+            </div>
+            <p className="px-4 pt-2 text-[11px] font-bold text-stone-400 sm:hidden">手机端仅显示现场常用工具，CSV、分类、Feed、标签打印请用电脑端。</p>
+            <div className="flex gap-2 overflow-x-auto p-2 sm:grid sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-3">
               {managementTabKeys.map(key => (
                 <button
                   key={key}
-                  className={`shrink-0 rounded-lg px-4 py-2.5 text-sm font-bold transition ${key === "csv" || key === "skroutz" ? "hidden lg:inline-flex" : ""} ${tab === key ? "bg-ink text-white shadow-sm" : "text-stone-500 hover:bg-stone-100 hover:text-ink"}`}
+                  className={`min-h-12 min-w-[116px] shrink-0 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-bold transition sm:min-w-0 ${mobileHiddenTabKeys.has(key) ? "hidden sm:flex" : "flex"} ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50 hover:text-ink"}`}
                   onClick={() => setTab(key)}
                   type="button"
                 >
