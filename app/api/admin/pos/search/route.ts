@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermission } from "@/lib/admin-auth";
 import { getMainInventoryLocation } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
@@ -78,7 +78,7 @@ function matchScore(q: string, row: { barcode: string; variant_sku: string; prod
 }
 
 export async function GET(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) return unauthorized();
+  if (!adminRequestHasPermission(request, "pos:read")) return unauthorized();
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();

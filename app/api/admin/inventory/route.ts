@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermission } from "@/lib/admin-auth";
 import { getInventoryOverview } from "@/lib/erp-inventory";
 
 function unauthorized() {
@@ -12,7 +12,7 @@ function parseBoolean(value: string | null) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) return unauthorized();
+  if (!adminRequestHasPermission(request, "inventory:read")) return unauthorized();
 
   const url = new URL(request.url);
   try {

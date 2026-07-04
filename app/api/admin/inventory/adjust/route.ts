@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermission } from "@/lib/admin-auth";
 import { adjustInventoryVariant } from "@/lib/erp-inventory";
 
 function unauthorized() {
@@ -7,7 +7,7 @@ function unauthorized() {
 }
 
 export async function POST(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) return unauthorized();
+  if (!adminRequestHasPermission(request, "inventory:write")) return unauthorized();
 
   const payload = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!payload) {

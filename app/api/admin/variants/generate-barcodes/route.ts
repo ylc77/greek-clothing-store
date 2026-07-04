@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermission } from "@/lib/admin-auth";
 import { generateBarcodesForVariants, VariantBarcodeError } from "@/lib/variant-barcodes";
 
 function unauthorized() {
@@ -16,7 +16,7 @@ function barcodeError(error: unknown) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) return unauthorized();
+  if (!adminRequestHasPermission(request, "labels:write")) return unauthorized();
 
   try {
     const body = (await request.json()) as {

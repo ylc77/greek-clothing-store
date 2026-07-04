@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/components/admin-toast";
 import { PosReceiptPreview } from "@/components/pos-receipt-preview";
 import { LabelPrintPreview, type LabelSize, type PrintableVariantLabel } from "@/components/label-print-preview";
+import type { AdminPermission, AdminRole } from "@/lib/admin-auth";
 
 /* ── Types ───────────────────────────────────────────────── */
 type AdminProduct = ProductFormData & { id: string; size_stock?: Record<string, number> | null };
@@ -24,6 +25,7 @@ type TranslationResult = { name_gr: string; description_gr: string; name_en: str
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
 type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "pos" | "posOrders" | "inventory" | "labels" | "add" | "csv" | "images" | "skroutz" | "categories";
+type AdminSession = { role: AdminRole; permissions: AdminPermission[] };
 type InventoryItem = {
   product_id: number;
   product_name: string;
@@ -265,6 +267,16 @@ const primaryTabKeys: Tab[] = ["quickAdd", "pos", "posOrders", "quickSale", "das
 const managementTabKeys: Tab[] = ["inventory", "labels", "add", "images", "csv", "categories", "skroutz"];
 const mobileHiddenTabKeys = new Set<Tab>(["check", "labels", "add", "images", "csv", "categories", "skroutz"]);
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
+const ownerOnlyTabs = new Set<Tab>(["quickAdd", "quickSale", "add", "csv", "images", "categories"]);
+const tabPermissions: Partial<Record<Tab, AdminPermission>> = {
+  dashboard: "products:read",
+  check: "products:read",
+  pos: "pos:checkout",
+  posOrders: "pos:read",
+  inventory: "inventory:read",
+  labels: "labels:write",
+  skroutz: "feed:read",
+};
 const clothingSizeOptions = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
 const shoeSizeOptions = ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45"];
 const oneSizeOptions = ["ONE SIZE"];
@@ -479,6 +491,9 @@ function needsAiCompletion(product: AdminProduct) {
 export function AdminDashboard() {
   const { toast } = useToast();
   const [password, setPassword] = useState(""); const [activePassword, setActivePassword] = useState("");
+  const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
+  const [loginError, setLoginError] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [form, setForm] = useState<ProductFormData>(emptyProduct); const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false); const [translating, setTranslating] = useState(false);
@@ -558,6 +573,22 @@ export function AdminDashboard() {
   // Search / filter state
   const [search, setSearch] = useState(""); const [filterCat, setFilterCat] = useState(""); const [filterSub, setFilterSub] = useState("");
   const [filterStatus, setFilterStatus] = useState("all"); // all | active | inactive | noimg | badimage | nostock | nosizestock | demo
+  const hasPermission = (permission: AdminPermission) => Boolean(adminSession?.permissions.includes(permission));
+  const isOwner = adminSession?.role === "owner";
+  const canUseTab = (key: Tab) => {
+    if (!adminSession) return false;
+    if (ownerOnlyTabs.has(key)) return isOwner;
+    const permission = tabPermissions[key];
+    return permission ? hasPermission(permission) : isOwner;
+  };
+  const visiblePrimaryTabKeys = primaryTabKeys.filter(canUseTab);
+  const visibleManagementTabKeys = managementTabKeys.filter(canUseTab);
+  useEffect(() => {
+    if (!adminSession) return;
+    if (canUseTab(tab)) return;
+    const nextTab = visiblePrimaryTabKeys[0] || visibleManagementTabKeys[0] || "dashboard";
+    setTab(nextTab);
+  }, [adminSession, tab, visiblePrimaryTabKeys, visibleManagementTabKeys]);
 
   const csvSummary = useMemo(() => {
     const valid = csvRows.filter(r => validatePreviewRow(r).length === 0).length;
@@ -1635,6 +1666,29 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     }
   }
 
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoginError("");
+    setLoginLoading(true);
+    try {
+      const response = await fetch("/api/admin/session", {
+        headers: { "x-admin-password": password },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "登录失败");
+      setAdminSession({ role: data.role, permissions: data.permissions || [] });
+      setActivePassword(password);
+      setPassword("");
+      toast("已登录后台");
+    } catch (error) {
+      setAdminSession(null);
+      setActivePassword("");
+      setLoginError(error instanceof Error ? error.message : "登录失败");
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
   /* ── Login gate ─────────────────────────────────────────── */
   if (!activePassword) {
     return (
@@ -1645,7 +1699,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           </div>
           <h1 className="text-xl font-black text-ink">商品管理后台</h1>
           <p className="mt-2 text-sm text-stone-500">Fashion Store Admin</p>
-          <form className="mt-6 space-y-4" onSubmit={e => { e.preventDefault(); setActivePassword(password); }}>
+          <form className="mt-6 space-y-4" onSubmit={handleLogin}>
+            {loginError ? <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-bold text-red-600">{loginError}</p> : null}
             <input className="input text-center" onChange={e => setPassword(e.target.value)} type="password" value={password} placeholder="管理密码" />
             <button className="w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800">登录</button>
           </form>
@@ -1665,8 +1720,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <p className="text-xs text-stone-400">管理商品、图片、库存、CSV 导入和 Skroutz Feed</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <a className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" href="/admin/settings">店铺设置</a>
-            <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { fetch("/api/admin/backup", { headers: { "x-admin-password": activePassword } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `products-export-${new Date().toISOString().split("T")[0]}.csv`; a.click(); }).catch(() => toast("备份下载失败", "err")); }} type="button">导出 CSV</button>
+            {isOwner ? <a className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" href="/admin/settings">店铺设置</a> : null}
+            {isOwner ? <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { fetch("/api/admin/backup", { headers: { "x-admin-password": activePassword } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `products-export-${new Date().toISOString().split("T")[0]}.csv`; a.click(); }).catch(() => toast("备份下载失败", "err")); }} type="button">导出 CSV</button> : null}
             <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { setActivePassword(""); setPassword(""); }}>退出</button>
           </div>
         </header>
@@ -1695,7 +1750,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </span>
             </div>
             <div className="flex gap-2 overflow-x-auto p-2 sm:grid sm:grid-cols-3 lg:grid-cols-6">
-              {primaryTabKeys.map(key => (
+              {visiblePrimaryTabKeys.map(key => (
                 <button
                   key={key}
                   className={`min-h-14 min-w-[132px] shrink-0 items-center justify-center rounded-xl px-4 py-3 text-center text-sm font-black transition sm:min-w-0 ${mobileHiddenTabKeys.has(key) ? "hidden sm:flex" : "flex"} ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
@@ -1717,7 +1772,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </div>
             <p className="px-4 pt-2 text-[11px] font-bold text-stone-400 sm:hidden">手机端仅显示现场常用工具，CSV、分类、Feed、标签打印请用电脑端。</p>
             <div className="flex gap-2 overflow-x-auto p-2 sm:grid sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-3">
-              {managementTabKeys.map(key => (
+              {visibleManagementTabKeys.map(key => (
                 <button
                   key={key}
                   className={`min-h-12 min-w-[116px] shrink-0 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-bold transition sm:min-w-0 ${mobileHiddenTabKeys.has(key) ? "hidden sm:flex" : "flex"} ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50 hover:text-ink"}`}
@@ -2187,7 +2242,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-2">
                             <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => void loadPosOrderDetail(order.id)} type="button">查看详情</button>
-                            {order.status === "completed" ? (
+                            {order.status === "completed" && hasPermission("pos:void") ? (
                               <button className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-100" onClick={() => openPosVoidDialog(order)} type="button">作废</button>
                             ) : null}
                           </div>
@@ -2212,7 +2267,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <p className="mt-1 text-xs font-bold text-stone-500">{formatAdminDate(posOrderDetail.order.created_at)}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {posOrderDetail.order.status === "completed" ? (
+                      {posOrderDetail.order.status === "completed" && hasPermission("pos:void") ? (
                         <button
                           className="min-h-11 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-black text-red-700 hover:bg-red-100"
                           onClick={() => openPosVoidDialog(posOrderDetail.order)}
@@ -2820,7 +2875,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </div>
 
             {/* Batch actions */}
-            {selectedIds.size > 0 ? (
+            {selectedIds.size > 0 && isOwner ? (
               <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-stone-50 px-4 py-2 text-sm">
                 <span className="text-xs font-bold text-stone-600">已选择 {selectedIds.size} 个商品</span>
                 <button className="rounded-lg border border-red-100 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => confirmBatch(false)}>批量下架</button>
@@ -2858,7 +2913,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       </div>
                     </div>
                   </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2">
+                  {isOwner ? <div className="mt-3 grid grid-cols-3 gap-2">
                     <button className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-ink shadow-sm hover:bg-stone-50" onClick={() => startEdit(p)} type="button">编辑</button>
                     <button className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-ink shadow-sm hover:bg-stone-50" onClick={() => copyProduct(p)} type="button">复制</button>
                     {p.is_active ? (
@@ -2866,8 +2921,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     ) : (
                       <button className="rounded-xl border border-green-100 bg-green-50 px-3 py-2 text-xs font-black text-green-700 hover:bg-green-100" onClick={() => confirmRestoreProduct(p)} type="button">上架</button>
                     )}
-                  </div>
-                  {!p.is_active ? (
+                  </div> : null}
+                  {!p.is_active && isOwner ? (
                     <button className="mt-2 w-full rounded-xl border border-red-100 bg-white px-3 py-2 text-xs font-bold text-red-400 hover:bg-red-50" onClick={() => void permanentDelete(p)} type="button">永久删除</button>
                   ) : null}
                 </article>
@@ -2900,7 +2955,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <td className="py-2 pr-3 text-sm font-bold">€{Number(p.price).toFixed(2)}</td>
                       <td className="py-2 pr-3 text-sm">{effectiveStock(p)}</td>
                       <td className="py-2 pr-3"><div className="flex flex-col gap-1"><span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap ${p.is_active ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-500"}`}>{p.is_active ? "上架" : "下架"}</span>{(() => { const raw = p as Record<string,unknown>; const w = Number(raw.image_width) || 0; const h = Number(raw.image_height) || 0; const hasImgUrl = p.image_url?.trim(); const skrOk = hasImgUrl && (w >= 1000 || h >= 1000); if (hasImgUrl && !skrOk) return <span className="inline-block rounded-full px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 cursor-help" title={`主图 ${w}×${h} 不满足 Skroutz 最低要求（至少一边 ≥ 1000px）`}>Skroutz 图片不符</span>; return null; })()}{(() => { const raw = p as Record<string,unknown>; const hasNameEn = p.name_en?.trim() || p.name_gr?.trim(); const hasPrice = Number(p.price) > 0; const hasImg = p.image_url?.trim(); const isClothing = /women|men/i.test(p.category); const isShoes = p.category === "shoes"; const needsSizes = isClothing || isShoes; const hasSzChart = raw.size_chart && typeof raw.size_chart === "object" && Object.keys(raw.size_chart as object).length > 0; const hasSizes = p.sizes?.trim(); const hasKeywords = (Array.isArray(raw.ai_keywords) && (raw.ai_keywords as unknown[]).length > 0) || (typeof raw.ai_keywords === "string" && (raw.ai_keywords as string).trim()); const hasStyleTags = (Array.isArray(raw.style_tags) && (raw.style_tags as unknown[]).length > 0) || (typeof raw.style_tags === "string" && (raw.style_tags as string).trim()); const matOk = !raw.material || !String(raw.material).trim() || raw.material_verified === true; const sizesOk = !needsSizes || hasSzChart || hasSizes; const basicsOk = hasNameEn && hasImg && hasPrice && p.is_active && effectiveStock(p) > 0; const enhancedOk = hasKeywords && hasStyleTags && matOk; const missing: string[] = []; if (!hasKeywords) missing.push("AI关键词"); if (!hasStyleTags) missing.push("风格标签"); if (!matOk) missing.push("材质确认"); if (needsSizes && !hasSzChart && !hasSizes) missing.push("尺码信息"); if (!basicsOk) missing.push("基础信息"); const level = basicsOk ? (enhancedOk && sizesOk ? "complete" : "usable") : "incomplete"; const colors = { complete: "bg-green-100 text-green-700", usable: "bg-blue-100 text-blue-700", incomplete: "bg-amber-100 text-amber-700" }; const labels = { complete: "AI完整", usable: "AI可用", incomplete: "AI需补充" }; const tip = missing.length > 0 ? missing.join("、") : "AI导购信息齐全"; return <span className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-bold whitespace-nowrap cursor-help ${colors[level as keyof typeof colors]}`} title={`${tip}${level==="usable"?"——AI仍可进行基础推荐":""}${level==="incomplete"?"——AI无法正常推荐":""}`}>{labels[level as keyof typeof labels]}</span>; })()}</div></td>
-                      <td className="py-2 pr-3"><div className="flex gap-1.5">
+                      <td className="py-2 pr-3">{isOwner ? <div className="flex gap-1.5">
                         <button className="rounded-md border border-stone-200 px-3 py-1.5 text-xs font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => startEdit(p)}>编辑</button>
                         <button className="rounded-md border border-stone-200 px-3 py-1.5 text-xs font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => copyProduct(p)}>复制</button>
                         {p.is_active ? (
@@ -2911,7 +2966,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                             <button className="rounded-md border border-red-100 px-3 py-1.5 text-xs font-bold whitespace-nowrap text-red-400 hover:bg-red-50" onClick={() => void permanentDelete(p)}>永久删除</button>
                           </>
                         )}
-                      </div></td>
+                      </div> : <span className="text-xs font-bold text-stone-400">只读</span>}</td>
                     </tr>
                   ))}
                 </tbody>

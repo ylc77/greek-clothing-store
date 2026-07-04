@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { adminRequestHasPermission } from "@/lib/admin-auth";
 import { adminPasswordIsValid, productForForm, validateProductPayload } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
 import { syncProductInventoryFromLegacy } from "@/lib/erp-inventory";
@@ -21,7 +22,7 @@ function isAuthorized(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  if (!adminRequestHasPermission(request, "products:read")) {
     return unauthorized();
   }
 

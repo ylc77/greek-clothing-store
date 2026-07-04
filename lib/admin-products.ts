@@ -7,6 +7,8 @@ import {
   type ProductFormData
 } from "./types";
 
+export { adminPasswordIsValid } from "./admin-auth";
+
 export type AdminProductPayload = {
   sku?: unknown;
   name_cn?: unknown;
@@ -127,11 +129,6 @@ function imageUrlsValue(value: unknown) {
 
 function defaultSubcategory(category: string) {
   return subcategoryList[category]?.[0] || "";
-}
-
-export function adminPasswordIsValid(password: string | null) {
-  const expected = process.env.ADMIN_PASSWORD;
-  return Boolean(expected && password && password === expected);
 }
 
 export function validateProductPayload(payload: AdminProductPayload) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermission } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import { getMainInventoryLocation, syncLegacyStockFromErp } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -115,7 +115,7 @@ async function markOrderVoided(supabase: any, orderId: string) {
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) return unauthorized();
+  if (!adminRequestHasPermission(request, "pos:void")) return unauthorized();
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();

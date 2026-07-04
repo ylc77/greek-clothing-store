@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermission } from "@/lib/admin-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -81,7 +81,7 @@ function includesQuery(value: unknown, q: string) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) return unauthorized();
+  if (!adminRequestHasPermission(request, "pos:read")) return unauthorized();
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();
