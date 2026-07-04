@@ -11,3 +11,5 @@ demo-videos/
 automation-reports/
 
 backups/*.sql
+
+backups/

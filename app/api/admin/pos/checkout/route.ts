@@ -134,6 +134,18 @@ function isPaymentMethod(value: unknown): value is "cash" | "card" | "other" {
   return value === "cash" || value === "card" || value === "other";
 }
 
+function usePosRpc() {
+  return process.env.USE_POS_RPC === "true";
+}
+
+function checkoutErrorStatus(message: string) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("insufficient stock")) return 409;
+  if (normalized.includes("inactive")) return 400;
+  if (normalized.includes("required") || normalized.includes("must be")) return 400;
+  return 500;
+}
+
 function normalizeItems(items: unknown) {
   if (!Array.isArray(items) || items.length === 0) {
     throw new Error("items is required.");
@@ -232,6 +244,41 @@ export async function POST(request: NextRequest) {
   const idempotencyKey = `pos_sale:${clientRequestId}`;
 
   try {
+    if (usePosRpc() && !dryRun) {
+      const { data, error } = await (supabase as any).rpc("pos_checkout_rpc", {
+        p_client_request_id: clientRequestId,
+        p_payment_method: payload.paymentMethod,
+        p_items: itemsInput.map((item) => ({
+          variantId: item.variantId,
+          quantity: item.quantity,
+        })),
+        p_discount_total: discountTotal,
+        p_notes: notes || null,
+        p_created_by: "admin",
+      });
+
+      if (error) {
+        logCheckoutError("RPC checkout failed", error, { clientRequestId });
+        const message = String(error.message || "Failed to complete POS checkout.");
+        return NextResponse.json({ error: message }, { status: checkoutErrorStatus(message) });
+      }
+
+      const result = data || {};
+      const affectedSkus = Array.isArray(result.affected_skus) ? result.affected_skus : [];
+      for (const sku of affectedSkus) {
+        invalidateProductsCache(typeof sku === "string" ? sku : null);
+      }
+
+      return NextResponse.json({
+        ok: true,
+        rpc: true,
+        alreadyProcessed: result.already_processed === true,
+        order: result.order,
+        items: result.items || [],
+        payments: result.payments || [],
+      });
+    }
+
     const location = await getMainInventoryLocation();
     const variantIds = itemsInput.map((item) => item.variantId);
     const { data: variants, error: variantsError } = await (supabase as any)
@@ -563,7 +610,7 @@ export async function POST(request: NextRequest) {
         quantity_delta: 0 - change.quantity,
         quantity_before: change.quantityBefore,
         quantity_after: change.quantityAfter,
-        reason: "POS 销售",
+        reason: "POS sale",
         source_type: "pos_sale",
         source_id: order.id,
         idempotency_key: movementKey,

@@ -64,6 +64,18 @@ function money(value: unknown) {
   return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0;
 }
 
+function usePosRpc() {
+  return process.env.USE_POS_RPC === "true";
+}
+
+function voidErrorStatus(message: string) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("not found")) return 404;
+  if (normalized.includes("refunded") || normalized.includes("only completed")) return 409;
+  if (normalized.includes("required") || normalized.includes("at least")) return 400;
+  return 500;
+}
+
 function logVoidError(context: string, error: unknown, extra?: Record<string, unknown>) {
   const details =
     error && typeof error === "object"
@@ -128,6 +140,41 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   try {
+    if (usePosRpc()) {
+      const { data, error } = await (supabase as any).rpc("pos_void_rpc", {
+        p_order_id: orderId,
+        p_client_request_id: clientRequestId,
+        p_reason: reason,
+        p_created_by: "admin",
+      });
+
+      if (error) {
+        logVoidError("RPC void failed", error, { orderId, clientRequestId });
+        const message = String(error.message || "Failed to void POS order.");
+        return NextResponse.json({ error: message }, { status: voidErrorStatus(message) });
+      }
+
+      const result = data || {};
+      const affectedSkus = Array.isArray(result.affected_skus) ? result.affected_skus : [];
+      for (const sku of affectedSkus) {
+        invalidateProductsCache(typeof sku === "string" ? sku : null);
+      }
+
+      return NextResponse.json({
+        ok: true,
+        rpc: true,
+        alreadyProcessed: result.already_processed === true,
+        message:
+          result.already_processed === true
+            ? "该订单已作废。"
+            : "订单已作废，库存已加回。",
+        order: result.order,
+        items: result.items || [],
+        payments: result.payments || [],
+        restoredItems: result.restored_items || [],
+      });
+    }
+
     const { data: order, error: orderError } = await (supabase as any)
       .from("sales_orders")
       .select("id, order_number, status, payment_status, total, currency, voided_at")

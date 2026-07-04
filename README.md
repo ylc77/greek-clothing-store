@@ -65,6 +65,7 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 ADMIN_PASSWORD=
 SUPABASE_SERVICE_ROLE_KEY=
+USE_POS_RPC=false
 DEEPSEEK_API_KEY=
 DEEPSEEK_TRANSLATION_MODEL=deepseek-chat
 ```
@@ -73,6 +74,7 @@ DEEPSEEK_TRANSLATION_MODEL=deepseek-chat
 
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` 用于前台读取公开商品和店铺数据。
 - `SUPABASE_SERVICE_ROLE_KEY` 只用于服务端后台 API，不能暴露到浏览器。
+- `USE_POS_RPC` 控制 POS checkout / void 是否走数据库事务 RPC；默认保持 `false`，验证完成后再逐步开启。
 - `DEEPSEEK_API_KEY` 用于后台自动翻译和 AI 导购助手。
 
 ## 常用命令
