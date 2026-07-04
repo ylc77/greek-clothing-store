@@ -14,6 +14,7 @@ import { getTotalStock as effectiveStock } from "@/lib/product-stock";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/components/admin-toast";
 import { PosReceiptPreview } from "@/components/pos-receipt-preview";
+import { LabelPrintPreview, type LabelSize, type PrintableVariantLabel } from "@/components/label-print-preview";
 
 /* ── Types ───────────────────────────────────────────────── */
 type AdminProduct = ProductFormData & { id: string; size_stock?: Record<string, number> | null };
@@ -22,7 +23,7 @@ type CsvRow = Record<string, string | number>;
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "pos" | "posOrders" | "inventory" | "add" | "csv" | "images" | "skroutz" | "categories";
+type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "pos" | "posOrders" | "inventory" | "labels" | "add" | "csv" | "images" | "skroutz" | "categories";
 type InventoryItem = {
   product_id: number;
   product_name: string;
@@ -32,6 +33,7 @@ type InventoryItem = {
   size: string | null;
   color: string | null;
   barcode: string | null;
+  price: number;
   active: boolean;
   quantity_on_hand: number;
   quantity_reserved: number;
@@ -256,10 +258,11 @@ const tabs: { key: Tab; label: string }[] = [
   { key: "pos", label: "POS 收银" },
   { key: "posOrders", label: "POS 订单" },
   { key: "inventory", label: "库存管理" },
+  { key: "labels", label: "标签打印" },
   { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
 const primaryTabKeys: Tab[] = ["quickAdd", "pos", "posOrders", "quickSale", "dashboard", "check"];
-const managementTabKeys: Tab[] = ["inventory", "add", "images", "csv", "categories", "skroutz"];
+const managementTabKeys: Tab[] = ["inventory", "labels", "add", "images", "csv", "categories", "skroutz"];
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
 const clothingSizeOptions = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
 const shoeSizeOptions = ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45"];
@@ -519,6 +522,12 @@ export function AdminDashboard() {
   const [movementSourceType, setMovementSourceType] = useState("");
   const [movementLimit, setMovementLimit] = useState(50);
   const [adjustInventory, setAdjustInventory] = useState<InventoryAdjustState>({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" });
+  const [labelOnlyMissingBarcode, setLabelOnlyMissingBarcode] = useState(false);
+  const [labelSize, setLabelSize] = useState<LabelSize>("50x30");
+  const [selectedLabelVariantIds, setSelectedLabelVariantIds] = useState<Set<string>>(new Set());
+  const [labelGenerating, setLabelGenerating] = useState(false);
+  const [labelMessage, setLabelMessage] = useState("");
+  const [labelPreviewItems, setLabelPreviewItems] = useState<PrintableVariantLabel[] | null>(null);
   const posSearchInputRef = useRef<HTMLInputElement | null>(null);
   const [posQuery, setPosQuery] = useState("");
   const [posResults, setPosResults] = useState<PosSearchItem[]>([]);
@@ -620,6 +629,14 @@ export function AdminDashboard() {
       return summary;
     }, { totalVariants: 0, totalOnHand: 0, totalAvailable: 0, outOfStock: 0, lowStock: 0, inactive: 0, mismatch: 0 });
   }, [inventoryItems, lowStockThreshold]);
+
+  const filteredLabelItems = useMemo(() => {
+    return filteredInventoryItems.filter(item => !labelOnlyMissingBarcode || !item.barcode);
+  }, [filteredInventoryItems, labelOnlyMissingBarcode]);
+
+  const selectedLabelItems = useMemo(() => {
+    return inventoryItems.filter(item => selectedLabelVariantIds.has(item.variant_id));
+  }, [inventoryItems, selectedLabelVariantIds]);
 
   const posSubtotal = useMemo(() => {
     return posCart.reduce((sum, item) => sum + item.price * item.cartQuantity, 0);
@@ -1038,7 +1055,68 @@ export function AdminDashboard() {
       setInventoryLoading(false);
     }
   }
-  useEffect(() => { if (activePassword && tab === "inventory") void loadInventoryData(); }, [activePassword, tab]);
+  useEffect(() => { if (activePassword && (tab === "inventory" || tab === "labels")) void loadInventoryData(); }, [activePassword, tab]);
+  function toggleLabelVariant(variantId: string) {
+    setSelectedLabelVariantIds(prev => {
+      const next = new Set(prev);
+      if (next.has(variantId)) next.delete(variantId);
+      else next.add(variantId);
+      return next;
+    });
+  }
+  function setLabelSelection(items: InventoryItem[]) {
+    setSelectedLabelVariantIds(new Set(items.map(item => item.variant_id)));
+  }
+  function labelFromInventoryItem(item: InventoryItem): PrintableVariantLabel {
+    return {
+      product_name: item.product_name,
+      product_sku: item.product_sku,
+      variant_id: item.variant_id,
+      variant_sku: item.variant_sku,
+      barcode: item.barcode,
+      size: item.size,
+      color: item.color,
+      price: item.price,
+      quantity_on_hand: item.quantity_on_hand,
+      active: item.active,
+    };
+  }
+  async function generateSelectedBarcodes() {
+    const variantIds = Array.from(selectedLabelVariantIds);
+    if (variantIds.length === 0) {
+      toast("请先选择需要生成条码的变体", "err");
+      return;
+    }
+    setLabelGenerating(true);
+    setLabelMessage("");
+    try {
+      const result = await api("/api/admin/variants/generate-barcodes", {
+        method: "POST",
+        body: JSON.stringify({ variantIds, mode: "variant_sku", force: false }),
+      });
+      const errors = Array.isArray(result.errors) ? result.errors : [];
+      const message = `已生成 ${Number(result.generatedCount || 0)} 个，跳过 ${Number(result.skippedCount || 0)} 个，失败 ${errors.length} 个。`;
+      setLabelMessage(message);
+      toast(message, errors.length > 0 ? "err" : "ok");
+      await loadInventoryData();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "生成条码失败";
+      setLabelMessage(message);
+      toast(message, "err");
+    } finally {
+      setLabelGenerating(false);
+    }
+  }
+  function openLabelPreview() {
+    const labels = selectedLabelItems
+      .filter(item => item.barcode || item.variant_sku)
+      .map(labelFromInventoryItem);
+    if (labels.length === 0) {
+      toast("请先选择已有条码或 variant SKU 的标签", "err");
+      return;
+    }
+    setLabelPreviewItems(labels);
+  }
   useEffect(() => {
     if (tab === "pos") {
       window.setTimeout(() => posSearchInputRef.current?.focus(), 50);
@@ -2829,6 +2907,87 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         ) : null}
 
         {/* ── TAB: Add / Edit ─────────────────────────────── */}
+        {tab === "labels" ? (
+          <section className="flex flex-col gap-5">
+            <div className="admin-panel">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Barcode Labels</p>
+                  <h2 className="mt-1 text-xl font-black text-ink">标签打印</h2>
+                  <p className="mt-1 text-xs text-stone-500">第一版使用浏览器打印单列标签，条码规则为 barcode = variant SKU。</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={inventoryLoading} onClick={() => void loadInventoryData()} type="button">刷新</button>
+                  <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={selectedLabelVariantIds.size === 0 || labelGenerating} onClick={() => void generateSelectedBarcodes()} type="button">
+                    {labelGenerating ? "生成中..." : "生成选中 barcode"}
+                  </button>
+                  <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={selectedLabelItems.length === 0} onClick={openLabelPreview} type="button">打印选中标签</button>
+                  <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={selectedLabelVariantIds.size === 0} onClick={() => setSelectedLabelVariantIds(new Set())} type="button">清空选择</button>
+                </div>
+              </div>
+              {labelMessage ? <p className="mt-4 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-bold text-stone-700">{labelMessage}</p> : null}
+              <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_120px_150px_150px_auto_auto]">
+                <input className="input" placeholder="搜索商品名 / SKU / variant SKU / barcode" value={inventoryQ} onChange={e => setInventoryQ(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
+                <input className="input" placeholder="尺码，如 S / 38" value={inventorySize} onChange={e => setInventorySize(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
+                <select className="input" value={inventoryStatus} onChange={e => setInventoryStatus(e.target.value as InventoryStatusFilter)}><option value="all">全部状态</option><option value="normal">正常</option><option value="low_stock">低库存</option><option value="out_of_stock">缺货</option><option value="inactive">停用</option><option value="mismatch">对账异常</option></select>
+                <select className="input" value={labelSize} onChange={e => setLabelSize(e.target.value as LabelSize)}><option value="40x30">40 x 30mm</option><option value="50x30">50 x 30mm</option><option value="60x40">60 x 40mm</option></select>
+                <label className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-300 bg-white px-3 text-sm font-bold text-stone-700">
+                  <input checked={labelOnlyMissingBarcode} onChange={e => setLabelOnlyMissingBarcode(e.target.checked)} type="checkbox" />
+                  只看无 barcode
+                </label>
+                <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={inventoryLoading} onClick={() => void loadInventoryData()} type="button">搜索</button>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-stone-500">
+                <span className="rounded-full bg-stone-100 px-3 py-1.5">当前列表 {filteredLabelItems.length} 个 variant</span>
+                <span className="rounded-full bg-stone-100 px-3 py-1.5">已选择 {selectedLabelVariantIds.size} 个</span>
+                <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 font-black text-ink hover:bg-stone-50" onClick={() => setLabelSelection(filteredLabelItems)} type="button">选择当前列表</button>
+                <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 font-black text-ink hover:bg-stone-50" onClick={() => setLabelSelection(filteredLabelItems.filter(item => !item.barcode))} type="button">选择当前无 barcode</button>
+              </div>
+            </div>
+
+            <div className="admin-panel">
+              {filteredLabelItems.length === 0 && !inventoryLoading ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">暂无可打印标签数据</p> : null}
+              <div className="overflow-x-auto rounded-2xl border border-stone-200">
+                <table className="min-w-[1120px] w-full text-left text-sm">
+                  <thead className="bg-stone-50 text-stone-500">
+                    <tr>
+                      <th className="px-3 py-2 text-xs font-black"><input checked={filteredLabelItems.length > 0 && filteredLabelItems.every(item => selectedLabelVariantIds.has(item.variant_id))} onChange={e => setLabelSelection(e.target.checked ? filteredLabelItems : [])} type="checkbox" /></th>
+                      <th className="px-3 py-2 text-xs font-black">商品</th>
+                      <th className="px-3 py-2 text-xs font-black">Product SKU</th>
+                      <th className="px-3 py-2 text-xs font-black">Variant SKU</th>
+                      <th className="px-3 py-2 text-xs font-black">尺码</th>
+                      <th className="px-3 py-2 text-xs font-black">颜色</th>
+                      <th className="px-3 py-2 text-xs font-black">Barcode</th>
+                      <th className="px-3 py-2 text-right text-xs font-black">价格</th>
+                      <th className="px-3 py-2 text-right text-xs font-black">库存</th>
+                      <th className="px-3 py-2 text-xs font-black">状态</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredLabelItems.map(item => (
+                      <tr className="border-t border-stone-100 bg-white align-top" key={item.variant_id}>
+                        <td className="px-3 py-3"><input checked={selectedLabelVariantIds.has(item.variant_id)} onChange={() => toggleLabelVariant(item.variant_id)} type="checkbox" /></td>
+                        <td className="max-w-[240px] px-3 py-3"><p className="line-clamp-2 font-black text-ink">{item.product_name || "-"}</p></td>
+                        <td className="px-3 py-3 font-mono text-xs font-bold text-stone-600">{item.product_sku || "-"}</td>
+                        <td className="px-3 py-3 font-mono text-xs font-bold text-stone-600">{item.variant_sku || "-"}</td>
+                        <td className="px-3 py-3 text-xs font-bold">{item.size || "-"}</td>
+                        <td className="px-3 py-3 text-xs">{item.color || "-"}</td>
+                        <td className="px-3 py-3 font-mono text-xs">{item.barcode ? item.barcode : <span className="rounded-full bg-amber-50 px-2 py-1 font-bold text-amber-700">未生成</span>}</td>
+                        <td className="px-3 py-3 text-right text-sm font-black text-copper">{formatEuro(item.price)}</td>
+                        <td className="px-3 py-3 text-right text-sm font-black text-ink">{item.quantity_on_hand}</td>
+                        <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${item.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}>{item.active ? "启用" : "停用"}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-xs font-bold leading-relaxed text-amber-800">
+                打印前请先用真实标签纸测试。第一版不做 ESC/POS 或打印机 SDK，只使用浏览器打印。
+              </p>
+            </div>
+          </section>
+        ) : null}
+
         {tab === "add" ? (
           <form className="flex flex-col gap-5" onSubmit={submitProduct}>
             {/* Basic info card */}
@@ -3177,6 +3336,14 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           payments={posReceiptDetail.payments}
           paperWidth="80mm"
           onClose={() => setPosReceiptDetail(null)}
+        />
+      ) : null}
+
+      {labelPreviewItems ? (
+        <LabelPrintPreview
+          labels={labelPreviewItems}
+          labelSize={labelSize}
+          onClose={() => setLabelPreviewItems(null)}
         />
       ) : null}
 

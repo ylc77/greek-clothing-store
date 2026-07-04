@@ -92,6 +92,7 @@ export type InventoryOverviewItem = {
   size: string | null;
   color: string | null;
   barcode: string | null;
+  price: number;
   active: boolean;
   quantity_on_hand: number;
   quantity_reserved: number;
@@ -394,10 +395,10 @@ async function loadInventoryOverviewRows(): Promise<InventoryOverviewItem[]> {
     await Promise.all([
       supabase
         .from("products")
-        .select("id, sku, name_cn, name_en, name_gr, stock, size_stock, is_active"),
+        .select("id, sku, name_cn, name_en, name_gr, price, stock, size_stock, is_active"),
       supabase
         .from("product_variants")
-        .select("id, product_id, variant_sku, barcode, size, color, active"),
+        .select("id, product_id, variant_sku, barcode, size, color, price, active"),
     ]);
 
   if (productsError) {
@@ -483,6 +484,7 @@ async function loadInventoryOverviewRows(): Promise<InventoryOverviewItem[]> {
       size: variant.size === null || variant.size === undefined ? null : String(variant.size),
       color: variant.color === null || variant.color === undefined ? null : String(variant.color),
       barcode: variant.barcode === null || variant.barcode === undefined ? null : String(variant.barcode),
+      price: numberMoney(variant.price ?? product.price) ?? 0,
       active: variant.active !== false,
       quantity_on_hand: quantityOnHand,
       quantity_reserved: quantityReserved,
