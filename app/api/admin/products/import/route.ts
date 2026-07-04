@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import {
-  adminPasswordIsValid,
   validateProductPayload,
   type AdminProductPayload,
   type ProductMutation,
 } from "@/lib/admin-products";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import { syncProductInventoryFromLegacy } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -96,7 +96,7 @@ function readableImportMessage(message: string) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) {
+  if (!(await adminRequestHasPermissionAsync(request, "products:write"))) {
     return unauthorized();
   }
 

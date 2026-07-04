@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -10,7 +10,7 @@ function cleanText(value: unknown, limit = 500) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) return unauthorized();
+  if (!(await adminRequestHasPermissionAsync(request, "ai:write"))) return unauthorized();
 
   const apiKey = (process.env.DEEPSEEK_API_KEY || "").trim();
   if (!apiKey) return NextResponse.json({ error: "DEEPSEEK_API_KEY not configured" }, { status: 500 });

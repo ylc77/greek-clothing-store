@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermission } from "@/lib/admin-auth";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { updateVariantBarcode, VariantBarcodeError } from "@/lib/variant-barcodes";
 
 type VariantBarcodeRouteContext = {
@@ -22,7 +22,7 @@ function barcodeError(error: unknown) {
 }
 
 export async function PUT(request: NextRequest, context: VariantBarcodeRouteContext) {
-  if (!adminRequestHasPermission(request, "labels:write")) return unauthorized();
+  if (!(await adminRequestHasPermissionAsync(request, "labels:write"))) return unauthorized();
 
   try {
     const { id } = await context.params;

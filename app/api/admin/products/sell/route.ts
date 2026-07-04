@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { adminPasswordIsValid, productForForm } from "@/lib/admin-products";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { productForForm } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
 import {
   hasStockMovementForIdempotencyKey,
@@ -36,7 +37,7 @@ function totalSizeStock(stock: Record<string, number>) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) return unauthorized();
+  if (!(await adminRequestHasPermissionAsync(request, "pos:checkout"))) return unauthorized();
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();

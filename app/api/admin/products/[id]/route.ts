@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid, productForForm, validateProductPayload } from "@/lib/admin-products";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { productForForm, validateProductPayload } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
 import {
   hasInventoryMovementsForProduct,
@@ -26,12 +27,8 @@ function unavailable() {
   );
 }
 
-function isAuthorized(request: NextRequest) {
-  return adminPasswordIsValid(request.headers.get("x-admin-password"));
-}
-
 export async function PUT(request: NextRequest, context: ProductRouteContext) {
-  if (!isAuthorized(request)) {
+  if (!(await adminRequestHasPermissionAsync(request, "products:write"))) {
     return unauthorized();
   }
 
@@ -123,7 +120,7 @@ export async function PUT(request: NextRequest, context: ProductRouteContext) {
 }
 
 export async function DELETE(request: NextRequest, context: ProductRouteContext) {
-  if (!isAuthorized(request)) {
+  if (!(await adminRequestHasPermissionAsync(request, "products:write"))) {
     return unauthorized();
   }
 

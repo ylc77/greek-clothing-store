@@ -1,3 +1,5 @@
+import { getSupabaseAdminClient } from "./supabase";
+
 export type AdminRole = "owner" | "staff" | "inventory" | "readonly";
 
 export type AdminPermission =
@@ -19,6 +21,10 @@ export type AdminPermission =
 export type AdminAuthContext = {
   role: AdminRole;
   permissions: AdminPermission[];
+  authType?: "password" | "account";
+  userId?: string;
+  email?: string;
+  displayName?: string | null;
 };
 
 const ROLE_PERMISSIONS: Record<AdminRole, AdminPermission[]> = {
@@ -67,6 +73,7 @@ export function getAdminContextFromPassword(password: string | null | undefined)
       return {
         role,
         permissions: ROLE_PERMISSIONS[role],
+        authType: "password",
       };
     }
   }
@@ -82,12 +89,64 @@ export function getAdminContextFromRequest(request: Request) {
   return getAdminContextFromPassword(request.headers.get("x-admin-password"));
 }
 
+function getBearerToken(request: Request) {
+  const authorization = request.headers.get("authorization") || "";
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || "";
+}
+
+function isAdminRole(value: unknown): value is AdminRole {
+  return value === "owner" || value === "staff" || value === "inventory" || value === "readonly";
+}
+
+export async function getAdminAuthContextFromRequest(request: Request): Promise<AdminAuthContext | null> {
+  const passwordContext = getAdminContextFromRequest(request);
+  if (passwordContext) return passwordContext;
+
+  const token = getBearerToken(request);
+  if (!token) return null;
+
+  const supabase = getSupabaseAdminClient();
+  if (!supabase) return null;
+
+  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  const user = userData?.user;
+  if (userError || !user) return null;
+
+  const { data: adminUser, error: adminUserError } = await (supabase as any)
+    .from("admin_users")
+    .select("id, email, role, display_name, active")
+    .eq("id", user.id)
+    .eq("active", true)
+    .maybeSingle();
+
+  if (adminUserError || !adminUser || !isAdminRole(adminUser.role)) return null;
+  const role = adminUser.role as AdminRole;
+
+  return {
+    role,
+    permissions: ROLE_PERMISSIONS[role],
+    authType: "account",
+    userId: user.id,
+    email: adminUser.email || user.email || "",
+    displayName: adminUser.display_name || null,
+  };
+}
+
 export function adminHasPermission(context: AdminAuthContext | null, permission: AdminPermission) {
   return Boolean(context?.permissions.includes(permission));
 }
 
 export function adminRequestHasPermission(request: Request, permission: AdminPermission) {
   return adminHasPermission(getAdminContextFromRequest(request), permission);
+}
+
+export async function adminRequestHasPermissionAsync(request: Request, permission: AdminPermission) {
+  return adminHasPermission(await getAdminAuthContextFromRequest(request), permission);
+}
+
+export async function adminRequestIsOwnerAsync(request: Request) {
+  return (await getAdminAuthContextFromRequest(request))?.role === "owner";
 }
 
 export function getAdminRolePermissions(role: AdminRole) {

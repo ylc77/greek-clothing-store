@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermission } from "@/lib/admin-auth";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { invalidateCategoriesCache, invalidateProductsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 function unauth() { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
 
 export async function GET(request: NextRequest) {
-  if (!adminRequestHasPermission(request, "products:read")) return unauth();
+  if (!(await adminRequestHasPermissionAsync(request, "products:read"))) return unauth();
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "No admin client" }, { status: 500 });
 
@@ -20,7 +19,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) return unauth();
+  if (!(await adminRequestHasPermissionAsync(request, "categories:write"))) return unauth();
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "No admin client" }, { status: 500 });
 

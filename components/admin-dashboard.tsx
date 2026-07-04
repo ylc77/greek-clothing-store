@@ -16,6 +16,7 @@ import { useToast } from "@/components/admin-toast";
 import { PosReceiptPreview } from "@/components/pos-receipt-preview";
 import { LabelPrintPreview, type LabelSize, type PrintableVariantLabel } from "@/components/label-print-preview";
 import type { AdminPermission, AdminRole } from "@/lib/admin-auth";
+import { getSupabaseBrowserAuthClient } from "@/lib/supabase";
 
 /* ── Types ───────────────────────────────────────────────── */
 type AdminProduct = ProductFormData & { id: string; size_stock?: Record<string, number> | null };
@@ -24,8 +25,8 @@ type CsvRow = Record<string, string | number>;
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "pos" | "posOrders" | "inventory" | "labels" | "add" | "csv" | "images" | "skroutz" | "categories";
-type AdminSession = { role: AdminRole; permissions: AdminPermission[] };
+type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "pos" | "posOrders" | "posDaily" | "inventory" | "labels" | "add" | "csv" | "images" | "skroutz" | "categories";
+type AdminSession = { role: AdminRole; permissions: AdminPermission[]; authType?: "password" | "account"; email?: string | null; displayName?: string | null };
 type InventoryItem = {
   product_id: number;
   product_name: string;
@@ -193,6 +194,24 @@ type PosOrderDetail = {
     created_at: string;
   }>;
 };
+type PosDailyReport = {
+  date: string;
+  summary: {
+    ordersTotal: number;
+    completedOrders: number;
+    voidedOrders: number;
+    refundedOrders: number;
+    grossSales: number;
+    voidedTotal: number;
+    discountTotal: number;
+    netSales: number;
+    itemsSold: number;
+  };
+  paymentMethods: Array<{ method: string; amount: number; count: number }>;
+  topItems: Array<{ product_sku: string; variant_sku: string; name: string; quantity: number; total: number }>;
+  orders: Array<{ id: string; order_number: string; status: string; payment_status: string; total: number; currency: string; created_at: string; payments_count: number; items_count: number }>;
+  health: { missingPayments: number; missingItems: number; missingSaleMovements: number; missingVoidMovements: number };
+};
 type PosVoidDialogState = {
   order: PosOrderListItem;
   reason: string;
@@ -259,11 +278,12 @@ const csvHeaderAliases = new Map(Object.entries(csvFieldLabels).flatMap(([field,
 const tabs: { key: Tab; label: string }[] = [
   { key: "pos", label: "POS 收银" },
   { key: "posOrders", label: "POS 订单" },
+  { key: "posDaily", label: "POS 日报" },
   { key: "inventory", label: "库存管理" },
   { key: "labels", label: "标签打印" },
   { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
-const primaryTabKeys: Tab[] = ["quickAdd", "pos", "posOrders", "quickSale", "dashboard", "check"];
+const primaryTabKeys: Tab[] = ["quickAdd", "pos", "posOrders", "posDaily", "quickSale", "dashboard", "check"];
 const managementTabKeys: Tab[] = ["inventory", "labels", "add", "images", "csv", "categories", "skroutz"];
 const mobileHiddenTabKeys = new Set<Tab>(["check", "labels", "add", "images", "csv", "categories", "skroutz"]);
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
@@ -273,6 +293,7 @@ const tabPermissions: Partial<Record<Tab, AdminPermission>> = {
   check: "products:read",
   pos: "pos:checkout",
   posOrders: "pos:read",
+  posDaily: "pos:read",
   inventory: "inventory:read",
   labels: "labels:write",
   skroutz: "feed:read",
@@ -491,6 +512,10 @@ function needsAiCompletion(product: AdminProduct) {
 export function AdminDashboard() {
   const { toast } = useToast();
   const [password, setPassword] = useState(""); const [activePassword, setActivePassword] = useState("");
+  const [loginMode, setLoginMode] = useState<"account" | "password">("account");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [accountPassword, setAccountPassword] = useState("");
+  const [adminAuthToken, setAdminAuthToken] = useState("");
   const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
@@ -568,7 +593,11 @@ export function AdminDashboard() {
   const [posVoidDialog, setPosVoidDialog] = useState<PosVoidDialogState | null>(null);
   const [posReceiptDetail, setPosReceiptDetail] = useState<PosOrderDetail | null>(null);
   const [posReceiptLoading, setPosReceiptLoading] = useState(false);
-  useEffect(() => { if (activePassword) { fetch("/api/admin/categories", { headers: { "x-admin-password": activePassword } }).then(r => r.json()).then(d => { setDbCats((d.categories||[]).filter((c:Record<string,unknown>) => c.is_active !== false)); setDbSubs((d.subcategories||[]).filter((s:Record<string,unknown>) => s.is_active !== false)); }).catch(() => {}); } }, [activePassword, tab]);
+  const [posDailyDate, setPosDailyDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [posDailyReport, setPosDailyReport] = useState<PosDailyReport | null>(null);
+  const [posDailyLoading, setPosDailyLoading] = useState(false);
+  const [posDailyMessage, setPosDailyMessage] = useState("");
+  useEffect(() => { if (adminSession) { fetch("/api/admin/categories", { headers: adminAuthHeaders() }).then(r => r.json()).then(d => { setDbCats((d.categories||[]).filter((c:Record<string,unknown>) => c.is_active !== false)); setDbSubs((d.subcategories||[]).filter((s:Record<string,unknown>) => s.is_active !== false)); }).catch(() => {}); } }, [adminSession, adminAuthToken, activePassword, tab]);
 
   // Search / filter state
   const [search, setSearch] = useState(""); const [filterCat, setFilterCat] = useState(""); const [filterSub, setFilterSub] = useState("");
@@ -769,8 +798,13 @@ export function AdminDashboard() {
   }
 
   /* ── API helper ───────────────────────────────────────── */
+  function adminAuthHeaders(): Record<string, string> {
+    if (adminAuthToken) return { Authorization: `Bearer ${adminAuthToken}` };
+    return activePassword ? { "x-admin-password": activePassword } : {};
+  }
+
   async function api(path: string, init: RequestInit = {}) {
-    const r = await fetch(path, { ...init, headers: { "Content-Type": "application/json", "x-admin-password": activePassword, ...(init.headers || {}) } });
+    const r = await fetch(path, { ...init, headers: { "Content-Type": "application/json", ...adminAuthHeaders(), ...(init.headers || {}) } });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "Request failed");
     return d;
@@ -790,7 +824,7 @@ export function AdminDashboard() {
   async function posApi(path: string, init: RequestInit = {}) {
     const response = await fetch(path, {
       ...init,
-      headers: { "Content-Type": "application/json", "x-admin-password": activePassword, ...(init.headers || {}) },
+      headers: { "Content-Type": "application/json", ...adminAuthHeaders(), ...(init.headers || {}) },
     });
     const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
     if (!response.ok) throw new Error(posErrorMessage(data, "POS 请求失败"));
@@ -982,6 +1016,24 @@ export function AdminDashboard() {
     }
   }
 
+  async function loadPosDailyReport() {
+    setPosDailyLoading(true);
+    setPosDailyMessage("");
+    try {
+      const params = new URLSearchParams();
+      params.set("date", posDailyDate);
+      params.set("timezoneOffsetMinutes", String(new Date().getTimezoneOffset()));
+      const data = await posApi(`/api/admin/pos/reports/daily?${params.toString()}`);
+      setPosDailyReport(data as PosDailyReport);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "POS 日报读取失败";
+      setPosDailyMessage(message);
+      toast(message, "err");
+    } finally {
+      setPosDailyLoading(false);
+    }
+  }
+
   async function loadPosOrderDetail(orderId: string) {
     setPosOrderDetailLoading(true);
     try {
@@ -1050,7 +1102,7 @@ export function AdminDashboard() {
   }
 
   async function loadProducts() { setLoading(true); try { const d = await api("/api/admin/products?limit=500"); setProducts(d.products||[]); } catch (e) { toast(e instanceof Error ? e.message : "商品读取失败", "err"); } finally { setLoading(false); } }
-  useEffect(() => { if (activePassword) void loadProducts(); }, [activePassword]);
+  useEffect(() => { if (adminSession) void loadProducts(); }, [adminSession, adminAuthToken, activePassword]);
 
   async function loadInventoryOverview() {
     const params = new URLSearchParams();
@@ -1087,7 +1139,7 @@ export function AdminDashboard() {
       setInventoryLoading(false);
     }
   }
-  useEffect(() => { if (activePassword && (tab === "inventory" || tab === "labels")) void loadInventoryData(); }, [activePassword, tab]);
+  useEffect(() => { if (adminSession && (tab === "inventory" || tab === "labels")) void loadInventoryData(); }, [adminSession, adminAuthToken, activePassword, tab]);
   function toggleLabelVariant(variantId: string) {
     setSelectedLabelVariantIds(prev => {
       const next = new Set(prev);
@@ -1155,10 +1207,15 @@ export function AdminDashboard() {
     }
   }, [tab]);
   useEffect(() => {
-    if (activePassword && tab === "posOrders") {
+    if (adminSession && tab === "posOrders") {
       void loadPosOrders();
     }
-  }, [activePassword, tab, posOrderStatus, posOrderPaymentMethod, posOrderDateRange]);
+  }, [adminSession, adminAuthToken, activePassword, tab, posOrderStatus, posOrderPaymentMethod, posOrderDateRange]);
+  useEffect(() => {
+    if (adminSession && tab === "posDaily") {
+      void loadPosDailyReport();
+    }
+  }, [adminSession, adminAuthToken, activePassword, tab, posDailyDate]);
   function openInventoryAdjust(item: InventoryItem) {
     setAdjustInventory({ item, mode: "set_to", quantity: String(item.quantity_on_hand), reason: "", submitting: false, message: "" });
   }
@@ -1429,7 +1486,7 @@ export function AdminDashboard() {
       setAiCopyLoading(false);
     }
   }
-  async function generateAiMeta() { setAiMetaLoading(true); try { const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ product: { name_cn: form.name_cn, name_en: form.name_en, name_gr: form.name_gr, description_en: form.description_en, category: form.category, subcategory: form.subcategory, price: form.price, sizes: form.sizes } }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "生成失败"); setForm(c => ({ ...c, fit_type: d.fit_type || c.fit_type, material: d.material || c.material, ai_keywords: d.ai_keywords || c.ai_keywords, style_tags: d.style_tags || c.style_tags, material_verified: false })); toast("AI 导购信息已生成，请检查后再保存。"); } catch (e) { toast(e instanceof Error ? e.message : "AI 生成失败", "err"); } finally { setAiMetaLoading(false); } }
+  async function generateAiMeta() { setAiMetaLoading(true); try { const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", ...adminAuthHeaders() }, body: JSON.stringify({ product: { name_cn: form.name_cn, name_en: form.name_en, name_gr: form.name_gr, description_en: form.description_en, category: form.category, subcategory: form.subcategory, price: form.price, sizes: form.sizes } }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "生成失败"); setForm(c => ({ ...c, fit_type: d.fit_type || c.fit_type, material: d.material || c.material, ai_keywords: d.ai_keywords || c.ai_keywords, style_tags: d.style_tags || c.style_tags, material_verified: false })); toast("AI 导购信息已生成，请检查后再保存。"); } catch (e) { toast(e instanceof Error ? e.message : "AI 生成失败", "err"); } finally { setAiMetaLoading(false); } }
   async function startAiComplete(p: AdminProduct) {
     const base = openProductForm(p);
     const needsTranslation = Boolean((base.name_cn.trim() || base.description_cn.trim()) && (!base.name_en.trim() || !base.description_en.trim() || !base.name_gr.trim() || !base.description_gr.trim()));
@@ -1449,7 +1506,7 @@ export function AdminDashboard() {
       }
       if (needsMeta) {
         try {
-          const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ product: { name_cn: working.name_cn, name_en: working.name_en, name_gr: working.name_gr, description_en: working.description_en, category: working.category, subcategory: working.subcategory, price: working.price, sizes: working.sizes } }) });
+          const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", ...adminAuthHeaders() }, body: JSON.stringify({ product: { name_cn: working.name_cn, name_en: working.name_en, name_gr: working.name_gr, description_en: working.description_en, category: working.category, subcategory: working.subcategory, price: working.price, sizes: working.sizes } }) });
           const d = await r.json();
           if (!r.ok) throw new Error(d.error || "生成失败");
           setForm(c => ({ ...c, fit_type: d.fit_type || c.fit_type, material: c.material || d.material || "", ai_keywords: c.ai_keywords || d.ai_keywords || "", style_tags: c.style_tags || d.style_tags || "", material_verified: false }));
@@ -1495,7 +1552,7 @@ export function AdminDashboard() {
           const hasKeywords = Array.isArray(raw.ai_keywords) ? raw.ai_keywords.length > 0 : hasText(raw.ai_keywords);
           const hasStyleTags = Array.isArray(raw.style_tags) ? raw.style_tags.length > 0 : hasText(raw.style_tags);
           if ((hasText(product.name_cn) || hasText(product.name_en) || hasText(product.name_gr)) && (!hasKeywords || !hasStyleTags || !hasText(raw.material))) {
-            const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ product: { name_cn: payload.name_cn, name_en: payload.name_en, name_gr: payload.name_gr, description_en: payload.description_en, category: product.category, subcategory: product.subcategory, price: product.price, sizes: product.sizes } }) });
+            const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", ...adminAuthHeaders() }, body: JSON.stringify({ product: { name_cn: payload.name_cn, name_en: payload.name_en, name_gr: payload.name_gr, description_en: payload.description_en, category: product.category, subcategory: product.subcategory, price: product.price, sizes: product.sizes } }) });
             const d = await r.json();
             if (!r.ok) throw new Error(d.error || "AI 导购信息生成失败");
             if (d.fit_type) payload.fit_type = d.fit_type;
@@ -1521,7 +1578,7 @@ export function AdminDashboard() {
   /* ── Submit / Delete ──────────────────────────────────── */
   async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!form.sku.trim()) { toast("请填写 SKU", "err"); return; } if (!form.name_cn.trim() && !form.name_en.trim() && !form.name_gr.trim()) { toast("请至少填写一个语言的商品名", "err"); return; } if (form.size_chart.trim()) { try { JSON.parse(form.size_chart.trim()); } catch { toast("尺码表 JSON 格式不正确，请检查", "err"); return; } }
 if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品没有图片", desc: "该商品没有主图，是否继续保存？", confirmText: "继续保存", variant: "default", action: () => { setConfirm(c => ({ ...c, open: false })); doSubmit(); } }); return; } doSubmit(); }
-  async function doSubmit() { setLoading(true); const p = normalizeProduct(form); const sizeKeys = Object.keys(sizeStock); if (sizeKeys.length === 0) { toast("请先在尺码库存里选择尺码并填写库存", "err"); setLoading(false); return; } const aiData: Record<string, unknown> = {}; if (p.ai_keywords.trim()) aiData.ai_keywords = p.ai_keywords.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.style_tags.trim()) aiData.style_tags = p.style_tags.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.size_chart.trim()) aiData.size_chart = JSON.parse(p.size_chart.trim()); if (p.fit_type) aiData.fit_type = p.fit_type; aiData.material_verified = p.material_verified === true; const totalStock = stockTotal(sizeStock); const payload = { ...(p as Record<string,unknown>), ...aiData, sizes: sortSizeKeys(sizeKeys).join(","), size_stock: sizeStock, stock: totalStock }; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { const saved = await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); if (!editingId && (newMainFile || newGalleryFiles.length > 0)) { const sku = saved?.product?.sku || form.sku; let imgOk = 0; let imgFail = 0; const imgErrors: string[] = []; try { if (newMainFile) { const fd = new FormData(); fd.append("images", newMainFile); fd.append("sku", sku); fd.append("mode", "main"); const r = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (newGalleryFiles.length > 0) { const fd = new FormData(); newGalleryFiles.forEach(f => fd.append("images", f)); fd.append("sku", sku); fd.append("mode", "gallery"); const r = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (imgFail > 0) { toast(`商品已保存。图片：成功 ${imgOk}，失败 ${imgFail}${imgErrors.length > 0 ? `（${imgErrors.join("；")}）` : ""}`, "err"); } else { toast("商品已保存，图片已上传"); } } catch { toast("商品已保存，图片上传失败", "err"); } setNewMainFile(null); setNewGalleryFiles([]); } setForm(emptyProduct); setEditingId(null); setSizeStock({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
+  async function doSubmit() { setLoading(true); const p = normalizeProduct(form); const sizeKeys = Object.keys(sizeStock); if (sizeKeys.length === 0) { toast("请先在尺码库存里选择尺码并填写库存", "err"); setLoading(false); return; } const aiData: Record<string, unknown> = {}; if (p.ai_keywords.trim()) aiData.ai_keywords = p.ai_keywords.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.style_tags.trim()) aiData.style_tags = p.style_tags.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.size_chart.trim()) aiData.size_chart = JSON.parse(p.size_chart.trim()); if (p.fit_type) aiData.fit_type = p.fit_type; aiData.material_verified = p.material_verified === true; const totalStock = stockTotal(sizeStock); const payload = { ...(p as Record<string,unknown>), ...aiData, sizes: sortSizeKeys(sizeKeys).join(","), size_stock: sizeStock, stock: totalStock }; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { const saved = await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); if (!editingId && (newMainFile || newGalleryFiles.length > 0)) { const sku = saved?.product?.sku || form.sku; let imgOk = 0; let imgFail = 0; const imgErrors: string[] = []; try { if (newMainFile) { const fd = new FormData(); fd.append("images", newMainFile); fd.append("sku", sku); fd.append("mode", "main"); const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (newGalleryFiles.length > 0) { const fd = new FormData(); newGalleryFiles.forEach(f => fd.append("images", f)); fd.append("sku", sku); fd.append("mode", "gallery"); const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (imgFail > 0) { toast(`商品已保存。图片：成功 ${imgOk}，失败 ${imgFail}${imgErrors.length > 0 ? `（${imgErrors.join("；")}）` : ""}`, "err"); } else { toast("商品已保存，图片已上传"); } } catch { toast("商品已保存，图片上传失败", "err"); } setNewMainFile(null); setNewGalleryFiles([]); } setForm(emptyProduct); setEditingId(null); setSizeStock({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
   function confirmDeleteProduct(p: AdminProduct) { setConfirm({ open: true, title: "确认下架商品？", desc: `下架 ${p.sku} 后商品将不会在前台显示，但数据会保留，之后可以恢复上架。`, confirmText: "确认下架", variant: "danger", action: () => executeDelete(p) }); }
   async function executeDelete(p: AdminProduct) { setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "DELETE" }); toast("商品已下架"); setConfirm(c => ({ ...c, open: false })); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "下架失败", "err"); } finally { setLoading(false); } }
   function confirmRestoreProduct(p: AdminProduct) { setConfirm({ open: true, title: "确认恢复上架？", desc: `恢复上架 ${p.sku} 后商品会重新在前台显示。`, confirmText: "确认恢复", variant: "success", action: () => executeRestore(p) }); }
@@ -1533,9 +1590,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   function dismissConfirm() { setConfirm({ open: false, title: "", desc: "", confirmText: "", variant: "default", action: () => {} }); }
 
   function confirmBatch(isActive: boolean) { const ids = Array.from(selectedIds); if (ids.length === 0) { toast("请先选择商品", "err"); return; } setConfirm({ open: true, title: isActive ? "确认批量恢复上架？" : "确认批量下架？", desc: isActive ? `你将恢复上架选中的 ${ids.length} 个商品。恢复后商品会重新在前台显示。` : `你将下架选中的 ${ids.length} 个商品。下架后商品不会在前台显示，但数据会保留，可后续恢复上架。`, confirmText: isActive ? "确认恢复" : "确认下架", variant: isActive ? "success" : "danger", action: () => executeBatch(isActive, ids) }); }
-  async function executeBatch(isActive: boolean, ids: string[]) { const label = isActive ? "恢复上架" : "下架"; setLoading(true); setConfirm(c => ({ ...c, open: true, confirmText: "处理中..." })); try { const r = await fetch("/api/admin/products/bulk", { method: "PUT", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ ids, is_active: isActive }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "批量操作失败"); toast(`已${label} ${ids.length} 个商品`); setSelectedIds(new Set()); } catch (er) { toast(er instanceof Error ? er.message : `批量${label}失败`, "err"); } finally { setLoading(false); setConfirm({ open: false, title: "", desc: "", confirmText: "", variant: "default", action: () => {} }); } }
+  async function executeBatch(isActive: boolean, ids: string[]) { const label = isActive ? "恢复上架" : "下架"; setLoading(true); setConfirm(c => ({ ...c, open: true, confirmText: "处理中..." })); try { const r = await fetch("/api/admin/products/bulk", { method: "PUT", headers: { "Content-Type": "application/json", ...adminAuthHeaders() }, body: JSON.stringify({ ids, is_active: isActive }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "批量操作失败"); toast(`已${label} ${ids.length} 个商品`); setSelectedIds(new Set()); } catch (er) { toast(er instanceof Error ? er.message : `批量${label}失败`, "err"); } finally { setLoading(false); setConfirm({ open: false, title: "", desc: "", confirmText: "", variant: "default", action: () => {} }); } }
 
-  async function batchGenerateAiMeta() { const ids = Array.from(selectedIds); if (ids.length === 0) { toast("请先选择商品", "err"); return; } const targets = products.filter(p => ids.includes(p.id) && (p.name_cn?.trim() || p.name_en?.trim())); const skipped = ids.length - targets.length; setLoading(true); let ok = 0; let fail = 0; for (const p of targets) { try { const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ product: { name_cn: p.name_cn, name_en: p.name_en, name_gr: p.name_gr, description_en: (p as Record<string,unknown>).description_en, category: p.category, subcategory: p.subcategory, price: p.price, sizes: p.sizes } }) }); const d = await r.json(); if (r.ok) { const payload: Record<string, unknown> = {}; if (d.fit_type) payload.fit_type = d.fit_type; if (d.material) payload.material = d.material; payload.material_verified = false; if (d.ai_keywords) { const kw = d.ai_keywords.split(/[,，\s]+/).filter(Boolean); payload.ai_keywords = kw; } if (d.style_tags) { const st = d.style_tags.split(/[,，\s]+/).filter(Boolean); payload.style_tags = st; } await api(`/api/admin/products/${p.id}`, { method: "PUT", body: JSON.stringify({ ...p, ...payload }) }); ok++; } else { fail++; } } catch { fail++; } } if (skipped > 0) toast(`完成：成功 ${ok}，失败 ${fail}。跳过 ${skipped} 个（无名称）`); else toast(`完成：成功 ${ok}，失败 ${fail}`); setSelectedIds(new Set()); setLoading(false); await loadProducts(); }
+  async function batchGenerateAiMeta() { const ids = Array.from(selectedIds); if (ids.length === 0) { toast("请先选择商品", "err"); return; } const targets = products.filter(p => ids.includes(p.id) && (p.name_cn?.trim() || p.name_en?.trim())); const skipped = ids.length - targets.length; setLoading(true); let ok = 0; let fail = 0; for (const p of targets) { try { const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", ...adminAuthHeaders() }, body: JSON.stringify({ product: { name_cn: p.name_cn, name_en: p.name_en, name_gr: p.name_gr, description_en: (p as Record<string,unknown>).description_en, category: p.category, subcategory: p.subcategory, price: p.price, sizes: p.sizes } }) }); const d = await r.json(); if (r.ok) { const payload: Record<string, unknown> = {}; if (d.fit_type) payload.fit_type = d.fit_type; if (d.material) payload.material = d.material; payload.material_verified = false; if (d.ai_keywords) { const kw = d.ai_keywords.split(/[,，\s]+/).filter(Boolean); payload.ai_keywords = kw; } if (d.style_tags) { const st = d.style_tags.split(/[,，\s]+/).filter(Boolean); payload.style_tags = st; } await api(`/api/admin/products/${p.id}`, { method: "PUT", body: JSON.stringify({ ...p, ...payload }) }); ok++; } else { fail++; } } catch { fail++; } } if (skipped > 0) toast(`完成：成功 ${ok}，失败 ${fail}。跳过 ${skipped} 个（无名称）`); else toast(`完成：成功 ${ok}，失败 ${fail}`); setSelectedIds(new Set()); setLoading(false); await loadProducts(); }
 
   /* ── CSV ──────────────────────────────────────────────── */
   async function handleCsv(f: File | null) { setCsvResults([]); if (!f) { setCsvRows([]); return; } setCsvRows(parseCsv(await f.text())); }
@@ -1543,10 +1600,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   async function executeImportCsv() { setLoading(true); try { const d = await api("/api/admin/products/import", { method: "POST", body: JSON.stringify({ rows: csvRows }) }); setCsvResults(d.results||[]); toast(`CSV 导入完成：成功 ${d.successCount}，失败 ${d.failureCount}${d.translatedCount>0?`，翻译成功 ${d.translatedCount}`:""}${d.translateFailureCount>0?`，翻译失败 ${d.translateFailureCount}`:""}`); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "CSV 导入失败", "err"); } finally { setLoading(false); } }
 
   /* ── Image upload ──────────────────────────────────────── */
-  async function uploadImages(files: FileList | null, opts: ImageUploadOptions = {}) { setImageResults([]); if (!files || files.length === 0) return; if (opts.sku && !opts.mode) { toast("请选择上传类型。", "err"); return; } try { setLoading(true); const body = new FormData(); Array.from(files).forEach(f => body.append("images", f)); if (opts.sku) body.append("sku", opts.sku); if (opts.mode) body.append("mode", opts.mode); const r = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body }); const d = await readJson(r, "图片上传接口错误"); if (!r.ok) throw new Error(d.error || "图片上传失败"); setImageResults(d.results||[]); const okCount = (d.results||[]).filter((r: ApiResult) => r.ok).length; const failCount = (d.results||[]).filter((r: ApiResult) => !r.ok).length; const failReasons = (d.results||[]).filter((r: ApiResult) => !r.ok).map((r: ApiResult) => r.message).filter(Boolean); const summary = failReasons.length > 0 ? `失败原因：${failReasons.join("；")}` : ""; toast(`图片处理完成：成功 ${okCount}，失败 ${failCount}${summary ? `。${summary}` : ""}`); syncFormAfterUpload(opts, d); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "图片上传失败", "err"); } finally { setLoading(false); } }
+  async function uploadImages(files: FileList | null, opts: ImageUploadOptions = {}) { setImageResults([]); if (!files || files.length === 0) return; if (opts.sku && !opts.mode) { toast("请选择上传类型。", "err"); return; } try { setLoading(true); const body = new FormData(); Array.from(files).forEach(f => body.append("images", f)); if (opts.sku) body.append("sku", opts.sku); if (opts.mode) body.append("mode", opts.mode); const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body }); const d = await readJson(r, "图片上传接口错误"); if (!r.ok) throw new Error(d.error || "图片上传失败"); setImageResults(d.results||[]); const okCount = (d.results||[]).filter((r: ApiResult) => r.ok).length; const failCount = (d.results||[]).filter((r: ApiResult) => !r.ok).length; const failReasons = (d.results||[]).filter((r: ApiResult) => !r.ok).map((r: ApiResult) => r.message).filter(Boolean); const summary = failReasons.length > 0 ? `失败原因：${failReasons.join("；")}` : ""; toast(`图片处理完成：成功 ${okCount}，失败 ${failCount}${summary ? `。${summary}` : ""}`); syncFormAfterUpload(opts, d); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "图片上传失败", "err"); } finally { setLoading(false); } }
   function syncFormAfterUpload(opts: ImageUploadOptions, d: Record<string, unknown>) { if (!editingIdRef.current || form.sku !== opts.sku) return; const results = (d.results || []) as ApiResult[]; if (opts.mode === "main" && results.length > 0 && results[0].imageUrl) { setForm(c => ({ ...c, image_url: results[0].imageUrl! })); } else if (opts.mode === "gallery" && results.length > 0) { const newUrls = results.filter(r => r.ok && r.imageUrl).map(r => r.imageUrl!); if (newUrls.length > 0) { setForm(c => { const existing = imageLines(c.image_urls); const seen = new Set([c.image_url.trim(), ...existing]); const toAdd = newUrls.filter(u => !seen.has(u)); return toAdd.length > 0 ? { ...c, image_urls: [...existing, ...toAdd].join("\n") } : c; }); } } }
   function confirmDeleteImage(opts: ImageDeleteOptions) { const label = opts.kind === "main" ? "主图" : "这张多图"; setConfirm({ open: true, title: `确定删除${label}？`, desc: "Storage 文件也会一起删除。", confirmText: "确认删除", variant: "danger", action: () => { setConfirm(c => ({ ...c, open: false })); executeDeleteImage(opts, label); } }); }
-  async function executeDeleteImage(opts: ImageDeleteOptions, label: string) { setLoading(true); try { const r = await fetch("/api/admin/images", { method: "DELETE", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify(opts) }); const d = await readJson(r, "删除图片接口错误"); if (!r.ok) throw new Error(d.error || "删除图片失败"); toast(`${label}已删除。`); await loadProducts(); if (editingIdRef.current && form.sku === opts.sku) { setForm(c => { if (opts.kind === "main") return { ...c, image_url: "" }; const next = imageLines(c.image_urls).filter((_, i) => i !== opts.index); return { ...c, image_urls: next.join("\n") }; }); } } catch (er) { toast(er instanceof Error ? er.message : "删除图片失败", "err"); } finally { setLoading(false); } }
+  async function executeDeleteImage(opts: ImageDeleteOptions, label: string) { setLoading(true); try { const r = await fetch("/api/admin/images", { method: "DELETE", headers: { "Content-Type": "application/json", ...adminAuthHeaders() }, body: JSON.stringify(opts) }); const d = await readJson(r, "删除图片接口错误"); if (!r.ok) throw new Error(d.error || "删除图片失败"); toast(`${label}已删除。`); await loadProducts(); if (editingIdRef.current && form.sku === opts.sku) { setForm(c => { if (opts.kind === "main") return { ...c, image_url: "" }; const next = imageLines(c.image_urls).filter((_, i) => i !== opts.index); return { ...c, image_urls: next.join("\n") }; }); } } catch (er) { toast(er instanceof Error ? er.message : "删除图片失败", "err"); } finally { setLoading(false); } }
 
   async function submitQuickAdd(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -1591,7 +1648,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       main.append("images", quickMainFile);
       main.append("sku", savedSku);
       main.append("mode", "main");
-      const mainResult = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: main });
+      const mainResult = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: main });
       const mainData = await readJson(mainResult, "主图上传失败");
       if (!mainResult.ok) throw new Error(mainData.error || "主图上传失败");
       if (quickBackFiles.length > 0) {
@@ -1599,7 +1656,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         quickBackFiles.forEach(file => gallery.append("images", file));
         gallery.append("sku", savedSku);
         gallery.append("mode", "gallery");
-        const galleryResult = await fetch("/api/admin/images", { method: "POST", headers: { "x-admin-password": activePassword }, body: gallery });
+        const galleryResult = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: gallery });
         const galleryData = await readJson(galleryResult, "多图上传失败");
         if (!galleryResult.ok) throw new Error(galleryData.error || "多图上传失败");
       }
@@ -1671,18 +1728,43 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     setLoginError("");
     setLoginLoading(true);
     try {
-      const response = await fetch("/api/admin/session", {
-        headers: { "x-admin-password": password },
-      });
+      let sessionHeaders: Record<string, string>;
+      if (loginMode === "account") {
+        const supabase = getSupabaseBrowserAuthClient();
+        if (!supabase) throw new Error("Supabase 登录环境未配置");
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: loginEmail.trim(),
+          password: accountPassword,
+        });
+        if (error || !data.session?.access_token) {
+          throw new Error(error?.message || "员工账号登录失败");
+        }
+        sessionHeaders = { Authorization: `Bearer ${data.session.access_token}` };
+        setAdminAuthToken(data.session.access_token);
+        setActivePassword("");
+      } else {
+        sessionHeaders = { "x-admin-password": password };
+        setAdminAuthToken("");
+      }
+
+      const response = await fetch("/api/admin/session", { headers: sessionHeaders });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "登录失败");
-      setAdminSession({ role: data.role, permissions: data.permissions || [] });
-      setActivePassword(password);
+      setAdminSession({
+        role: data.role,
+        permissions: data.permissions || [],
+        authType: data.authType,
+        email: data.email || null,
+        displayName: data.displayName || null,
+      });
+      if (loginMode === "password") setActivePassword(password);
       setPassword("");
-      toast("已登录后台");
+      setAccountPassword("");
+      toast("登录成功");
     } catch (error) {
       setAdminSession(null);
       setActivePassword("");
+      setAdminAuthToken("");
       setLoginError(error instanceof Error ? error.message : "登录失败");
     } finally {
       setLoginLoading(false);
@@ -1690,7 +1772,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   }
 
   /* ── Login gate ─────────────────────────────────────────── */
-  if (!activePassword) {
+  if (!adminSession) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-[#fbfaf6] via-white to-stone-100 flex items-center justify-center px-4 py-10">
         <section className="w-full max-w-sm rounded-3xl border border-stone-200/80 bg-white p-8 text-center shadow-xl shadow-stone-900/10">
@@ -1701,8 +1783,21 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <p className="mt-2 text-sm text-stone-500">Fashion Store Admin</p>
           <form className="mt-6 space-y-4" onSubmit={handleLogin}>
             {loginError ? <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-bold text-red-600">{loginError}</p> : null}
-            <input className="input text-center" onChange={e => setPassword(e.target.value)} type="password" value={password} placeholder="管理密码" />
-            <button className="w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800">登录</button>
+            <div className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-1">
+              <button className={`rounded-xl px-3 py-2 text-xs font-black ${loginMode === "account" ? "bg-white text-ink shadow-sm" : "text-stone-500"}`} onClick={() => setLoginMode("account")} type="button">员工账号</button>
+              <button className={`rounded-xl px-3 py-2 text-xs font-black ${loginMode === "password" ? "bg-white text-ink shadow-sm" : "text-stone-500"}`} onClick={() => setLoginMode("password")} type="button">应急密码</button>
+            </div>
+            {loginMode === "account" ? (
+              <>
+                <input className="input text-center" onChange={e => setLoginEmail(e.target.value)} type="email" value={loginEmail} placeholder="员工邮箱" />
+                <input className="input text-center" onChange={e => setAccountPassword(e.target.value)} type="password" value={accountPassword} placeholder="账号密码" />
+              </>
+            ) : (
+              <input className="input text-center" onChange={e => setPassword(e.target.value)} type="password" value={password} placeholder="管理员应急密码" />
+            )}
+            <button className="w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50" disabled={loginLoading}>
+              {loginLoading ? "登录中..." : "登录"}
+            </button>
           </form>
         </section>
       </main>
@@ -1720,9 +1815,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <p className="text-xs text-stone-400">管理商品、图片、库存、CSV 导入和 Skroutz Feed</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <span className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">{adminSession.displayName || adminSession.email || adminSession.role} · {adminSession.authType === "account" ? "员工账号" : "应急密码"}</span>
             {isOwner ? <a className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" href="/admin/settings">店铺设置</a> : null}
-            {isOwner ? <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { fetch("/api/admin/backup", { headers: { "x-admin-password": activePassword } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `products-export-${new Date().toISOString().split("T")[0]}.csv`; a.click(); }).catch(() => toast("备份下载失败", "err")); }} type="button">导出 CSV</button> : null}
-            <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { setActivePassword(""); setPassword(""); }}>退出</button>
+            {isOwner ? <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { fetch("/api/admin/backup", { headers: adminAuthHeaders() }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `products-export-${new Date().toISOString().split("T")[0]}.csv`; a.click(); }).catch(() => toast("备份下载失败", "err")); }} type="button">导出 CSV</button> : null}
+            <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { setAdminSession(null); setAdminAuthToken(""); setActivePassword(""); setPassword(""); }}>退出</button>
           </div>
         </header>
 
@@ -2153,6 +2249,117 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 提醒：真实收银会创建订单并扣减 ERP 库存。首次验证请使用测试商品。
               </p>
             </aside>
+          </section>
+        ) : null}
+
+        {tab === "posDaily" ? (
+          <section className="flex flex-col gap-5">
+            <div className="admin-panel">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">POS Daily Report</p>
+                  <h2 className="mt-1 text-xl font-black text-ink">POS 日报</h2>
+                  <p className="mt-1 text-xs text-stone-500">按门店本地日期统计 POS 销售、付款方式、热销商品和运行异常。这里只读，不会改订单或库存。</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <input className="input min-h-11 w-44" type="date" value={posDailyDate} onChange={e => setPosDailyDate(e.target.value)} />
+                  <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={posDailyLoading} onClick={() => void loadPosDailyReport()} type="button">
+                    {posDailyLoading ? "读取中..." : "刷新日报"}
+                  </button>
+                </div>
+              </div>
+              {posDailyMessage ? <p className="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{posDailyMessage}</p> : null}
+              {posDailyReport ? (
+                <>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                    {[
+                      { label: "完成订单", value: posDailyReport.summary.completedOrders },
+                      { label: "作废订单", value: posDailyReport.summary.voidedOrders },
+                      { label: "售出件数", value: posDailyReport.summary.itemsSold },
+                      { label: "销售额", value: formatEuro(posDailyReport.summary.grossSales) },
+                      { label: "折扣", value: formatEuro(posDailyReport.summary.discountTotal) },
+                      { label: "作废金额", value: formatEuro(posDailyReport.summary.voidedTotal) },
+                      { label: "净销售", value: formatEuro(posDailyReport.summary.netSales) },
+                    ].map(card => (
+                      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm shadow-stone-900/5" key={card.label}>
+                        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-stone-400">{card.label}</p>
+                        <p className="mt-2 text-xl font-black text-ink">{card.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <h3 className="text-sm font-black text-ink">付款方式汇总</h3>
+                      <div className="mt-3 space-y-2">
+                        {posDailyReport.paymentMethods.length > 0 ? posDailyReport.paymentMethods.map(item => (
+                          <div className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-sm" key={item.method}>
+                            <span className="font-bold text-stone-600">{item.method}</span>
+                            <span className="font-black text-ink">{formatEuro(item.amount)} · {item.count} 笔</span>
+                          </div>
+                        )) : <p className="text-sm font-bold text-stone-400">暂无付款记录。</p>}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <h3 className="text-sm font-black text-ink">运行健康</h3>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {[
+                          ["缺 payment", posDailyReport.health.missingPayments],
+                          ["缺 items", posDailyReport.health.missingItems],
+                          ["缺销售流水", posDailyReport.health.missingSaleMovements],
+                          ["缺作废流水", posDailyReport.health.missingVoidMovements],
+                        ].map(([label, count]) => (
+                          <div className={`rounded-xl px-3 py-2 text-sm font-black ${Number(count) === 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`} key={String(label)}>
+                            {label}: {count}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <h3 className="text-sm font-black text-ink">热销商品</h3>
+                      <div className="mt-3 overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                          <thead><tr className="text-xs text-stone-400"><th className="py-2">商品</th><th className="py-2">SKU</th><th className="py-2 text-right">数量</th><th className="py-2 text-right">金额</th></tr></thead>
+                          <tbody>
+                            {posDailyReport.topItems.map(item => (
+                              <tr className="border-t border-stone-100" key={item.variant_sku}>
+                                <td className="py-2 font-bold text-ink">{item.name}</td>
+                                <td className="py-2 font-mono text-xs text-stone-500">{item.variant_sku || item.product_sku}</td>
+                                <td className="py-2 text-right font-black">{item.quantity}</td>
+                                <td className="py-2 text-right font-black">{formatEuro(item.total)}</td>
+                              </tr>
+                            ))}
+                            {posDailyReport.topItems.length === 0 ? <tr><td className="py-6 text-center text-stone-400" colSpan={4}>暂无售出商品。</td></tr> : null}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <h3 className="text-sm font-black text-ink">当日订单</h3>
+                      <div className="mt-3 max-h-80 overflow-auto">
+                        {posDailyReport.orders.length > 0 ? posDailyReport.orders.map(order => (
+                          <div className="mb-2 rounded-xl bg-stone-50 px-3 py-2 text-sm" key={order.id}>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-mono text-xs font-bold text-ink">{order.order_number}</span>
+                              <span className="font-black text-ink">{formatEuro(order.total)}</span>
+                            </div>
+                            <div className="mt-1 flex justify-between text-xs font-bold text-stone-500">
+                              <span>{formatAdminDate(order.created_at)}</span>
+                              <span>{order.status} · {order.items_count} 件</span>
+                            </div>
+                          </div>
+                        )) : <p className="text-sm font-bold text-stone-400">暂无订单。</p>}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="mt-5 rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">请选择日期并刷新日报。</p>
+              )}
+            </div>
           </section>
         ) : null}
 
@@ -3329,7 +3536,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         ) : null}
 
         {/* ── TAB: Categories ─────────────────────────────── */}
-        {tab === "categories" ? <CategoriesManager activePassword={activePassword} toast={toast} confirm={setConfirm} dismissConfirm={dismissConfirm} /> : null}
+        {tab === "categories" ? <CategoriesManager activePassword={activePassword} authHeaders={adminAuthHeaders} toast={toast} confirm={setConfirm} dismissConfirm={dismissConfirm} /> : null}
 
         {/* ── TAB: Skroutz Feed ───────────────────────────── */}
         {tab === "skroutz" ? (
@@ -3453,13 +3660,13 @@ function ImgThumb({ src }: { src: string }) {
   return <img alt="" className="h-11 w-9 rounded object-cover bg-stone-100" src={src} onError={() => setOk(false)} />;
 }
 
-function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: { activePassword: string; toast: (m: string, t?: "ok" | "err") => void; confirm: (c: { open: boolean; title: string; desc: string; confirmText: string; variant: "danger"|"success"|"default"; action: () => void }) => void; dismissConfirm: () => void }) {
+function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismissConfirm }: { activePassword: string; authHeaders: () => Record<string, string>; toast: (m: string, t?: "ok" | "err") => void; confirm: (c: { open: boolean; title: string; desc: string; confirmText: string; variant: "danger"|"success"|"default"; action: () => void }) => void; dismissConfirm: () => void }) {
   const [cats, setCats] = useState<Array<Record<string, unknown>>>([]);
   const [subs, setSubs] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  async function load() { setLoading(true); try { const r = await fetch("/api/admin/categories", { headers: { "x-admin-password": activePassword } }); const d = await r.json(); setCats(d.categories || []); setSubs(d.subcategories || []); } catch {} finally { setLoading(false); } }
+  async function load() { setLoading(true); try { const r = await fetch("/api/admin/categories", { headers: authHeaders() }); const d = await r.json(); setCats(d.categories || []); setSubs(d.subcategories || []); } catch {} finally { setLoading(false); } }
   useEffect(() => { load(); }, [activePassword]);
 
   function updateCat(idx: number, key: string, val: unknown) { setCats(prev => { const n = [...prev]; n[idx] = { ...n[idx], [key]: val }; return n; }); }
@@ -3469,7 +3676,7 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
   function removeSub(idx: number) { const s = subs[idx]; const id = String(s.id||""); const slug = String(s.slug||""); confirm({ open: true, title: "删除二级分类", desc: `确认删除二级分类 ${slug}？`, confirmText: "确认删除", variant: "danger", action: () => { setSubs(prev => prev.filter(x => String(x.id||"") !== id || String(x.slug||"") !== slug)); dismissConfirm(); } }); }
   function removeCat(idx: number) { const c = cats[idx]; const slug = String(c.slug||""); const id = String(c.id||""); if (!slug) return; confirm({ open: true, title: "删除分类", desc: `确认删除分类 ${slug}？`, confirmText: "确认删除", variant: "danger", action: () => { setCats(prev => prev.filter(x => String(x.id||"") !== id || String(x.slug||"") !== slug)); dismissConfirm(); } }); }
 
-  async function save() { setLoading(true); try { await fetch("/api/admin/categories", { method: "PUT", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ categories: cats, subcategories: subs }) }); toast("分类已保存"); load(); } catch { toast("保存失败", "err"); } finally { setLoading(false); } }
+  async function save() { setLoading(true); try { await fetch("/api/admin/categories", { method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ categories: cats, subcategories: subs }) }); toast("分类已保存"); load(); } catch { toast("保存失败", "err"); } finally { setLoading(false); } }
 
   async function uploadCategoryImage(idx: number, file: File | null) {
     if (!file) return;
@@ -3481,7 +3688,7 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
     try {
       const r = await fetch("/api/admin/settings/upload", {
         method: "POST",
-        headers: { "x-admin-password": activePassword },
+        headers: authHeaders(),
         body: formData,
       });
       const d = await r.json();

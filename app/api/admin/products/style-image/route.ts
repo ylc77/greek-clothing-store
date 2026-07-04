@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { productImagesBucket, storageSkuSegment } from "@/lib/storage-images";
@@ -43,7 +43,7 @@ async function ensurePublicBucket(supabase: NonNullable<ReturnType<typeof getSup
 }
 
 export async function POST(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) return unauthorized();
+  if (!(await adminRequestHasPermissionAsync(request, "ai:write"))) return unauthorized();
 
   const apiKey = (process.env.OPENAI_API_KEY || "").trim();
   if (!apiKey) {

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 const bucket = "product-images"; // reuse existing bucket, store under store/ folder
 
 export async function POST(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) {
+  if (!(await adminRequestHasPermissionAsync(request, "settings:write"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

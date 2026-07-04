@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { invalidateSettingsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getBusinessSettings, getBusinessSettingsUncached } from "@/lib/settings";
@@ -9,7 +9,7 @@ function unauthorized() {
 }
 
 export async function GET(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) {
+  if (!(await adminRequestHasPermissionAsync(request, "settings:write"))) {
     return unauthorized();
   }
 
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) {
+  if (!(await adminRequestHasPermissionAsync(request, "settings:write"))) {
     return unauthorized();
   }
 

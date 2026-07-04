@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { translateProductContent } from "@/lib/translate";
 
 export async function POST(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) {
+  if (!(await adminRequestHasPermissionAsync(request, "ai:write"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

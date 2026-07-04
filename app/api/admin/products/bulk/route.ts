@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import { syncProductVariantActiveFromLegacy } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -9,7 +9,7 @@ function unauthorized() {
 }
 
 export async function PUT(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) return unauthorized();
+  if (!(await adminRequestHasPermissionAsync(request, "products:write"))) return unauthorized();
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "Admin client not configured" }, { status: 500 });

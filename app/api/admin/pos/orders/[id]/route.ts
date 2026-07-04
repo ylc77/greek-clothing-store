@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermission } from "@/lib/admin-auth";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ function money(value: unknown) {
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
-  if (!adminRequestHasPermission(request, "pos:read")) return unauthorized();
+  if (!(await adminRequestHasPermissionAsync(request, "pos:read"))) return unauthorized();
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();

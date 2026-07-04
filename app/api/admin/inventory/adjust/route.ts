@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermission } from "@/lib/admin-auth";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { adjustInventoryVariant } from "@/lib/erp-inventory";
 
 function unauthorized() {
@@ -7,7 +7,7 @@ function unauthorized() {
 }
 
 export async function POST(request: NextRequest) {
-  if (!adminRequestHasPermission(request, "inventory:write")) return unauthorized();
+  if (!(await adminRequestHasPermissionAsync(request, "inventory:write"))) return unauthorized();
 
   const payload = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!payload) {

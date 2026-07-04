@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminPasswordIsValid } from "@/lib/admin-products";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import {
   productImagesBucket,
@@ -161,7 +161,7 @@ function withCacheVersion(url: string) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) {
+  if (!(await adminRequestHasPermissionAsync(request, "products:write"))) {
     return unauthorized();
   }
 
@@ -323,7 +323,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!adminPasswordIsValid(request.headers.get("x-admin-password"))) {
+  if (!(await adminRequestHasPermissionAsync(request, "products:write"))) {
     return unauthorized();
   }
 

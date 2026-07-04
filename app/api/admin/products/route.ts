@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermission } from "@/lib/admin-auth";
-import { adminPasswordIsValid, productForForm, validateProductPayload } from "@/lib/admin-products";
+import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { productForForm, validateProductPayload } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
 import { syncProductInventoryFromLegacy } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -17,12 +17,8 @@ function unavailable() {
   );
 }
 
-function isAuthorized(request: NextRequest) {
-  return adminPasswordIsValid(request.headers.get("x-admin-password"));
-}
-
 export async function GET(request: NextRequest) {
-  if (!adminRequestHasPermission(request, "products:read")) {
+  if (!(await adminRequestHasPermissionAsync(request, "products:read"))) {
     return unauthorized();
   }
 
@@ -54,7 +50,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  if (!(await adminRequestHasPermissionAsync(request, "products:write"))) {
     return unauthorized();
   }
 
