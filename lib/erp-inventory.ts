@@ -18,6 +18,7 @@ type ProductVariantRecord = {
   variant_sku: string;
   size?: string | null;
   color?: string | null;
+  barcode?: string | null;
 };
 
 export type LegacyInventoryTarget = {
@@ -925,9 +926,12 @@ export async function syncProductInventoryFromLegacy(input: SyncProductInventory
   const targetVariantSkus = new Set(targets.map((target) => target.variantSku));
 
   for (const [index, target] of targets.entries()) {
+    const targetBarcode = typeof target.barcode === "string" && target.barcode.trim()
+      ? target.barcode.trim()
+      : null;
     let variantIdentityQuery = supabase
       .from("product_variants")
-      .select("id, variant_sku, size, color")
+      .select("id, variant_sku, size, color, barcode")
       .eq("product_id", input.productId)
       .eq("size", target.size);
 
@@ -945,10 +949,25 @@ export async function syncProductInventoryFromLegacy(input: SyncProductInventory
       );
     }
 
-    const variantPayload = {
+    let existingVariant = existingVariantByIdentity as ProductVariantRecord | null;
+    if (!existingVariant) {
+      const { data: existingVariantBySku, error: existingVariantBySkuError } = await supabase
+        .from("product_variants")
+        .select("id, variant_sku, size, color, barcode")
+        .eq("variant_sku", target.variantSku)
+        .maybeSingle();
+
+      if (existingVariantBySkuError) {
+        throw new Error(
+          `Failed to read product variant ${target.variantSku}: ${existingVariantBySkuError.message}`,
+        );
+      }
+      existingVariant = existingVariantBySku as ProductVariantRecord | null;
+    }
+
+    const variantPayload: Record<string, unknown> = {
       product_id: input.productId,
       variant_sku: target.variantSku,
-      barcode: target.barcode,
       size: target.size,
       color: target.color,
       price: numberMoney(product.price),
@@ -957,16 +976,20 @@ export async function syncProductInventoryFromLegacy(input: SyncProductInventory
       updated_at: new Date().toISOString(),
     };
 
-    const variantMutation = existingVariantByIdentity
+    if (!existingVariant || (!existingVariant.barcode && targetBarcode)) {
+      variantPayload.barcode = targetBarcode;
+    }
+
+    const variantMutation = existingVariant
       ? supabase
           .from("product_variants")
           .update(variantPayload)
-          .eq("id", existingVariantByIdentity.id)
+          .eq("id", existingVariant.id)
           .select("id, variant_sku")
           .single()
       : supabase
           .from("product_variants")
-          .upsert(variantPayload, { onConflict: "variant_sku" })
+          .insert(variantPayload)
           .select("id, variant_sku")
           .single();
 
@@ -1083,7 +1106,7 @@ export async function syncProductInventoryFromLegacy(input: SyncProductInventory
   for (const variant of staleVariants) {
     const { error: deactivateError } = await supabase
       .from("product_variants")
-      .update({ active: false, barcode: null, updated_at: new Date().toISOString() })
+      .update({ active: false, updated_at: new Date().toISOString() })
       .eq("id", variant.id);
 
     if (deactivateError) {
