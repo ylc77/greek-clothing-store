@@ -13,6 +13,7 @@ import {
 import { getTotalStock as effectiveStock } from "@/lib/product-stock";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/components/admin-toast";
+import { PosReceiptPreview } from "@/components/pos-receipt-preview";
 
 /* ── Types ───────────────────────────────────────────────── */
 type AdminProduct = ProductFormData & { id: string; size_stock?: Record<string, number> | null };
@@ -540,6 +541,8 @@ export function AdminDashboard() {
   const [posOrderDetail, setPosOrderDetail] = useState<PosOrderDetail | null>(null);
   const [posOrderDetailLoading, setPosOrderDetailLoading] = useState(false);
   const [posVoidDialog, setPosVoidDialog] = useState<PosVoidDialogState | null>(null);
+  const [posReceiptDetail, setPosReceiptDetail] = useState<PosOrderDetail | null>(null);
+  const [posReceiptLoading, setPosReceiptLoading] = useState(false);
   useEffect(() => { if (activePassword) { fetch("/api/admin/categories", { headers: { "x-admin-password": activePassword } }).then(r => r.json()).then(d => { setDbCats((d.categories||[]).filter((c:Record<string,unknown>) => c.is_active !== false)); setDbSubs((d.subcategories||[]).filter((s:Record<string,unknown>) => s.is_active !== false)); }).catch(() => {}); } }, [activePassword, tab]);
 
   // Search / filter state
@@ -940,6 +943,23 @@ export function AdminDashboard() {
       toast(message, "err");
     } finally {
       setPosOrderDetailLoading(false);
+    }
+  }
+
+  async function openPosReceipt(orderId: string) {
+    setPosReceiptLoading(true);
+    try {
+      if (posOrderDetail?.order.id === orderId) {
+        setPosReceiptDetail(posOrderDetail);
+        return;
+      }
+      const data = await posApi(`/api/admin/pos/orders/${orderId}`);
+      setPosReceiptDetail(data as PosOrderDetail);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "POS 小票读取失败";
+      toast(message, "err");
+    } finally {
+      setPosReceiptLoading(false);
     }
   }
 
@@ -1945,6 +1965,14 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
               {posLastOrder?.order ? (
                 <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
+                  <button
+                    className="mb-3 min-h-10 rounded-xl border border-blue-200 bg-white px-4 py-2 text-xs font-black text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+                    disabled={posReceiptLoading}
+                    onClick={() => posLastOrder.order?.id ? void openPosReceipt(posLastOrder.order.id) : undefined}
+                    type="button"
+                  >
+                    {posReceiptLoading ? "读取小票..." : "查看 / 打印小票"}
+                  </button>
                   <p className="font-black">{posLastOrder.alreadyProcessed ? "订单已处理" : "收银完成"}</p>
                   <p className="mt-1 font-bold">订单号：{posLastOrder.order.order_number}</p>
                   <p className="font-bold">金额：{formatEuro(Number(posLastOrder.order.total || 0))}</p>
@@ -2099,6 +2127,14 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           作废订单
                         </button>
                       ) : null}
+                      <button
+                        className="min-h-11 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-black text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+                        disabled={posReceiptLoading}
+                        onClick={() => void openPosReceipt(posOrderDetail.order.id)}
+                        type="button"
+                      >
+                        {posReceiptLoading ? "读取小票..." : "查看 / 打印小票"}
+                      </button>
                       <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50" onClick={() => setPosOrderDetail(null)} type="button">关闭</button>
                     </div>
                   </div>
@@ -3133,6 +3169,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         ) : null}
 
       </div>
+
+      {posReceiptDetail ? (
+        <PosReceiptPreview
+          order={posReceiptDetail.order}
+          items={posReceiptDetail.items}
+          payments={posReceiptDetail.payments}
+          paperWidth="80mm"
+          onClose={() => setPosReceiptDetail(null)}
+        />
+      ) : null}
 
       {/* Confirm dialog for batch operations */}
       <ConfirmDialog
