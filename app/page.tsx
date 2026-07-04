@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { OptimizedImage } from "@/components/optimized-image";
 import { ProductCard } from "@/components/product-card";
 import { SiteHeader } from "@/components/site-header";
+import { loadCategories } from "@/lib/categories-data";
 import { categoryLabels, getLanguage, localizeHours, text, withLanguage } from "@/lib/i18n";
 import { getCategoryImages, getLatestProducts } from "@/lib/products";
 import { getBusinessSettings } from "@/lib/settings";
@@ -38,12 +39,21 @@ export async function generateMetadata({
 export default async function HomePage({ searchParams }: HomePageProps) {
   const language = getLanguage((await searchParams).lang);
   const t = text[language];
-  const [settings, latestProducts, categoryImages] = await Promise.all([
+  const [settings, latestProducts, categoryImages, categoryData] = await Promise.all([
     getBusinessSettings(),
     getLatestProducts(4),
     Promise.resolve(getCategoryImages()),
+    loadCategories(),
   ]);
   const { products, error } = latestProducts;
+  const categoryCoverImages = {
+    ...categoryImages,
+    ...Object.fromEntries(
+      Object.entries(categoryData.cats)
+        .filter(([, category]) => typeof category.image_url === "string" && category.image_url.trim().length > 0)
+        .map(([slug, category]) => [slug, category.image_url!.trim()]),
+    ),
+  };
 
   const siteName = settings.business_name;
   const siteIntro =
@@ -123,7 +133,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
             {categories.map((cat) => {
-              const img = categoryImages[cat.slug];
+              const img = categoryCoverImages[cat.slug];
               return (
                 <Link
                   key={cat.slug}

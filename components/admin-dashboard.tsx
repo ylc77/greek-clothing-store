@@ -3400,6 +3400,30 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
 
   async function save() { setLoading(true); try { await fetch("/api/admin/categories", { method: "PUT", headers: { "Content-Type": "application/json", "x-admin-password": activePassword }, body: JSON.stringify({ categories: cats, subcategories: subs }) }); toast("分类已保存"); load(); } catch { toast("保存失败", "err"); } finally { setLoading(false); } }
 
+  async function uploadCategoryImage(idx: number, file: File | null) {
+    if (!file) return;
+    const slug = String(cats[idx]?.slug || `category-${idx + 1}`).replace(/[^a-z0-9-]/g, "").toLowerCase() || `category-${idx + 1}`;
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("name", `category-${slug}`);
+    setLoading(true);
+    try {
+      const r = await fetch("/api/admin/settings/upload", {
+        method: "POST",
+        headers: { "x-admin-password": activePassword },
+        body: formData,
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Category image upload failed");
+      updateCat(idx, "image_url", d.url);
+      toast("Category image uploaded. Save categories to publish it.");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Category image upload failed", "err");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function subForCat(catId: string) { return subs.filter(s => s.category_id === catId); }
 
   return (
@@ -3423,6 +3447,14 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
                 <label className="block text-xs font-bold text-stone-500">排序<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" type="number" value={Number(c.sort_order||0)} onChange={e => updateCat(i, "sort_order", parseInt(e.target.value)||0)} /></label>
                 <label className="block text-xs font-bold text-stone-500">中文<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.name_cn||"")} onChange={e => updateCat(i, "name_cn", e.target.value)} /></label>
                 <label className="block text-xs font-bold text-stone-500">English<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.name_en||"")} onChange={e => updateCat(i, "name_en", e.target.value)} /></label>
+                <label className="block text-xs font-bold text-stone-500 sm:col-span-2">Category image URL<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.image_url||"")} onChange={e => updateCat(i, "image_url", e.target.value)} /></label>
+                <div className="flex items-center gap-3 sm:col-span-2">
+                  {String(c.image_url || "").trim() ? <img alt="" className="h-16 w-12 rounded-lg bg-stone-100 object-cover" src={String(c.image_url)} /> : <div className="flex h-16 w-12 items-center justify-center rounded-lg bg-stone-100 text-[10px] font-bold text-stone-400">No image</div>}
+                  <label className="min-h-10 cursor-pointer rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black hover:bg-stone-50">
+                    Upload image
+                    <input accept="image/*" className="hidden" disabled={loading} type="file" onChange={e => { void uploadCategoryImage(i, e.target.files?.[0] || null); e.currentTarget.value = ""; }} />
+                  </label>
+                </div>
                 <label className="block text-xs font-bold text-stone-500 sm:col-span-2">Ελληνικά<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.name_gr||"")} onChange={e => updateCat(i, "name_gr", e.target.value)} /></label>
               </div>
               <button className="mt-3 min-h-10 w-full rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600 hover:bg-red-50" onClick={() => removeCat(i)} type="button">删除分类</button>
@@ -3430,13 +3462,23 @@ function CategoriesManager({ activePassword, toast, confirm, dismissConfirm }: {
           ))}
         </div>
         <div className="hidden overflow-x-auto lg:block"><table className="w-full text-left text-sm">
-          <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-2 px-2 text-xs font-bold">slug</th><th className="py-2 px-2 text-xs font-bold">中文</th><th className="py-2 px-2 text-xs font-bold">English</th><th className="py-2 px-2 text-xs font-bold">Ελληνικά</th><th className="py-2 px-2 text-xs font-bold w-14">排序</th><th className="py-2 px-2 text-xs font-bold w-12">启用</th><th className="py-2 px-2 text-xs font-bold w-12">删除</th></tr></thead>
+          <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-2 px-2 text-xs font-bold">slug</th><th className="py-2 px-2 text-xs font-bold">中文</th><th className="py-2 px-2 text-xs font-bold">English</th><th className="py-2 px-2 text-xs font-bold">分类图</th><th className="py-2 px-2 text-xs font-bold">Ελληνικά</th><th className="py-2 px-2 text-xs font-bold w-14">排序</th><th className="py-2 px-2 text-xs font-bold w-12">启用</th><th className="py-2 px-2 text-xs font-bold w-12">删除</th></tr></thead>
           <tbody>
             {cats.map((c, i) => (
               <tr key={i} className="border-t border-stone-50">
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base font-mono sm:text-xs" value={String(c.slug||"")} onChange={e => updateCat(i, "slug", e.target.value.replace(/[^a-z0-9-]/g,"").toLowerCase())} /></td>
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base sm:text-xs" value={String(c.name_cn||"")} onChange={e => updateCat(i, "name_cn", e.target.value)} /></td>
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base sm:text-xs" value={String(c.name_en||"")} onChange={e => updateCat(i, "name_en", e.target.value)} /></td>
+                <td className="py-1.5 px-2">
+                  <div className="flex min-w-64 items-center gap-2">
+                    {String(c.image_url || "").trim() ? <img alt="" className="h-10 w-8 rounded bg-stone-100 object-cover" src={String(c.image_url)} /> : null}
+                    <input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base sm:text-xs" placeholder="https://..." value={String(c.image_url||"")} onChange={e => updateCat(i, "image_url", e.target.value)} />
+                    <label className="shrink-0 cursor-pointer rounded border border-stone-200 bg-white px-2 py-1 text-xs font-bold hover:bg-stone-50">
+                      上传
+                      <input accept="image/*" className="hidden" disabled={loading} type="file" onChange={e => { void uploadCategoryImage(i, e.target.files?.[0] || null); e.currentTarget.value = ""; }} />
+                    </label>
+                  </div>
+                </td>
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base sm:text-xs" value={String(c.name_gr||"")} onChange={e => updateCat(i, "name_gr", e.target.value)} /></td>
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-center text-base sm:text-xs" type="number" value={Number(c.sort_order||0)} onChange={e => updateCat(i, "sort_order", parseInt(e.target.value)||0)} /></td>
                 <td className="py-1.5 px-2 text-center"><input type="checkbox" checked={c.is_active !== false} onChange={e => updateCat(i, "is_active", e.target.checked)} /></td>
