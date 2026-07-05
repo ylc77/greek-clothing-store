@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { getLanguage, localizeHours, text } from "@/lib/i18n";
 import { getBusinessSettings } from "@/lib/settings";
@@ -173,6 +174,7 @@ export default async function ContactPage({ searchParams }: ContactPageProps) {
           ) : null}
         </div>
       </section>
+      <SiteFooter language={language} settings={settings} />
     </main>
   );
 }

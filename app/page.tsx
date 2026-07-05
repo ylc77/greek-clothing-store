@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { OptimizedImage } from "@/components/optimized-image";
 import { ProductCard } from "@/components/product-card";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { loadCategories } from "@/lib/categories-data";
 import { categoryLabels, getLanguage, localizeHours, text, withLanguage } from "@/lib/i18n";
@@ -366,18 +367,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </section>
       ) : null}
 
-      {/* ━━━ Footer ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <footer className="border-t border-stone-100 bg-stone-100/60">
-        <div className="mx-auto flex max-w-7xl flex-col items-center gap-2 px-4 py-8 text-center text-xs text-stone-400 sm:px-6 sm:py-10 lg:px-8">
-          <p className="text-sm font-bold text-stone-600">{settings.business_name}</p>
-          {settings.address ? (
-            <p>{settings.address}</p>
-          ) : null}
-          <p className="mt-1">
-            {settings.footer_text || `© ${new Date().getFullYear()} ${settings.business_name}`}
-          </p>
-        </div>
-      </footer>
+      <SiteFooter language={language} settings={settings} />
+
     </main>
   );
 }

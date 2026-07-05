@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ProductCard } from "@/components/product-card";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { subcategoryLabels, text, withLanguage } from "@/lib/i18n";
 import { getProductsByCategory } from "@/lib/products";
@@ -33,7 +34,7 @@ export async function CategoryPage({
   language: Language;
   selectedSubcategory?: string;
   title: string;
-  settings?: BusinessSettings;
+  settings: BusinessSettings;
 }) {
   const t = text[language];
   const activeSubcategory =
@@ -123,6 +124,7 @@ export async function CategoryPage({
           </div>
         )}
       </section>
+      <SiteFooter language={language} settings={settings} />
     </main>
   );
 }

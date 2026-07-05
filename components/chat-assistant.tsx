@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { text, type Language } from "@/lib/i18n";
+import { text, withLanguage, type Language } from "@/lib/i18n";
 
 type Message = { role: "user" | "assistant"; text: string; products?: AiProduct[] };
 type AiProduct = {
@@ -260,6 +260,16 @@ export function ChatAssistant({
           />
           <button className="min-h-11 shrink-0 rounded-full bg-violet-600 px-4 py-2 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50" disabled={loading || !input.trim()} type="submit">→</button>
         </form>
+        <p className="mt-1 text-center text-[10px] leading-4 text-stone-400">
+          By submitting, you agree to our{" "}
+          <Link className="font-bold underline-offset-2 hover:underline" href={withLanguage("/terms-of-service", language)}>
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link className="font-bold underline-offset-2 hover:underline" href={withLanguage("/privacy-policy", language)}>
+            Privacy Policy
+          </Link>.
+        </p>
         <p className="mt-1 text-center text-[10px] text-stone-400 sm:mt-1.5">{t.aiNeedHelp}</p>
       </div>
     </div>

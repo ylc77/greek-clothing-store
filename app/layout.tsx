@@ -1,4 +1,5 @@
 import { ChatLauncher } from "@/components/chat-launcher";
+import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
 import "./globals.css";
@@ -40,6 +41,7 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <ChatLauncher />
         </Suspense>
+        <CookieConsentBanner />
       </body>
     </html>
   );

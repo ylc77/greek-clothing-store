@@ -73,6 +73,17 @@ export async function GET() {
   const contactUrl = `${base}/contact`;
   urls.push(urlEntry(contactUrl, today, "monthly", "0.5"));
 
+  // Legal pages
+  ["/privacy-policy", "/terms-of-service", "/cookie-policy", "/refund-policy"].forEach((path) => {
+    const url = `${base}${path}`;
+    urls.push(
+      urlEntry(url, today, "yearly", "0.3", [
+        { lang: "el", href: url },
+        { lang: "en", href: `${url}?lang=en` },
+      ])
+    );
+  });
+
   // Products
   if (supabase) {
     const { data } = await supabase

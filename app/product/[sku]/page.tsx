@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProductActions } from "@/components/product-actions";
 import { ProductImageGallery } from "@/components/product-image-gallery";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import {
   categoryLabels,
@@ -278,6 +279,7 @@ export default async function ProductPage({
           }),
         }}
       />
+      <SiteFooter language={language} settings={settings} />
     </main>
   );
 }
