@@ -12,7 +12,7 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
   const language = getLanguage((await searchParams).lang);
   const settings = await getBusinessSettings();
   return {
-    title: `${language === "en" ? "Terms of Service" : "Όροι Χρήσης"} | ${settings.business_name}`,
+    title: `${language === "en" ? "Terms of Sale" : "Όροι Πώλησης"} | ${settings.business_name}`,
     alternates: { canonical: `${siteUrl()}/terms-of-service` },
   };
 }

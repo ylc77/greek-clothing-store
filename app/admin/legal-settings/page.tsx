@@ -66,7 +66,7 @@ export default function LegalSettingsPage() {
   }
 
   async function checkLinks() {
-    const paths = ["/privacy-policy", "/terms-of-service", "/cookie-policy", "/contact", "/refund-policy", "/cancellation-policy"];
+    const paths = ["/privacy-policy", "/terms-of-service", "/cookie-policy", "/contact", "/shipping-policy", "/return-policy", "/refund-policy"];
     const results = await Promise.all(paths.map(async (path) => {
       try { const response = await fetch(path, { method: "GET" }); return [path, response.ok] as const; }
       catch { return [path, false] as const; }
@@ -129,7 +129,7 @@ export default function LegalSettingsPage() {
   return <main className="min-h-screen bg-gradient-to-b from-[#fbfaf6] via-white to-[#f6f1ea] px-3 py-4 sm:px-6 sm:py-8">
     <div className="mx-auto max-w-6xl">
       <header className="mb-6 flex flex-col gap-4 rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div><p className="text-xs font-black uppercase tracking-[0.18em] text-olive">Legal Settings</p><h1 className="mt-1 text-2xl font-black text-ink">法律与商家信息设置</h1><p className="mt-1 text-xs text-stone-400">草稿不会影响前台；点击“发布法律配置”才生成正式版本。</p></div>
+        <div><p className="text-xs font-black uppercase tracking-[0.18em] text-olive">Clothing Store Legal Settings</p><h1 className="mt-1 text-2xl font-black text-ink">服装店法律与商家信息</h1><p className="mt-1 text-xs text-stone-400">仅包含本服装零售项目需要的内容。草稿不会影响前台，发布后才生成正式版本。</p></div>
         <div className="flex flex-wrap gap-2"><a className="admin-button-secondary" href="/admin/settings">返回 Settings</a><a className="admin-button-secondary" href="/admin">返回后台</a></div>
       </header>
 
@@ -144,19 +144,15 @@ export default function LegalSettingsPage() {
       {errors.length ? <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-sm text-amber-900"><p className="font-black">发布前请完成：</p><ul className="mt-2 list-disc space-y-1 pl-5">{errors.map((error) => <li key={error}>{error}</li>)}</ul></div> : null}
 
       <form className="flex flex-col gap-5" onSubmit={saveDraft}>
-        <Section title="项目类型" desc="决定前台优先展示退款退货政策，还是餐馆取消政策。">
-          <select className="input max-w-md" onChange={(event) => update("projectType", event.target.value as "retail" | "restaurant")} value={settings.projectType}><option value="retail">服装 / 零售</option><option value="restaurant">餐馆</option></select>
-        </Section>
-
         <Section title="商家身份信息" desc="带 * 的字段是发布必填项。">
           <div className="grid gap-4 md:grid-cols-2"><Field label="商家展示名称" required>{input("businessName")}</Field><Field label="法律主体名称" required>{input("legalName")}</Field><Field label="营业地址" required>{input("businessAddress")}</Field><Field label="VAT / AFM 税号" required>{input("vatNumber")}</Field><Field label="GEMI 注册号">{input("gemiNumber")}</Field><Field label="所在国家">{input("country")}</Field><Field label="联系电话" required>{input("phone")}</Field><Field label="联系邮箱" required>{input("contactEmail", "name@example.com", "email")}</Field></div>
         </Section>
 
-        <Section title="数据控制者信息" desc="用于隐私政策和数据主体请求说明。">
+        <Section title="客户隐私与数据负责人" desc="用于说明谁负责订单、配送、退货和联系信息，以及客户如何申请查询、更正或删除资料。">
           <div className="grid gap-4 md:grid-cols-2"><Field label="数据控制者名称">{input("dataControllerName")}</Field><Field label="数据控制者地址">{input("dataControllerAddress")}</Field><Field label="隐私请求联系邮箱">{input("privacyRequestEmail", "privacy@example.com", "email")}</Field><Field label="更正或删除个人信息申请方式">{area("privacyRequestInstructions")}</Field></div>
         </Section>
 
-        <Section title="第三方服务" desc="只有勾选启用的服务会显示在前台法律页面。">
+        <Section title="本店实际使用的服务" desc="只勾选当前确实启用的托管、付款、后台 AI 或统计服务；未勾选的不会显示在前台。">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{legalProviderKeys.map((key) => <label className="flex min-h-12 items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 text-sm font-bold" key={key}><input checked={settings.enabledProviders.includes(key)} onChange={() => toggleProvider(key)} type="checkbox" />{providerLabels[key]}</label>)}</div>
           <div className="mt-4"><Field label="其他服务商说明">{area("otherProviders", "每行一个服务商及用途；留空则前台不显示。")}</Field></div>
         </Section>
@@ -167,22 +163,27 @@ export default function LegalSettingsPage() {
           <div className="mt-4 max-w-md"><Field label="Cookie 最后更新时间">{input("cookieLastUpdated", "YYYY-MM-DD", "date")}</Field></div>
         </Section>
 
-        <Section title="服装 / 零售项目专用条款" desc="零售项目页脚将优先显示配送、退货与退款政策。">
-          <div className="grid gap-4 md:grid-cols-2"><Field label="配送政策">{area("shippingPolicy")}</Field><Field label="退货政策">{area("returnPolicy")}</Field><Field label="退款政策">{area("refundPolicy")}</Field><Field label="14 天撤回权说明">{area("withdrawalRight")}</Field><Field label="退货地址">{area("returnAddress")}</Field><Field label="退货运费责任">{area("returnShippingResponsibility")}</Field><Field label="不支持退换的商品说明">{area("nonReturnableItems", "例如卫生用品、定制商品或依法不适用撤回权的商品。")}</Field><Field label="付款相关条款">{area("paymentTerms")}</Field></div>
+        <Section title="服装销售、配送与售后条款" desc="这些内容分别显示在 Terms、Shipping、Return 和 Refund 页面。请按本店真实做法填写，不要照抄不适用的承诺。">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="付款方式与扣款说明">{area("paymentTerms", "例如：标价是否含 VAT、何时确认付款、门店是否接受现金或刷卡。")}</Field>
+            <Field label="配送范围、费用与预计时间">{area("shippingPolicy", "例如：配送地区、运费、备货时间、承运商和延误处理方式。")}</Field>
+            <Field label="退货条件与办理步骤">{area("returnPolicy", "例如：商品状态、吊牌和包装要求，以及客户应如何提出退货。")}</Field>
+            <Field label="退款方式与处理时间">{area("refundPolicy", "例如：验收退货后何时原路退款，以及银行处理时间。")}</Field>
+            <Field label="14 天撤回权说明">{area("withdrawalRight", "说明适用范围、起算时间和客户如何通知商家行使撤回权。")}</Field>
+            <Field label="退货收件地址">{area("returnAddress")}</Field>
+            <Field label="退货运费由谁承担">{area("returnShippingResponsibility", "分别说明普通退货与错发、瑕疵商品的运费责任。")}</Field>
+            <Field label="不支持退换的商品">{area("nonReturnableItems", "仅填写法律允许排除的类别，例如已拆封的卫生密封商品或按客户要求定制的商品。")}</Field>
+          </div>
         </Section>
 
-        <Section title="餐馆项目预留条款" desc="当前仓库没有预约或餐馆下单流程；仅保留可复用法律文案，不新增业务流程。">
-          <div className="grid gap-4 md:grid-cols-2"><Field label="取消政策">{area("cancellationPolicy")}</Field><Field label="过敏原免责声明">{area("allergenDisclaimer")}</Field><Field label="小票不是正式税务发票说明">{area("receiptDisclaimer")}</Field></div>
-        </Section>
-
-        <Section title="页脚链接检查" desc="检查公开法律页面是否可以打开。当前项目没有联系表单提交，条款同意提示为不适用。">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{Object.entries({"/privacy-policy":"Privacy Policy","/terms-of-service":"Terms of Service","/cookie-policy":"Cookie Policy","/contact":"Contact","/refund-policy":"Refund Policy","/cancellation-policy":"Cancellation Policy"}).map(([path,label]) => <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-4" key={path}><a className="text-sm font-bold text-ink underline" href={path} target="_blank">{label}</a><span className={`text-xs font-black ${linkChecks[path] ? "text-green-700" : linkChecks[path] === false ? "text-red-700" : "text-stone-400"}`}>{linkChecks[path] ? "可打开" : linkChecks[path] === false ? "失败" : "检查中"}</span></div>)}</div>
+        <Section title="服装店法律链接检查" desc="检查前台实际展示的商家、隐私、配送、退货和退款页面。当前项目没有客户联系表单提交。">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{Object.entries({"/privacy-policy":"Privacy Policy","/terms-of-service":"Terms of Sale","/cookie-policy":"Cookie Policy","/contact":"Contact","/shipping-policy":"Shipping Policy","/return-policy":"Return Policy","/refund-policy":"Refund Policy"}).map(([path,label]) => <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-4" key={path}><a className="text-sm font-bold text-ink underline" href={path} rel="noreferrer" target="_blank">{label}</a><span className={`text-xs font-black ${linkChecks[path] ? "text-green-700" : linkChecks[path] === false ? "text-red-700" : "text-stone-400"}`}>{linkChecks[path] ? "可打开" : linkChecks[path] === false ? "失败" : "检查中"}</span></div>)}</div>
           <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm font-bold text-stone-600">表单旁同意条款提示：当前没有预约或联系提交表单；POS 为店员后台操作，不额外阻断收银流程。</div>
         </Section>
 
         <Section title="客户最终确认" desc="五项确认全部完成后才允许发布正式法律版本。">
           <div className="grid gap-3">{([
-            ["businessIdentity", "已确认商家身份信息"], ["paymentCopy", "已确认付款相关文案"], ["fulfilmentCopy", "已确认配送 / 取消 / 退款相关文案"], ["providers", "已确认实际启用的第三方服务"], ["disclaimer", "已知晓这些页面是基础法律页面模板，不是完整定制法律审查，也不能替代律师、会计师或当地合规专业人士的正式意见"],
+            ["businessIdentity", "已确认商家身份信息"], ["paymentCopy", "已确认商品价格与付款相关文案"], ["fulfilmentCopy", "已确认配送、退货、撤回权与退款文案符合本店实际做法"], ["providers", "已确认实际启用的第三方服务"], ["disclaimer", "已知晓这些页面是基础法律页面模板，不是完整定制法律审查，也不能替代律师、会计师或当地合规专业人士的正式意见"],
           ] as const).map(([key,label]) => <label className="flex items-start gap-3 rounded-xl border border-stone-200 bg-white p-4 text-sm font-bold leading-6" key={key}><input checked={settings.confirmations[key]} className="mt-1" onChange={(event) => confirm(key, event.target.checked)} type="checkbox" />{label}</label>)}</div>
           <div className="mt-4 max-w-md"><Field label="法律页面最后更新时间" required>{input("legalLastUpdated", "YYYY-MM-DD", "date")}</Field></div>
         </Section>

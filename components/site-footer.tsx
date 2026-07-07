@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { getLegalLinks } from "@/lib/legal";
-import { getPublishedLegalSettings } from "@/lib/legal-settings";
 import { withLanguage, type Language } from "@/lib/i18n";
 import type { BusinessSettings } from "@/lib/settings";
 
@@ -11,8 +10,7 @@ export async function SiteFooter({
   language: Language;
   settings: BusinessSettings;
 }) {
-  const legal = await getPublishedLegalSettings();
-  const legalLinks = getLegalLinks(legal.settings.projectType);
+  const legalLinks = getLegalLinks();
   return (
     <footer className="border-t border-stone-100 bg-stone-100/60">
       <div className="mx-auto flex max-w-7xl flex-col items-center gap-3 px-4 py-8 text-center text-xs text-stone-500 sm:px-6 sm:py-10 lg:px-8">

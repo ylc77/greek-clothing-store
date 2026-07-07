@@ -74,7 +74,7 @@ export async function GET() {
   urls.push(urlEntry(contactUrl, today, "monthly", "0.5"));
 
   // Legal pages
-  ["/privacy-policy", "/terms-of-service", "/cookie-policy", "/refund-policy", "/return-policy", "/shipping-policy", "/cancellation-policy"].forEach((path) => {
+  ["/privacy-policy", "/terms-of-service", "/cookie-policy", "/refund-policy", "/return-policy", "/shipping-policy"].forEach((path) => {
     const url = `${base}${path}`;
     urls.push(
       urlEntry(url, today, "yearly", "0.3", [

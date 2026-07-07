@@ -263,7 +263,7 @@ export function ChatAssistant({
         <p className="mt-1 text-center text-[10px] leading-4 text-stone-400">
           By submitting, you agree to our{" "}
           <Link className="font-bold underline-offset-2 hover:underline" href={withLanguage("/terms-of-service", language)}>
-            Terms of Service
+            Terms of Sale
           </Link>{" "}
           and{" "}
           <Link className="font-bold underline-offset-2 hover:underline" href={withLanguage("/privacy-policy", language)}>

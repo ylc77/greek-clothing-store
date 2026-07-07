@@ -1,4 +1,4 @@
-import type { LegalProviderKey, ProjectType } from "@/lib/legal-settings";
+import type { LegalProviderKey } from "@/lib/legal-settings";
 
 export const providerNames: Record<LegalProviderKey, string> = {
   supabase: "Supabase",
@@ -15,18 +15,16 @@ export const providerNames: Record<LegalProviderKey, string> = {
 
 const commonLinks = [
   { href: "/privacy-policy", label: "Privacy Policy" },
-  { href: "/terms-of-service", label: "Terms of Service" },
+  { href: "/terms-of-service", label: "Terms of Sale" },
   { href: "/cookie-policy", label: "Cookie Policy" },
   { href: "/contact", label: "Contact" },
 ] as const;
 
-export function getLegalLinks(projectType: ProjectType) {
-  return projectType === "restaurant"
-    ? [...commonLinks, { href: "/cancellation-policy", label: "Cancellation Policy" }]
-    : [
-        ...commonLinks,
-        { href: "/refund-policy", label: "Refund Policy" },
-        { href: "/return-policy", label: "Return Policy" },
-        { href: "/shipping-policy", label: "Shipping Policy" },
-      ];
+export function getLegalLinks() {
+  return [
+    ...commonLinks,
+    { href: "/shipping-policy", label: "Shipping Policy" },
+    { href: "/return-policy", label: "Return Policy" },
+    { href: "/refund-policy", label: "Refund Policy" },
+  ];
 }

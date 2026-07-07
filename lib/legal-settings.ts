@@ -125,7 +125,7 @@ export function normalizeLegalSettings(value: unknown): LegalSettingsData {
 
   return {
     ...defaults,
-    projectType: source.projectType === "restaurant" ? "restaurant" : "retail",
+    projectType: "retail",
     businessName: stringValue(source.businessName),
     legalName: stringValue(source.legalName),
     businessAddress: stringValue(source.businessAddress),

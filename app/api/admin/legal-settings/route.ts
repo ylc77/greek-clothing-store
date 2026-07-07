@@ -15,7 +15,7 @@ function actor(auth: Awaited<ReturnType<typeof getAdminAuthContextFromRequest>>)
 
 function refreshLegalPages() {
   revalidateTag(cacheTags.legal);
-  for (const path of ["/privacy-policy", "/terms-of-service", "/cookie-policy", "/contact", "/refund-policy", "/cancellation-policy", "/return-policy", "/shipping-policy"]) {
+  for (const path of ["/privacy-policy", "/terms-of-service", "/cookie-policy", "/contact", "/refund-policy", "/return-policy", "/shipping-policy"]) {
     revalidatePath(path);
   }
 }
