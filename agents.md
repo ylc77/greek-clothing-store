@@ -38,7 +38,7 @@ If you ever encounter something in the project that surprises you, please alert 
 The migration chain now starts with `supabase/migrations/20260702000000_baseline_store_schema.sql`. It creates `products.id` as `bigint` and has been verified from an empty local database with `npx supabase db reset`.
 
 
-Use the migration chain as the source of truth for new customers. Keep `client-init.sql` only as a fallback/reference file; do not use it as the normal deployment path or mix it with `supabase db push`.
+Use the migration chain as the development and upgrade source of truth. For a brand-new customer, `supabase/client-init.sql` is the supported one-file SQL Editor deployment snapshot generated from that chain. Regenerate it with `scripts/build-client-init.ps1` whenever migrations change. Never run it on an existing customer database or mix it with migration-based upgrades.
 
 
 \---
@@ -59,10 +59,10 @@ Before treating localhost responses as clothing-store verification, confirm the 
 \## 5. Documentation encoding and stale deployment guidance
 
 
-The previous `README.md` and `docs/deploy-client-zh.md` content was observed with mojibake, and both previously instructed new customers to run `supabase/client-init.sql`.
+The previous deployment documentation was observed with mojibake and conflicting database initialization instructions.
 
 
-Treat any remaining deployment document that recommends `client-init.sql` as stale. Keep edited Markdown files in UTF-8 and document the lightweight `supabase link` / `db push --dry-run` / `db push` workflow instead.
+Keep edited Markdown files in UTF-8. Customer-facing documentation should use the generated one-file `client-init.sql` flow; developer documentation should keep migrations as the source of truth for schema changes and existing-customer upgrades.
 
 
 \---
