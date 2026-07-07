@@ -2,6 +2,7 @@ import { ChatLauncher } from "@/components/chat-launcher";
 import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
+import { getPublishedLegalSettings } from "@/lib/legal-settings";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -22,11 +23,12 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: ReactNode;
 }>) {
+  const legal = await getPublishedLegalSettings();
   return (
     <html lang="el" suppressHydrationWarning>
       <head>
@@ -41,7 +43,13 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <ChatLauncher />
         </Suspense>
-        <CookieConsentBanner />
+        <CookieConsentBanner config={{
+          essentialDescription: legal.settings.essentialStorageDescription,
+          analyticsEnabled: legal.settings.analyticsEnabled,
+          monitoringEnabled: legal.settings.errorMonitoringEnabled,
+          advertisingEnabled: legal.settings.advertisingEnabled,
+          legalVersion: legal.currentVersion,
+        }} />
       </body>
     </html>
   );

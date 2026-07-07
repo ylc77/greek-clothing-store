@@ -1,15 +1,18 @@
 import Link from "next/link";
-import { legalLinks } from "@/lib/legal";
+import { getLegalLinks } from "@/lib/legal";
+import { getPublishedLegalSettings } from "@/lib/legal-settings";
 import { withLanguage, type Language } from "@/lib/i18n";
 import type { BusinessSettings } from "@/lib/settings";
 
-export function SiteFooter({
+export async function SiteFooter({
   language,
   settings,
 }: {
   language: Language;
   settings: BusinessSettings;
 }) {
+  const legal = await getPublishedLegalSettings();
+  const legalLinks = getLegalLinks(legal.settings.projectType);
   return (
     <footer className="border-t border-stone-100 bg-stone-100/60">
       <div className="mx-auto flex max-w-7xl flex-col items-center gap-3 px-4 py-8 text-center text-xs text-stone-500 sm:px-6 sm:py-10 lg:px-8">
@@ -29,6 +32,9 @@ export function SiteFooter({
         <p className="mt-1">
           {settings.footer_text || `© ${new Date().getFullYear()} ${settings.business_name}`}
         </p>
+        <button className="font-bold text-stone-500 underline transition hover:text-ink" data-cookie-preferences type="button">
+          Cookie preferences
+        </button>
       </div>
     </footer>
   );

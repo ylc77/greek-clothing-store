@@ -298,6 +298,9 @@ export default function AdminSettingsPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <a className="rounded-full border border-olive/30 bg-olive/10 px-4 py-2 text-xs font-black text-olive shadow-sm hover:bg-olive/15" href="/admin/legal-settings">
+              法律与商家信息设置 · Legal Settings
+            </a>
             <a className="rounded-full border border-stone-200 bg-white px-4 py-2 text-xs font-black text-ink shadow-sm hover:bg-stone-50" href="/admin">
               返回商品后台
             </a>

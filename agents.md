@@ -32,13 +32,13 @@ If you ever encounter something in the project that surprises you, please alert 
 \---
 
 
-\## 3. Known schema mismatch
+\## 3. Database initialization source of truth
 
 
-The current `supabase/client-init.sql` defines `products.id` as `uuid`, while the deployed ERP/POS schema and later migrations use `products.id` / `product_variants.product_id` as `bigint`.
+The migration chain now starts with `supabase/migrations/20260702000000_baseline_store_schema.sql`. It creates `products.id` as `bigint` and has been verified from an empty local database with `npx supabase db reset`.
 
 
-Do not use `client-init.sql` for a new customer until this mismatch has been resolved and the complete initialization path has been tested. Do not silently change the production identifier type while working on unrelated features.
+Use the migration chain as the source of truth for new customers. Keep `client-init.sql` only as a fallback/reference file; do not use it as the normal deployment path or mix it with `supabase db push`.
 
 
 \---
@@ -51,4 +51,31 @@ Port `3000` may already be occupied by another workspace (observed serving the u
 
 
 Before treating localhost responses as clothing-store verification, confirm the page identity or start this project on an explicit unused port such as `3010`. Do not stop or modify the other project's process unless the developer explicitly requests it.
+
+
+\---
+
+
+\## 5. Documentation encoding and stale deployment guidance
+
+
+The previous `README.md` and `docs/deploy-client-zh.md` content was observed with mojibake, and both previously instructed new customers to run `supabase/client-init.sql`.
+
+
+Treat any remaining deployment document that recommends `client-init.sql` as stale. Keep edited Markdown files in UTF-8 and document the lightweight `supabase link` / `db push --dry-run` / `db push` workflow instead.
+
+
+\---
+
+
+\## 6. Local Supabase CLI collisions
+
+
+The root `.env.local` was observed with a UTF-8 BOM, which Supabase CLI 2.109.1 rejected as an invalid environment-variable name. Do not expose or overwrite its secrets while working around this; remove the BOM safely or temporarily exclude the file from CLI startup.
+
+
+Another workspace may already run local Supabase on the default 5432x ports. If `supabase/config.toml` currently defines dedicated 5532x ports, use that checked-in configuration; do not assume those ports without inspecting the file. Before `supabase start`, confirm Docker Desktop is running and inspect active containers for projects such as `huaren_life_plus`, `restaurant`, or `clothing_web`.
+
+
+If database, Studio, or API ports conflict, change only this repository's `supabase/config.toml` and record the new convention here. Do not stop or modify another project's Supabase containers to verify this repository.
 

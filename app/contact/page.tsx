@@ -4,6 +4,7 @@ import { SiteHeader } from "@/components/site-header";
 import { getLanguage, localizeHours, text } from "@/lib/i18n";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
+import { getPublishedLegalSettings } from "@/lib/legal-settings";
 
 type ContactPageProps = {
   searchParams: Promise<{ lang?: string }>;
@@ -26,10 +27,10 @@ export async function generateMetadata({
 export default async function ContactPage({ searchParams }: ContactPageProps) {
   const language = getLanguage((await searchParams).lang);
   const t = text[language];
-  const settings = await getBusinessSettings();
+  const [settings, legal] = await Promise.all([getBusinessSettings(), getPublishedLegalSettings()]);
 
-  const addressText = settings.address || "";
-  const phoneText = settings.phone || "";
+  const addressText = legal.settings.businessAddress || settings.address || "";
+  const phoneText = legal.settings.phone || settings.phone || "";
   const hoursText = localizeHours(settings.opening_hours || "", language);
 
   return (
@@ -49,6 +50,7 @@ export default async function ContactPage({ searchParams }: ContactPageProps) {
                 ? settings.description_en
                 : settings.description_gr || settings.description_en}
             </p>
+            {legal.settings.contactEmail ? <a className="mt-3 inline-block text-sm font-black text-ink underline" href={`mailto:${legal.settings.contactEmail}`}>{legal.settings.contactEmail}</a> : null}
             <div className="mt-6 flex flex-wrap gap-3">
               {settings.whatsapp ? (
                 <a

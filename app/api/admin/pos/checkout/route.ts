@@ -5,6 +5,7 @@ import { invalidateProductsCache } from "@/lib/cache";
 import { getMainInventoryLocation, syncLegacyStockFromErp } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
+import { getPublishedLegalSettings } from "@/lib/legal-settings";
 
 type CheckoutItemInput = {
   variantId?: unknown;
@@ -246,6 +247,12 @@ export async function POST(request: NextRequest) {
   const idempotencyKey = `pos_sale:${clientRequestId}`;
 
   try {
+    const legalRecord = dryRun ? null : await getPublishedLegalSettings();
+    const legalAcceptance = legalRecord?.currentVersion ? {
+      legal_terms_version: legalRecord.currentVersion,
+      privacy_policy_version: legalRecord.currentVersion,
+      legal_accepted_at: new Date().toISOString(),
+    } : {};
     if (usePosRpc() && !dryRun) {
       const { data, error } = await (supabase as any).rpc("pos_checkout_rpc", {
         p_client_request_id: clientRequestId,
@@ -269,6 +276,11 @@ export async function POST(request: NextRequest) {
       const affectedSkus = Array.isArray(result.affected_skus) ? result.affected_skus : [];
       for (const sku of affectedSkus) {
         invalidateProductsCache(typeof sku === "string" ? sku : null);
+      }
+
+      if (result.order?.id && legalRecord?.currentVersion) {
+        const { error: legalError } = await (supabase as any).from("sales_orders").update(legalAcceptance).eq("id", result.order.id);
+        if (legalError) logCheckoutError("attach legal version failed", legalError, { orderId: result.order.id });
       }
 
       return NextResponse.json({
@@ -502,6 +514,7 @@ export async function POST(request: NextRequest) {
           created_by: "admin",
           notes: notes || null,
           completed_at: new Date().toISOString(),
+          ...legalAcceptance,
         })
         .select("id, order_number, subtotal, discount_total, total, payment_status, status, created_at")
         .single();

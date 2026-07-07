@@ -4,4 +4,5 @@ export const cacheTags = {
   settings: "settings",
   categories: "categories",
   features: "features",
+  legal: "legal",
 } as const;
