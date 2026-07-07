@@ -3,6 +3,7 @@ import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import { getMainInventoryLocation, syncLegacyStockFromErp } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
@@ -116,6 +117,7 @@ async function markOrderVoided(supabase: any, orderId: string) {
 
 export async function POST(request: NextRequest, context: RouteContext) {
   if (!(await adminRequestHasPermissionAsync(request, "pos:void"))) return unauthorized();
+  if (!(await isFeatureEnabled("pos_void"))) return featureDisabledResponse("pos_void");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();

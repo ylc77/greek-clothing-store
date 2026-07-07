@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { productForForm } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
 import {
@@ -38,6 +39,7 @@ function totalSizeStock(stock: Record<string, number>) {
 
 export async function POST(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "pos:checkout"))) return unauthorized();
+  if (!(await isFeatureEnabled("inventory"))) return featureDisabledResponse("inventory");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();

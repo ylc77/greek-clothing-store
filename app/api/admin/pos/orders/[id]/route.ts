@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ function money(value: unknown) {
 
 export async function GET(request: NextRequest, context: RouteContext) {
   if (!(await adminRequestHasPermissionAsync(request, "pos:read"))) return unauthorized();
+  if (!(await isFeatureEnabled("pos_orders"))) return featureDisabledResponse("pos_orders");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();

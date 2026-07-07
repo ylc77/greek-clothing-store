@@ -236,6 +236,49 @@ grant select on products, business_settings, product_categories, product_subcate
 grant select, insert, update, delete on products, business_settings, product_categories, product_subcategories to service_role;
 
 -- ============================================================
+-- 8. Customer plan feature settings
+-- ============================================================
+create table if not exists feature_settings (
+  id smallint primary key default 1,
+  plan text not null default 'advanced',
+  features jsonb not null default '{}'::jsonb,
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint feature_settings_singleton_check check (id = 1),
+  constraint feature_settings_plan_check check (plan in ('basic', 'standard', 'advanced', 'custom')),
+  constraint feature_settings_features_object_check check (jsonb_typeof(features) = 'object')
+);
+
+insert into feature_settings (id, plan, features, updated_by)
+values (
+  1,
+  'advanced',
+  '{
+    "storefront": true,
+    "product_management": true,
+    "inventory": true,
+    "pos_checkout": true,
+    "pos_orders": true,
+    "pos_void": true,
+    "pos_reports": true,
+    "receipt_printing": true,
+    "barcode_labels": true,
+    "csv_import": true,
+    "skroutz_feed": true,
+    "staff_accounts": true,
+    "ai_tools": true,
+    "backup_tools": true
+  }'::jsonb,
+  'client_init'
+)
+on conflict (id) do nothing;
+
+alter table feature_settings enable row level security;
+revoke all on table feature_settings from anon, authenticated;
+grant select, insert, update, delete on table feature_settings to service_role;
+
+-- ============================================================
 -- 7. Default categories
 -- ============================================================
 insert into product_categories (slug, name_cn, name_en, name_gr, sort_order) values

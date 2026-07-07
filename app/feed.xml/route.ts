@@ -1,10 +1,14 @@
 import { getSupabaseClient } from "@/lib/supabase";
 import { getBusinessSettings } from "@/lib/settings";
 import { buildSkroutzFeed, getFeedProducts } from "@/lib/feed";
+import { isFeatureEnabled } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  if (!(await isFeatureEnabled("skroutz_feed"))) {
+    return new Response("Skroutz feed is not enabled for this customer plan.", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  }
   const supabase = getSupabaseClient();
 
   if (!supabase) {

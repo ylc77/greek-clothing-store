@@ -3,4 +3,5 @@ export const cacheTags = {
   product: "product",
   settings: "settings",
   categories: "categories",
+  features: "features",
 } as const;

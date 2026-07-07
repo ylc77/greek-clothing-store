@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import type { Product } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +61,7 @@ export async function GET(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "backup:read"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!(await isFeatureEnabled("backup_tools"))) return featureDisabledResponse("backup_tools");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {

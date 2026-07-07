@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { invalidateProductsCache } from "@/lib/cache";
 import { hasInventoryMovementsForProduct } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -10,6 +11,7 @@ function unauthorized() {
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   if (!(await adminRequestHasPermissionAsync(request, "products:delete"))) return unauthorized();
+  if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "Admin client not configured" }, { status: 500 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { productForForm, validateProductPayload } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
 import { syncProductInventoryFromLegacy } from "@/lib/erp-inventory";
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "products:read"))) {
     return unauthorized();
   }
+  if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
@@ -53,6 +55,7 @@ export async function POST(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "products:write"))) {
     return unauthorized();
   }
+  if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {

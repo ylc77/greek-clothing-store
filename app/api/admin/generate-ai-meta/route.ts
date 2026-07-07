@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -7,6 +8,7 @@ function unauthorized() {
 
 export async function POST(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "ai:write"))) return unauthorized();
+  if (!(await isFeatureEnabled("ai_tools"))) return featureDisabledResponse("ai_tools");
 
   const apiKey = (process.env.DEEPSEEK_API_KEY || "").trim();
   if (!apiKey) return NextResponse.json({ error: "DEEPSEEK_API_KEY not configured" }, { status: 500 });

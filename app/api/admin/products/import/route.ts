@@ -6,6 +6,7 @@ import {
   type ProductMutation,
 } from "@/lib/admin-products";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { invalidateProductsCache } from "@/lib/cache";
 import { syncProductInventoryFromLegacy } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -99,6 +100,7 @@ export async function POST(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "products:write"))) {
     return unauthorized();
   }
+  if (!(await isFeatureEnabled("csv_import"))) return featureDisabledResponse("csv_import");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {

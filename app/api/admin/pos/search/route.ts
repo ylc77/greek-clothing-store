@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { getMainInventoryLocation } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 
 type VariantRow = {
   id: string;
@@ -79,6 +80,7 @@ function matchScore(q: string, row: { barcode: string; variant_sku: string; prod
 
 export async function GET(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "pos:read"))) return unauthorized();
+  if (!(await isFeatureEnabled("pos_checkout"))) return featureDisabledResponse("pos_checkout");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();

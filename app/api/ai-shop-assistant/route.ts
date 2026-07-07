@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getBusinessSettings } from "@/lib/settings";
+import { isFeatureEnabled } from "@/lib/features";
 
 const SYSTEM_PROMPT = `You are a customer-facing shopping assistant for a clothing store in Greece.
 
@@ -155,6 +156,9 @@ function getLocalReply(message: string, lang: string): string | null {
 }
 
 export async function POST(request: NextRequest) {
+  if (!(await isFeatureEnabled("ai_tools"))) {
+    return NextResponse.json({ error: "AI assistant is not enabled." }, { status: 404 });
+  }
   const body = await request.json().catch(() => ({}));
   const message = String(body.message || "").trim();
   const language = body.language === "en" ? "en" : "el";

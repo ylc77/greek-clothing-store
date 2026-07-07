@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { invalidateProductsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { productImagesBucket, storageSkuSegment } from "@/lib/storage-images";
@@ -44,6 +45,7 @@ async function ensurePublicBucket(supabase: NonNullable<ReturnType<typeof getSup
 
 export async function POST(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "ai:write"))) return unauthorized();
+  if (!(await isFeatureEnabled("ai_tools"))) return featureDisabledResponse("ai_tools");
 
   const apiKey = (process.env.OPENAI_API_KEY || "").trim();
   if (!apiKey) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { adjustInventoryVariant } from "@/lib/erp-inventory";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -8,6 +9,7 @@ function unauthorized() {
 
 export async function POST(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "inventory:write"))) return unauthorized();
+  if (!(await isFeatureEnabled("inventory"))) return featureDisabledResponse("inventory");
 
   const payload = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!payload) {

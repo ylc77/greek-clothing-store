@@ -4,6 +4,7 @@ import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import { getMainInventoryLocation, syncLegacyStockFromErp } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 
 type CheckoutItemInput = {
   variantId?: unknown;
@@ -210,6 +211,7 @@ async function loadExistingOrder(supabase: any, idempotencyKey: string) {
 
 export async function POST(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "pos:checkout"))) return unauthorized();
+  if (!(await isFeatureEnabled("pos_checkout"))) return featureDisabledResponse("pos_checkout");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,7 @@ function localDayRange(dateValue: string | null, timezoneOffsetMinutesValue: str
 
 export async function GET(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "pos:read"))) return unauthorized();
+  if (!(await isFeatureEnabled("pos_reports"))) return featureDisabledResponse("pos_reports");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();

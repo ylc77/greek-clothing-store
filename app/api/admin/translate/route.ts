@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { translateProductContent } from "@/lib/translate";
 
 export async function POST(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "ai:write"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!(await isFeatureEnabled("ai_tools"))) return featureDisabledResponse("ai_tools");
 
   const payload = (await request.json()) as {
     name_cn?: unknown;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { invalidateProductsCache } from "@/lib/cache";
 import {
   productImagesBucket,
@@ -164,6 +165,7 @@ export async function POST(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "products:write"))) {
     return unauthorized();
   }
+  if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
@@ -326,6 +328,7 @@ export async function DELETE(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "products:write"))) {
     return unauthorized();
   }
+  if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {

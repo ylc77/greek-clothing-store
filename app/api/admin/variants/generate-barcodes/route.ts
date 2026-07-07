@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { generateBarcodesForVariants, VariantBarcodeError } from "@/lib/variant-barcodes";
 
 function unauthorized() {
@@ -17,6 +18,7 @@ function barcodeError(error: unknown) {
 
 export async function POST(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "labels:write"))) return unauthorized();
+  if (!(await isFeatureEnabled("barcode_labels"))) return featureDisabledResponse("barcode_labels");
 
   try {
     const body = (await request.json()) as {

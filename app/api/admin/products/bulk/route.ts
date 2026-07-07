@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { invalidateProductsCache } from "@/lib/cache";
 import { syncProductVariantActiveFromLegacy } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -10,6 +11,7 @@ function unauthorized() {
 
 export async function PUT(request: NextRequest) {
   if (!(await adminRequestHasPermissionAsync(request, "products:write"))) return unauthorized();
+  if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "Admin client not configured" }, { status: 500 });

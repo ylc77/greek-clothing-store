@@ -2,6 +2,41 @@
 
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import type { BusinessSettings } from "@/lib/settings";
+import type { FeatureFlags, FeatureKey, FeaturePlan, FeatureSettings } from "@/lib/features";
+
+const featureKeys: FeatureKey[] = [
+  "storefront", "product_management", "inventory", "pos_checkout", "pos_orders", "pos_void",
+  "pos_reports", "receipt_printing", "barcode_labels", "csv_import", "skroutz_feed",
+  "staff_accounts", "ai_tools", "backup_tools",
+];
+
+const featureLabels: Record<FeatureKey, { label: string; desc: string }> = {
+  storefront: { label: "前台官网", desc: "首页、分类页和商品详情页" },
+  product_management: { label: "商品管理", desc: "商品、图片、分类和上下架" },
+  inventory: { label: "ERP 库存", desc: "库存总览、调整、流水和对账" },
+  pos_checkout: { label: "POS 收银", desc: "搜索、预检和完成收银" },
+  pos_orders: { label: "POS 订单", desc: "订单历史、详情和小票入口" },
+  pos_void: { label: "POS 作废", desc: "作废订单并恢复库存" },
+  pos_reports: { label: "POS 日报", desc: "销售汇总和支付方式统计" },
+  receipt_printing: { label: "小票打印", desc: "浏览器小票预览和打印" },
+  barcode_labels: { label: "Barcode 标签", desc: "条码生成、标签预览和打印" },
+  csv_import: { label: "CSV 导入", desc: "批量导入商品数据" },
+  skroutz_feed: { label: "Skroutz Feed", desc: "Feed 管理与 XML 输出" },
+  staff_accounts: { label: "员工账号", desc: "员工登录和角色权限" },
+  ai_tools: { label: "AI 工具", desc: "翻译、文案、SEO 和图片生成" },
+  backup_tools: { label: "备份工具", desc: "后台数据导出入口" },
+};
+
+const advancedFeatures = Object.fromEntries(featureKeys.map((key) => [key, true])) as FeatureFlags;
+const emptyFeatureSettings: FeatureSettings = {
+  id: 1,
+  plan: "advanced",
+  features: advancedFeatures,
+  updated_by: null,
+  created_at: null,
+  updated_at: null,
+  configured: false,
+};
 
 async function uploadStoreImage(file: File, name: string, password: string): Promise<string> {
   const formData = new FormData();
@@ -107,8 +142,10 @@ export default function AdminSettingsPage() {
   const [password, setPassword] = useState("");
   const [activePassword, setActivePassword] = useState("");
   const [settings, setSettings] = useState<BusinessSettings>(emptySettings);
+  const [featureSettings, setFeatureSettings] = useState<FeatureSettings>(emptyFeatureSettings);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [featureSaving, setFeatureSaving] = useState(false);
 
   async function api(path: string, init: RequestInit = {}) {
     const response = await fetch(path, {
@@ -128,12 +165,59 @@ export default function AdminSettingsPage() {
     setLoading(true);
     setStatus("");
     try {
-      const data = await api("/api/admin/settings");
-      setSettings(data);
+      const [settingsData, featuresData] = await Promise.all([
+        api("/api/admin/settings"),
+        api("/api/admin/features"),
+      ]);
+      setSettings(settingsData);
+      setFeatureSettings(featuresData.settings || emptyFeatureSettings);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "读取设置失败");
     } finally {
       setLoading(false);
+    }
+  }
+
+  function selectFeaturePlan(plan: Exclude<FeaturePlan, "custom">) {
+    const presets: Record<Exclude<FeaturePlan, "custom">, FeatureFlags> = {
+      basic: {
+        ...advancedFeatures,
+        inventory: false, pos_checkout: false, pos_orders: false, pos_void: false,
+        pos_reports: false, receipt_printing: false, barcode_labels: false, csv_import: false,
+        skroutz_feed: false, staff_accounts: false, ai_tools: false, backup_tools: false,
+      },
+      standard: {
+        ...advancedFeatures,
+        pos_void: false, ai_tools: false, backup_tools: false,
+      },
+      advanced: advancedFeatures,
+    };
+    setFeatureSettings((current) => ({ ...current, plan, features: { ...presets[plan] } }));
+  }
+
+  function toggleFeature(key: FeatureKey) {
+    setFeatureSettings((current) => ({
+      ...current,
+      plan: "custom",
+      features: { ...current.features, [key]: !current.features[key] },
+    }));
+  }
+
+  async function saveFeatureSettings() {
+    setFeatureSaving(true);
+    setStatus("");
+    try {
+      const data = await api("/api/admin/features", {
+        method: "PUT",
+        body: JSON.stringify({ plan: featureSettings.plan, features: featureSettings.features }),
+      });
+      setFeatureSettings(data.settings);
+      setStatus("✓ 版本与功能设置已保存");
+      setTimeout(() => setStatus(""), 3000);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "功能设置保存失败");
+    } finally {
+      setFeatureSaving(false);
     }
   }
 
@@ -378,6 +462,59 @@ export default function AdminSettingsPage() {
                   />
                 </Field>
               </div>
+            </div>
+          </Section>
+
+          <Section title="版本与功能" desc="客户版本决定可用模块；员工角色仍会在此基础上继续限制操作权限。">
+            {!featureSettings.configured ? (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">
+                当前使用兼容默认配置（全部开启）。保存前请先部署 feature_settings migration。
+              </div>
+            ) : null}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {(["basic", "standard", "advanced"] as const).map((plan) => (
+                <button
+                  className={`min-h-11 rounded-xl border px-3 text-sm font-black transition ${featureSettings.plan === plan ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink hover:bg-stone-50"}`}
+                  key={plan}
+                  onClick={() => selectFeaturePlan(plan)}
+                  type="button"
+                >
+                  {plan === "basic" ? "基础版" : plan === "standard" ? "标准版" : "高级版"}
+                </button>
+              ))}
+              <div className={`flex min-h-11 items-center justify-center rounded-xl border px-3 text-sm font-black ${featureSettings.plan === "custom" ? "border-olive bg-olive/10 text-olive" : "border-stone-200 bg-stone-50 text-stone-400"}`}>
+                自定义
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {featureKeys.map((key) => {
+                const enabled = featureSettings.features[key];
+                return (
+                  <button
+                    aria-pressed={enabled}
+                    className={`flex min-h-20 items-center justify-between gap-3 rounded-xl border p-3 text-left transition ${enabled ? "border-emerald-200 bg-emerald-50/60" : "border-stone-200 bg-stone-50"}`}
+                    key={key}
+                    onClick={() => toggleFeature(key)}
+                    type="button"
+                  >
+                    <span>
+                      <span className="block text-sm font-black text-ink">{featureLabels[key].label}</span>
+                      <span className="mt-1 block text-xs leading-4 text-stone-500">{featureLabels[key].desc}</span>
+                    </span>
+                    <span className={`flex h-6 w-10 shrink-0 items-center rounded-full p-1 transition ${enabled ? "justify-end bg-emerald-500" : "justify-start bg-stone-300"}`}>
+                      <span className="h-4 w-4 rounded-full bg-white shadow-sm" />
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-stone-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs leading-5 text-stone-500">
+                关闭模块只隐藏入口并阻止后续受保护的 API，不会删除历史订单或库存数据。
+              </p>
+              <button className="admin-button-primary shrink-0" disabled={featureSaving} onClick={saveFeatureSettings} type="button">
+                {featureSaving ? "保存中..." : "保存版本功能"}
+              </button>
             </div>
           </Section>
 

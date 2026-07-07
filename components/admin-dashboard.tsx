@@ -16,6 +16,7 @@ import { useToast } from "@/components/admin-toast";
 import { PosReceiptPreview } from "@/components/pos-receipt-preview";
 import { LabelPrintPreview, type LabelSize, type PrintableVariantLabel } from "@/components/label-print-preview";
 import type { AdminPermission, AdminRole } from "@/lib/admin-auth";
+import type { FeatureFlags, FeatureKey } from "@/lib/features";
 import { getSupabaseBrowserAuthClient } from "@/lib/supabase";
 
 /* ── Types ───────────────────────────────────────────────── */
@@ -298,6 +299,38 @@ const tabPermissions: Partial<Record<Tab, AdminPermission>> = {
   labels: "labels:write",
   skroutz: "feed:read",
 };
+const tabFeatures: Partial<Record<Tab, FeatureKey>> = {
+  dashboard: "product_management",
+  check: "product_management",
+  quickAdd: "product_management",
+  quickSale: "inventory",
+  pos: "pos_checkout",
+  posOrders: "pos_orders",
+  posDaily: "pos_reports",
+  inventory: "inventory",
+  labels: "barcode_labels",
+  add: "product_management",
+  csv: "csv_import",
+  images: "product_management",
+  categories: "product_management",
+  skroutz: "skroutz_feed",
+};
+const defaultAdminFeatures = {
+  storefront: true,
+  product_management: true,
+  inventory: true,
+  pos_checkout: true,
+  pos_orders: true,
+  pos_void: true,
+  pos_reports: true,
+  receipt_printing: true,
+  barcode_labels: true,
+  csv_import: true,
+  skroutz_feed: true,
+  staff_accounts: true,
+  ai_tools: true,
+  backup_tools: true,
+} satisfies FeatureFlags;
 const clothingSizeOptions = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
 const shoeSizeOptions = ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45"];
 const oneSizeOptions = ["ONE SIZE"];
@@ -517,6 +550,7 @@ export function AdminDashboard() {
   const [accountPassword, setAccountPassword] = useState("");
   const [adminAuthToken, setAdminAuthToken] = useState("");
   const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
+  const [adminFeatures, setAdminFeatures] = useState<FeatureFlags>(defaultAdminFeatures);
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [products, setProducts] = useState<AdminProduct[]>([]);
@@ -598,6 +632,13 @@ export function AdminDashboard() {
   const [posDailyLoading, setPosDailyLoading] = useState(false);
   const [posDailyMessage, setPosDailyMessage] = useState("");
   useEffect(() => { if (adminSession) { fetch("/api/admin/categories", { headers: adminAuthHeaders() }).then(r => r.json()).then(d => { setDbCats((d.categories||[]).filter((c:Record<string,unknown>) => c.is_active !== false)); setDbSubs((d.subcategories||[]).filter((s:Record<string,unknown>) => s.is_active !== false)); }).catch(() => {}); } }, [adminSession, adminAuthToken, activePassword, tab]);
+  useEffect(() => {
+    if (!adminSession) return;
+    fetch("/api/admin/features", { headers: adminAuthHeaders() })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("功能配置读取失败")))
+      .then((data) => setAdminFeatures(data.settings?.features || defaultAdminFeatures))
+      .catch(() => setAdminFeatures(defaultAdminFeatures));
+  }, [adminSession, adminAuthToken, activePassword]);
 
   // Search / filter state
   const [search, setSearch] = useState(""); const [filterCat, setFilterCat] = useState(""); const [filterSub, setFilterSub] = useState("");
@@ -606,6 +647,8 @@ export function AdminDashboard() {
   const isOwner = adminSession?.role === "owner";
   const canUseTab = (key: Tab) => {
     if (!adminSession) return false;
+    const feature = tabFeatures[key];
+    if (feature && !adminFeatures[feature]) return false;
     if (ownerOnlyTabs.has(key)) return isOwner;
     const permission = tabPermissions[key];
     return permission ? hasPermission(permission) : isOwner;
@@ -617,7 +660,7 @@ export function AdminDashboard() {
     if (canUseTab(tab)) return;
     const nextTab = visiblePrimaryTabKeys[0] || visibleManagementTabKeys[0] || "dashboard";
     setTab(nextTab);
-  }, [adminSession, tab, visiblePrimaryTabKeys, visibleManagementTabKeys]);
+  }, [adminSession, adminFeatures, tab, visiblePrimaryTabKeys, visibleManagementTabKeys]);
 
   const csvSummary = useMemo(() => {
     const valid = csvRows.filter(r => validatePreviewRow(r).length === 0).length;
@@ -1817,7 +1860,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <div className="flex flex-wrap gap-2">
             <span className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">{adminSession.displayName || adminSession.email || adminSession.role} · {adminSession.authType === "account" ? "员工账号" : "应急密码"}</span>
             {isOwner ? <a className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" href="/admin/settings">店铺设置</a> : null}
-            {isOwner ? <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { fetch("/api/admin/backup", { headers: adminAuthHeaders() }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `products-export-${new Date().toISOString().split("T")[0]}.csv`; a.click(); }).catch(() => toast("备份下载失败", "err")); }} type="button">导出 CSV</button> : null}
+            {isOwner && adminFeatures.backup_tools ? <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { fetch("/api/admin/backup", { headers: adminAuthHeaders() }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `products-export-${new Date().toISOString().split("T")[0]}.csv`; a.click(); }).catch(() => toast("备份下载失败", "err")); }} type="button">导出 CSV</button> : null}
             <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { setAdminSession(null); setAdminAuthToken(""); setActivePassword(""); setPassword(""); }}>退出</button>
           </div>
         </header>
@@ -2210,14 +2253,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
               {posLastOrder?.order ? (
                 <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
-                  <button
-                    className="mb-3 min-h-10 rounded-xl border border-blue-200 bg-white px-4 py-2 text-xs font-black text-blue-800 hover:bg-blue-100 disabled:opacity-50"
-                    disabled={posReceiptLoading}
-                    onClick={() => posLastOrder.order?.id ? void openPosReceipt(posLastOrder.order.id) : undefined}
-                    type="button"
-                  >
-                    {posReceiptLoading ? "读取小票..." : "查看 / 打印小票"}
-                  </button>
+                  {adminFeatures.receipt_printing ? (
+                    <button
+                      className="mb-3 min-h-10 rounded-xl border border-blue-200 bg-white px-4 py-2 text-xs font-black text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+                      disabled={posReceiptLoading}
+                      onClick={() => posLastOrder.order?.id ? void openPosReceipt(posLastOrder.order.id) : undefined}
+                      type="button"
+                    >
+                      {posReceiptLoading ? "读取小票..." : "查看 / 打印小票"}
+                    </button>
+                  ) : null}
                   <p className="font-black">{posLastOrder.alreadyProcessed ? "订单已处理" : "收银完成"}</p>
                   <p className="mt-1 font-bold">订单号：{posLastOrder.order.order_number}</p>
                   <p className="font-bold">金额：{formatEuro(Number(posLastOrder.order.total || 0))}</p>
@@ -2474,7 +2519,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <p className="mt-1 text-xs font-bold text-stone-500">{formatAdminDate(posOrderDetail.order.created_at)}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {posOrderDetail.order.status === "completed" && hasPermission("pos:void") ? (
+                      {adminFeatures.pos_void && posOrderDetail.order.status === "completed" && hasPermission("pos:void") ? (
                         <button
                           className="min-h-11 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-black text-red-700 hover:bg-red-100"
                           onClick={() => openPosVoidDialog(posOrderDetail.order)}
@@ -2483,14 +2528,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           作废订单
                         </button>
                       ) : null}
-                      <button
-                        className="min-h-11 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-black text-blue-800 hover:bg-blue-100 disabled:opacity-50"
-                        disabled={posReceiptLoading}
-                        onClick={() => void openPosReceipt(posOrderDetail.order.id)}
-                        type="button"
-                      >
-                        {posReceiptLoading ? "读取小票..." : "查看 / 打印小票"}
-                      </button>
+                      {adminFeatures.receipt_printing ? (
+                        <button
+                          className="min-h-11 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-black text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+                          disabled={posReceiptLoading}
+                          onClick={() => void openPosReceipt(posOrderDetail.order.id)}
+                          type="button"
+                        >
+                          {posReceiptLoading ? "读取小票..." : "查看 / 打印小票"}
+                        </button>
+                      ) : null}
                       <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50" onClick={() => setPosOrderDetail(null)} type="button">关闭</button>
                     </div>
                   </div>
@@ -2886,7 +2933,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50" disabled={loading} onClick={() => void loadProducts()} type="button">刷新检查</button>
-                  <button className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={loading || launchChecks.aiCompletable === 0} onClick={confirmBatchAiComplete} type="button">批量 AI 补全</button>
+                  {adminFeatures.ai_tools ? <button className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={loading || launchChecks.aiCompletable === 0} onClick={confirmBatchAiComplete} type="button">批量 AI 补全</button> : null}
                   <button className="rounded-lg bg-ink px-4 py-2 text-xs font-bold text-white hover:bg-stone-800 disabled:opacity-50" disabled={launchChecks.issueCount === 0} onClick={downloadLaunchCheckReport} type="button">导出检查报告</button>
                 </div>
               </div>
@@ -3087,7 +3134,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <span className="text-xs font-bold text-stone-600">已选择 {selectedIds.size} 个商品</span>
                 <button className="rounded-lg border border-red-100 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => confirmBatch(false)}>批量下架</button>
                 <button className="rounded-lg border border-green-100 px-3 py-1.5 text-xs font-bold text-green-700 hover:bg-green-50" onClick={() => confirmBatch(true)}>批量恢复上架</button>
-                <button className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-100" onClick={() => batchGenerateAiMeta()} type="button">批量生成 AI 导购</button>
+                {adminFeatures.ai_tools ? <button className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-100" onClick={() => batchGenerateAiMeta()} type="button">批量生成 AI 导购</button> : null}
                 <button className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-bold text-stone-400 hover:bg-stone-100" onClick={() => setSelectedIds(new Set())}>取消选择</button>
               </div>
             ) : null}
@@ -3353,8 +3400,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="space-y-3"><Field label="英文名"><input className="input" data-admin-field="name_en" value={form.name_en} onChange={e => updateField("name_en", e.target.value)} /></Field><Field label="英文描述"><textarea className="input min-h-24" data-admin-field="description_en" value={form.description_en} onChange={e => updateField("description_en", e.target.value)} /></Field></div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <button className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiCopyLoading} onClick={() => void generateProductCopy()} type="button">{aiCopyLoading ? "生成中..." : "AI 生成商品文案"}</button>
-                <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" disabled={translating} onClick={() => void translateProduct()} type="button">{translating ? "翻译中..." : "自动翻译"}</button>
+                {adminFeatures.ai_tools ? <button className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiCopyLoading} onClick={() => void generateProductCopy()} type="button">{aiCopyLoading ? "生成中..." : "AI 生成商品文案"}</button> : null}
+                {adminFeatures.ai_tools ? <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" disabled={translating} onClick={() => void translateProduct()} type="button">{translating ? "翻译中..." : "自动翻译"}</button> : null}
                 {editingId ? <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={() => { setEditingId(null); setForm(emptyProduct); }} type="button">取消编辑</button> : null}
               </div>
             </section>
@@ -3363,7 +3410,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <section className="admin-panel">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-black text-ink">AI 导购信息</h2>
-                <button className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiMetaLoading || !form.name_cn.trim() && !form.name_en.trim()} onClick={() => void generateAiMeta()} type="button">{aiMetaLoading ? "生成中..." : "自动生成 AI 导购信息"}</button>
+                {adminFeatures.ai_tools ? <button className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiMetaLoading || !form.name_cn.trim() && !form.name_en.trim()} onClick={() => void generateAiMeta()} type="button">{aiMetaLoading ? "生成中..." : "自动生成 AI 导购信息"}</button> : null}
               </div>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                 <Field label="版型">
@@ -3421,7 +3468,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" disabled={loading} multiple onChange={e => { void uploadImages(e.target.files, { sku: form.sku, mode: "gallery" }); e.currentTarget.value = ""; }} type="file" />
                     </label>
                   </div>
-                  <div className="mt-4 rounded-lg border border-amber-100 bg-amber-50/60 p-3">
+                  {adminFeatures.ai_tools ? <div className="mt-4 rounded-lg border border-amber-100 bg-amber-50/60 p-3">
                     <p className="text-xs font-black text-ink">AI 模特穿搭图（选填）</p>
                     <p className="mt-1 text-[11px] text-stone-500">先上传真实正面/背面图，再生成参考穿搭图。生成图会加入多图，不会替换主图。</p>
                     <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
@@ -3429,7 +3476,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <input className="input bg-white" value={styleImageModelType} onChange={e => setStyleImageModelType(e.target.value)} placeholder="adult fashion model" />
                       <button className="rounded-lg border border-amber-200 bg-white px-4 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50" disabled={loading || styleImageSku === form.sku || !form.image_url} onClick={() => void generateStyleImageForCurrentProduct()} type="button">{styleImageSku === form.sku ? "生成中..." : "生成 AI 模特图"}</button>
                     </div>
-                  </div>
+                  </div> : null}
                   {/* Image previews */}
                   <div className="mt-4 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
                     <div>
