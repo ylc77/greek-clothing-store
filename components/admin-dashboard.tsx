@@ -240,6 +240,7 @@ type PosVoidDialogState = {
 type QuickAddState = {
   category: ProductCategory;
   subcategory: string;
+  size_system: SizeSystem;
   price: number;
   stock: number;
   sizes: string;
@@ -315,16 +316,15 @@ const csvHeaderAliases = new Map(Object.entries(csvFieldLabels).flatMap(([field,
 const tabs: { key: Tab; label: string }[] = [
   { key: "stockLookup", label: "库存快查" },
   { key: "stockOperations", label: "库存作业" },
-  { key: "pos", label: "POS 扣库存" },
+  { key: "pos", label: "POS 扫码" },
   { key: "posOrders", label: "POS 订单" },
   { key: "posDaily", label: "POS 日报" },
   { key: "inventory", label: "库存管理" },
   { key: "labels", label: "标签打印" },
   { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "suppliers", label: "供货商" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
-const primaryTabKeys: Tab[] = ["stockLookup", "stockOperations", "pos", "quickAdd", "posOrders", "posDaily", "quickSale", "dashboard", "check"];
-const managementTabKeys: Tab[] = ["inventory", "labels", "add", "images", "csv", "categories", "suppliers", "skroutz"];
-const mobileHiddenTabKeys = new Set<Tab>(["check", "labels", "add", "images", "csv", "categories", "suppliers", "skroutz"]);
+const coreTabKeys: Tab[] = ["stockLookup", "stockOperations", "pos", "quickAdd", "dashboard"];
+const advancedTabKeys: Tab[] = ["posOrders", "posDaily", "inventory", "labels", "add", "images", "csv", "categories", "suppliers", "skroutz", "quickSale", "check"];
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
 const ownerOnlyTabs = new Set<Tab>(["quickAdd", "quickSale", "add", "csv", "images", "categories", "suppliers"]);
 const tabPermissions: Partial<Record<Tab, AdminPermission>> = {
@@ -474,6 +474,7 @@ function inventoryCsvStatus(item: InventoryItem, lowStockThreshold: number) {
 const emptyQuickAdd: QuickAddState = {
   category: "men",
   subcategory: "tshirts",
+  size_system: "letter",
   price: 0,
   stock: 1,
   sizes: "S,M,L",
@@ -786,15 +787,15 @@ export function AdminDashboard() {
     const permission = tabPermissions[key];
     return permission ? hasPermission(permission) : isOwner;
   };
-  const visiblePrimaryTabKeys = primaryTabKeys.filter(canUseTab);
-  const visibleManagementTabKeys = managementTabKeys.filter(canUseTab);
+  const visibleCoreTabKeys = coreTabKeys.filter(canUseTab);
+  const visibleAdvancedTabKeys = advancedTabKeys.filter(canUseTab);
   const activeStockOperation = stockOperationOptions.find(option => option.key === stockOperationMode)!;
   useEffect(() => {
     if (!adminSession) return;
     if (canUseTab(tab)) return;
-    const nextTab = visiblePrimaryTabKeys[0] || visibleManagementTabKeys[0] || "dashboard";
+    const nextTab = visibleCoreTabKeys[0] || visibleAdvancedTabKeys[0] || "dashboard";
     setTab(nextTab);
-  }, [adminSession, adminFeatures, tab, visiblePrimaryTabKeys, visibleManagementTabKeys]);
+  }, [adminSession, adminFeatures, tab, visibleCoreTabKeys, visibleAdvancedTabKeys]);
 
   const csvSummary = useMemo(() => {
     const valid = csvRows.filter(r => validatePreviewRow(r).length === 0).length;
@@ -1742,13 +1743,21 @@ export function AdminDashboard() {
   function updateQuickAdd<K extends keyof QuickAddState>(key: K, value: QuickAddState[K]) {
     if (key === "category") {
       const nextCategory = value as ProductCategory;
+      const nextSizeSystem = inferredSizeSystem(nextCategory);
       const total = stockTotal(quickSizeStock) || Number(quickAdd.stock) || 1;
-      setQuickSizeStock(current => sizeKindForCategory(nextCategory) === sizeKindForCategory(quickAdd.category)
+      setQuickSizeStock(current => sizeKindForCategory(nextCategory) === sizeKindForCategory(quickAdd.category) && quickAdd.size_system === nextSizeSystem
         ? current
         : sizeKindForCategory(nextCategory) === "one"
           ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(total)) }
           : {});
-      setQuickAdd(current => ({ ...current, category: nextCategory, subcategory: subcategoryList[nextCategory]?.[0] || "" }));
+      setQuickAdd(current => ({ ...current, category: nextCategory, subcategory: subcategoryList[nextCategory]?.[0] || "", size_system: nextSizeSystem }));
+      return;
+    }
+    if (key === "size_system") {
+      const nextSizeSystem = value as SizeSystem;
+      const total = stockTotal(quickSizeStock) || Number(quickAdd.stock) || 1;
+      setQuickSizeStock(nextSizeSystem === "one_size" ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(total)) } : {});
+      setQuickAdd(current => ({ ...current, size_system: nextSizeSystem }));
       return;
     }
     setQuickAdd(current => ({ ...current, [key]: value }));
@@ -2068,6 +2077,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       price: Number(quickAdd.price),
       stock,
       sizes: sortSizeKeys(sizeKeys).join(","),
+      size_system: quickAdd.size_system,
       size_stock: parsedSizeStock,
       name_cn: quickAdd.name_cn.trim() || `${quickAdd.color ? `${quickAdd.color} ` : ""}${quickAdd.category} ${quickAdd.subcategory}`,
       description_cn: quickAdd.description_cn.trim() || quickAdd.notes.trim() || "请在保存后检查并补充商品描述。",
@@ -2263,16 +2273,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">{adminSession.displayName || adminSession.email || adminSession.role} · {adminSession.authType === "account" ? "员工账号" : "应急密码"}</span>
-            {isOwner ? <a className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" href="/admin/settings">店铺设置</a> : null}
-            {isOwner && adminFeatures.backup_tools ? <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { fetch("/api/admin/backup", { headers: adminAuthHeaders() }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `products-export-${new Date().toISOString().split("T")[0]}.csv`; a.click(); }).catch(() => toast("备份下载失败", "err")); }} type="button">导出 CSV</button> : null}
+            {isOwner ? <a className="hidden rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50 xl:inline-flex" href="/admin/settings">店铺设置</a> : null}
+            {isOwner && adminFeatures.backup_tools ? <button className="hidden rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50 xl:inline-flex" onClick={() => { fetch("/api/admin/backup", { headers: adminAuthHeaders() }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `products-export-${new Date().toISOString().split("T")[0]}.csv`; a.click(); }).catch(() => toast("备份下载失败", "err")); }} type="button">导出 CSV</button> : null}
             <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { setAdminSession(null); setAdminAuthToken(""); setActivePassword(""); setPassword(""); }}>退出</button>
           </div>
         </header>
 
         {/* ── Stats cards ────────────────────────────────── */}
-        <div className={`${tab === "dashboard" ? "flex" : "hidden"} scrollbar-none mb-4 gap-2 overflow-x-auto pb-1 sm:mb-6 sm:grid sm:grid-cols-6 sm:gap-3 sm:overflow-visible sm:pb-0`}>
-          {[{ label: "商品总数", v: stats.total, color: "bg-stone-500" }, { label: "已上架", v: stats.active, color: "bg-emerald-500" }, { label: "缺图片", v: stats.noImage, color: "bg-amber-400" }, { label: "库存为0", v: stats.noStock, color: "bg-rose-400" }, { label: "未分尺码", v: stats.noSizeStock, color: "bg-violet-400" }, { label: "分类数", v: stats.categories, color: "bg-sky-400" }].map(s => (
-            <div key={s.label} className="relative min-w-[108px] shrink-0 overflow-hidden rounded-2xl border border-stone-200/70 bg-white p-3 shadow-sm shadow-stone-900/5 sm:min-w-0 sm:p-4">
+        <div className={`${tab === "dashboard" ? "grid" : "hidden"} mb-4 grid-cols-2 gap-2 sm:mb-6 sm:grid-cols-4 sm:gap-3 xl:grid-cols-6`}>
+          {[{ label: "商品总数", v: stats.total, color: "bg-stone-500" }, { label: "已上架", v: stats.active, color: "bg-emerald-500" }, { label: "缺图片", v: stats.noImage, color: "bg-amber-400" }, { label: "库存为0", v: stats.noStock, color: "bg-rose-400" }, { label: "未分尺码", v: stats.noSizeStock, color: "bg-violet-400", desktopOnly: true }, { label: "分类数", v: stats.categories, color: "bg-sky-400", desktopOnly: true }].map(s => (
+            <div key={s.label} className={`relative overflow-hidden rounded-2xl border border-stone-200/70 bg-white p-3 shadow-sm shadow-stone-900/5 sm:p-4 ${s.desktopOnly ? "hidden xl:block" : "block"}`}>
               <div className={`absolute top-0 left-0 w-1 h-full ${s.color} rounded-l-full`} />
               <p className="text-2xl font-black text-ink">{s.v}</p>
               <p className="mt-0.5 text-[11px] font-bold text-stone-400">{s.label}</p>
@@ -2281,7 +2291,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         </div>
 
         {/* ── Tab bar ─────────────────────────────────────── */}
-        <nav className="mb-4 grid gap-3 sm:mb-6 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.72fr)]">
+        <nav className="mb-4 sm:mb-6">
           <div className="overflow-hidden rounded-2xl border border-stone-200/70 bg-white/95 shadow-sm shadow-stone-900/5">
             <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-3 py-2.5 sm:px-4 sm:py-3">
               <div>
@@ -2292,42 +2302,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 当前：{tabLabelByKey.get(tab) || tab}
               </span>
             </div>
-            <div className="scrollbar-none flex gap-2 overflow-x-auto p-2 sm:grid sm:grid-cols-3 lg:grid-cols-6">
-              {visiblePrimaryTabKeys.map(key => (
+            <div className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-3 lg:grid-cols-5">
+              {visibleCoreTabKeys.map(key => (
                 <button
                   key={key}
-                  className={`min-h-12 min-w-[116px] shrink-0 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-black transition sm:min-h-14 sm:min-w-0 sm:px-4 sm:py-3 ${mobileHiddenTabKeys.has(key) ? "hidden sm:flex" : "flex"} ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
-                  onClick={() => setTab(key)}
-                  type="button"
-                >
-                  {tabLabelByKey.get(key) || key}
-                </button>
-              ))}
-              {canUseTab("inventory") ? (
-                <button
-                  className={`flex min-h-12 min-w-[116px] shrink-0 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-black transition sm:hidden ${tab === "inventory" ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
-                  onClick={() => setTab("inventory")}
-                  type="button"
-                >
-                  库存管理
-                </button>
-              ) : null}
-            </div>
-          </div>
-          <div className="hidden overflow-hidden rounded-2xl border border-stone-200/70 bg-white/95 shadow-sm shadow-stone-900/5 sm:block">
-            <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-4 py-3">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Management</p>
-                <p className="mt-0.5 text-sm font-black text-ink">管理工具</p>
-              </div>
-              <span className="hidden text-xs font-bold text-stone-400 sm:inline">库存、图片、分类、Feed</span>
-            </div>
-            <p className="px-4 pt-2 text-[11px] font-bold text-stone-400 sm:hidden">手机端仅显示现场常用工具，CSV、分类、Feed、标签打印请用电脑端。</p>
-            <div className="flex gap-2 overflow-x-auto p-2 sm:grid sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-3">
-              {visibleManagementTabKeys.map(key => (
-                <button
-                  key={key}
-                  className={`min-h-12 min-w-[116px] shrink-0 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-bold transition sm:min-w-0 ${mobileHiddenTabKeys.has(key) ? "hidden sm:flex" : "flex"} ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50 hover:text-ink"}`}
+                  className={`flex min-h-12 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-black transition sm:min-h-14 sm:px-4 sm:py-3 ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
                   onClick={() => setTab(key)}
                   type="button"
                 >
@@ -2335,6 +2314,27 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </button>
               ))}
             </div>
+            <p className="border-t border-stone-100 px-3 py-2.5 text-[11px] font-bold leading-5 text-stone-400 xl:hidden">手机 / 平板精简模式：保留库存查询、库存作业、POS 扫码、拍照上新和商品编辑；报表、CSV、Feed、分类等请使用桌面端。</p>
+            {visibleAdvancedTabKeys.length > 0 ? (
+              <details className="hidden border-t border-stone-100 xl:block">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black text-ink hover:bg-stone-50">
+                  <span>更多管理工具</span>
+                  <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-500">报表、库存、图片、CSV、Feed 等 · {visibleAdvancedTabKeys.length} 项</span>
+                </summary>
+                <div className="grid grid-cols-4 gap-2 border-t border-stone-100 p-3 xl:grid-cols-6">
+                  {visibleAdvancedTabKeys.map(key => (
+                    <button
+                      key={key}
+                      className={`flex min-h-12 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-bold transition ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50 hover:text-ink"}`}
+                      onClick={() => setTab(key)}
+                      type="button"
+                    >
+                      {tabLabelByKey.get(key) || key}
+                    </button>
+                  ))}
+                </div>
+              </details>
+            ) : null}
           </div>
         </nav>
 
@@ -2641,24 +2641,40 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <Field label="一级分类"><select className="input" value={quickAdd.category} onChange={e => updateQuickAdd("category", e.target.value as ProductCategory)}>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select></Field>
                 <Field label="二级分类"><select className="input" value={quickAdd.subcategory} onChange={e => updateQuickAdd("subcategory", e.target.value)}>{subcategoryList[quickAdd.category].map(s => <option key={s} value={s}>{s}</option>)}</select></Field>
                 <Field label="价格"><input className="input" min="0" step="0.01" type="number" value={quickAdd.price} onChange={e => updateQuickAdd("price", Number(e.target.value))} /></Field>
+                <Field label="上架状态"><select className="input" value={quickAdd.is_active ? "yes" : "no"} onChange={e => updateQuickAdd("is_active", e.target.value === "yes")}><option value="yes">保存后上架</option><option value="no">先存草稿</option></select></Field>
+                <Field label="尺码体系">
+                  <select className="input" value={quickAdd.size_system} onChange={e => updateQuickAdd("size_system", e.target.value as SizeSystem)}>
+                    <option value="letter">国际字母尺码 XS–XXXL</option>
+                    <option value="eu_women_numeric">欧洲女装 EU 32–54</option>
+                    <option value="eu_men_numeric">欧洲男装 EU 42–64</option>
+                    <option value="eu_shoes">欧洲鞋码 EU 35–48</option>
+                    <option value="one_size">ONE SIZE</option>
+                    <option value="custom">自定义尺码</option>
+                  </select>
+                </Field>
                 <Field label="总库存"><div><input className="input bg-stone-50 text-stone-500 cursor-not-allowed" min="0" step="1" type="number" value={stockTotal(quickSizeStock)} readOnly /><p className="mt-1 text-[10px] text-stone-400">由尺码库存自动计算，不能手动填写</p></div></Field>
                 <div className="md:col-span-2 xl:col-span-3">
                   <label className="text-sm font-bold text-ink">尺码库存</label>
                   <div className="mt-2 rounded-2xl border border-stone-200 bg-stone-50/70 p-3">
                     <div className="mb-3 flex flex-wrap gap-2">
-                      {sizeOptionsForSystem("", quickAdd.category).map(size => (
-                        <button className="min-h-10 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-ink shadow-sm shadow-stone-900/5 hover:bg-stone-100" key={size} onClick={() => addQuickSize(size)} type="button">+ {size}</button>
+                      {sizeOptionsForSystem(quickAdd.size_system, quickAdd.category).map(size => (
+                        <button className={`min-h-10 rounded-xl border px-3 py-2 text-xs font-black shadow-sm shadow-stone-900/5 ${size in quickSizeStock ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink hover:bg-stone-100"}`} key={size} onClick={() => addQuickSize(size)} type="button">{size}</button>
                       ))}
+                      {quickAdd.size_system !== "one_size" ? <button className="min-h-10 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-black text-stone-500 hover:border-stone-400" onClick={() => { const custom = window.prompt("输入自定义尺码"); if (custom) addQuickSize(custom); }} type="button">+ 自定义</button> : null}
                     </div>
                     {Object.keys(quickSizeStock).length > 0 ? (
                       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                         {sortSizeKeys(Object.keys(quickSizeStock)).map(size => (
-                          <div className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white p-2 shadow-sm shadow-stone-900/5" key={size}>
-                            <span className="w-12 text-sm font-black text-ink">{size}</span>
-                            <button className="h-9 w-9 rounded-lg border border-stone-200 text-sm font-black hover:bg-stone-50" onClick={() => setQuickSizeQty(size, quickSizeStock[size] - 1)} type="button">-</button>
-                            <input className="h-8 w-16 rounded border border-stone-200 text-center text-base sm:text-sm" min="0" step="1" type="number" value={quickSizeStock[size]} onChange={e => setQuickSizeQty(size, Number(e.target.value))} />
-                            <button className="h-9 w-9 rounded-lg border border-stone-200 text-sm font-black hover:bg-stone-50" onClick={() => setQuickSizeQty(size, quickSizeStock[size] + 1)} type="button">+</button>
-                            {sizeKindForCategory(quickAdd.category) !== "one" ? <button className="ml-auto text-xs font-bold text-red-500" onClick={() => removeQuickSize(size)} type="button">删除</button> : null}
+                          <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5" key={size}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div><p className="text-base font-black text-ink">{size}</p><p className={`mt-0.5 text-[10px] font-black ${quickSizeStock[size] > 0 ? "text-emerald-700" : "text-stone-400"}`}>{quickSizeStock[size] > 0 ? "有货" : "售罄"}</p></div>
+                              {quickAdd.size_system !== "one_size" ? <button className="min-h-10 rounded-xl border border-red-100 bg-white px-3 text-xs font-black text-red-500" onClick={() => removeQuickSize(size)} type="button">删除</button> : null}
+                            </div>
+                            <div className="mt-3 grid grid-cols-[44px_minmax(0,1fr)_44px] gap-2">
+                              <button className="min-h-11 rounded-xl border border-stone-300 bg-white text-lg font-black text-ink" onClick={() => setQuickSizeQty(size, quickSizeStock[size] - 1)} type="button">−</button>
+                              <input aria-label={`${size} 快速上新库存`} className="min-w-0 rounded-xl border border-stone-300 bg-white px-3 text-center text-lg font-black text-ink" inputMode="numeric" min="0" step="1" type="number" value={quickSizeStock[size]} onChange={e => setQuickSizeQty(size, Number(e.target.value))} />
+                              <button className="min-h-11 rounded-xl border border-stone-300 bg-white text-lg font-black text-ink" onClick={() => setQuickSizeQty(size, quickSizeStock[size] + 1)} type="button">+</button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -2668,28 +2684,32 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     <p className="mt-2 text-xs text-stone-400">已分配库存：{stockTotal(quickSizeStock)}。保存时会自动同步总库存和 sizes。</p>
                   </div>
                 </div>
-                <Field label="颜色（选填）"><input className="input" value={quickAdd.color} onChange={e => updateQuickAdd("color", e.target.value)} placeholder="black / beige" /></Field>
-                <Field label="品牌（选填）"><input className="input" value={quickAdd.brand} onChange={e => updateQuickAdd("brand", e.target.value)} /></Field>
-                <Field label="状态"><select className="input" value={quickAdd.is_active ? "yes" : "no"} onChange={e => updateQuickAdd("is_active", e.target.value === "yes")}><option value="yes">保存后上架</option><option value="no">先存草稿</option></select></Field>
-                <Field label="中文商品名（可空）"><input className="input" value={quickAdd.name_cn} onChange={e => updateQuickAdd("name_cn", e.target.value)} placeholder="可后续 AI 补全" /></Field>
-                <Field label="备注 / 描述（可空）"><textarea className="input min-h-24" value={quickAdd.description_cn} onChange={e => { updateQuickAdd("description_cn", e.target.value); updateQuickAdd("notes", e.target.value); }} placeholder="例如：薄款、适合夏天、宽松版型" /></Field>
-                <div className="md:col-span-2 xl:col-span-3 rounded-2xl border border-violet-100 bg-violet-50/70 p-4 shadow-sm shadow-violet-950/5">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-black text-ink">AI 一键生成商品资料</p>
-                      <p className="mt-1 text-xs text-stone-500">根据分类、颜色、品牌、尺码、备注和图片文件名生成文案、材质、版型、关键词和风格标签。</p>
+                <details className="md:col-span-2 xl:col-span-3 rounded-2xl border border-stone-200 bg-white shadow-sm shadow-stone-900/5">
+                  <summary className="cursor-pointer list-none px-4 py-3 text-sm font-black text-ink hover:bg-stone-50">选填商品资料与 AI 文案 <span className="ml-2 text-xs font-bold text-stone-400">颜色、品牌、名称、描述等</span></summary>
+                  <div className="grid gap-3 border-t border-stone-100 p-4 md:grid-cols-2">
+                    <Field label="颜色（选填）"><input className="input" value={quickAdd.color} onChange={e => updateQuickAdd("color", e.target.value)} placeholder="black / beige" /></Field>
+                    <Field label="品牌（选填）"><input className="input" value={quickAdd.brand} onChange={e => updateQuickAdd("brand", e.target.value)} /></Field>
+                    <Field label="中文商品名（选填）"><input className="input" value={quickAdd.name_cn} onChange={e => updateQuickAdd("name_cn", e.target.value)} placeholder="可后续 AI 补全" /></Field>
+                    <Field label="备注 / 描述（选填）"><textarea className="input min-h-24" value={quickAdd.description_cn} onChange={e => { updateQuickAdd("description_cn", e.target.value); updateQuickAdd("notes", e.target.value); }} placeholder="例如：薄款、适合夏天、宽松版型" /></Field>
+                    <div className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4 shadow-sm shadow-violet-950/5 md:col-span-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-black text-ink">AI 一键生成商品资料</p>
+                          <p className="mt-1 text-xs text-stone-500">根据分类、颜色、品牌、尺码、备注和图片文件名生成多语言文案与导购信息。</p>
+                        </div>
+                        <button className="min-h-11 w-full rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-sm font-black text-violet-700 shadow-sm shadow-violet-950/5 hover:bg-violet-100 disabled:opacity-50 sm:w-auto sm:text-xs" disabled={aiQuickCopyLoading} onClick={() => void generateQuickProductCopy()} type="button">{aiQuickCopyLoading ? "生成中..." : "AI 生成商品资料"}</button>
+                      </div>
+                      {quickAdd.name_en || quickAdd.name_gr || quickAdd.description_en || quickAdd.description_gr || quickAdd.material || quickAdd.ai_keywords || quickAdd.style_tags ? (
+                        <div className="mt-3 grid gap-2 text-xs text-stone-600 md:grid-cols-2">
+                          <p><b>EN:</b> {quickAdd.name_en || "-"} {quickAdd.description_en ? `- ${quickAdd.description_en}` : ""}</p>
+                          <p><b>EL:</b> {quickAdd.name_gr || "-"} {quickAdd.description_gr ? `- ${quickAdd.description_gr}` : ""}</p>
+                          <p><b>材质/版型:</b> {quickAdd.material || "-"} / {quickAdd.fit_type || "regular"}</p>
+                          <p><b>关键词/标签:</b> {quickAdd.ai_keywords || "-"} {quickAdd.style_tags ? ` / ${quickAdd.style_tags}` : ""}</p>
+                        </div>
+                      ) : null}
                     </div>
-                    <button className="min-h-11 w-full rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-sm font-black text-violet-700 shadow-sm shadow-violet-950/5 hover:bg-violet-100 disabled:opacity-50 sm:w-auto sm:text-xs" disabled={aiQuickCopyLoading} onClick={() => void generateQuickProductCopy()} type="button">{aiQuickCopyLoading ? "生成中..." : "AI 生成商品资料"}</button>
                   </div>
-                  {quickAdd.name_en || quickAdd.name_gr || quickAdd.description_en || quickAdd.description_gr || quickAdd.material || quickAdd.ai_keywords || quickAdd.style_tags ? (
-                    <div className="mt-3 grid gap-2 text-xs text-stone-600 md:grid-cols-2">
-                      <p><b>EN:</b> {quickAdd.name_en || "-"} {quickAdd.description_en ? `- ${quickAdd.description_en}` : ""}</p>
-                      <p><b>EL:</b> {quickAdd.name_gr || "-"} {quickAdd.description_gr ? `- ${quickAdd.description_gr}` : ""}</p>
-                      <p><b>材质/版型:</b> {quickAdd.material || "-"} / {quickAdd.fit_type || "regular"}</p>
-                      <p><b>关键词/标签:</b> {quickAdd.ai_keywords || "-"} {quickAdd.style_tags ? ` / ${quickAdd.style_tags}` : ""}</p>
-                    </div>
-                  ) : null}
-                </div>
+                </details>
               </div>
               <div className="order-1 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm shadow-stone-900/5 lg:sticky lg:top-4 lg:order-2 lg:self-start">
                 <h3 className="text-sm font-black text-ink">商品照片</h3>
@@ -2702,7 +2722,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <label className="mt-3 block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">选择背面 / 细节图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setQuickBackFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
                 {quickBackFiles.length > 0 ? <p className="mt-2 text-xs text-stone-500">多图：{quickBackFiles.length} 张</p> : null}
                 <button className="mt-5 w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50" disabled={quickSaving || loading} type="submit">{quickSaving ? "保存中..." : "保存并上传图片"}</button>
-                <p className="mt-3 text-[11px] leading-relaxed text-stone-400">提示：不需要打印 SKU 标签。后台自动生成 SKU；实体店卖掉后用“快速售出”减库存。</p>
+                <p className="mt-3 text-[11px] leading-relaxed text-stone-400">提示：后台会自动生成 SKU；实体店售出后使用“POS 扫码”录入商品并同步库存。</p>
               </div>
             </form>
           </section>
@@ -2752,8 +2772,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">POS Checkout</p>
-                  <h2 className="mt-1 text-xl font-black text-ink">POS 扫码扣库存</h2>
-                  <p className="mt-1 text-xs text-stone-500">扫码枪输入条码后按 Enter，可快速加入待扣库存清单；本系统不连接真实支付，提交前会再次校验库存。</p>
+                  <h2 className="mt-1 text-xl font-black text-ink">POS 扫码</h2>
+                  <p className="mt-1 text-xs text-stone-500">这是门店扫码枪的主要收银录入界面：扫码商品、计算参考金额并同步库存。当前尚未对接真实 POS 机，实际收款仍需在外部收银机完成。</p>
                 </div>
                 <button
                   className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50"
@@ -3808,7 +3828,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {tab === "dashboard" ? (
           <section className="admin-panel">
             {/* Health check */}
-            <details className="mb-4 group">
+            <details className="mb-4 hidden group xl:block">
               <summary className="cursor-pointer text-sm font-black text-ink hover:text-stone-600 select-none">商用上线检查</summary>
               <div className="mt-3 grid gap-2 text-xs">
                 {(() => { const items: Array<{label:string;ok:boolean;hint:string}> = [
@@ -3826,8 +3846,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
             </details>
             {/* Search bar */}
-            <div className="mb-4 grid gap-3 md:grid-cols-5">
-              <input className="input md:col-span-2" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
+            <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <input className="input sm:col-span-2 xl:col-span-2" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
               <select className="input" value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部分类</option>{categories.map(c => <option key={c.slug} value={c.slug}>{c.slug}</option>)}</select>
               <select className="input" value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat && isProductCategory(filterCat) ? subcategoryList[filterCat].map(s => <option key={s} value={s}>{s}</option>) : null}</select>
               <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="noimg">缺图片</option><option value="badimage">图片尺寸/链接问题</option><option value="nostock">库存为0</option><option value="nosizestock">未分配尺码</option><option value="nodesc">缺描述</option><option value="demo">测试商品</option></select>
@@ -3852,13 +3872,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             ) : null}
 
             {/* Mobile product cards */}
-            <div className="grid gap-3 lg:hidden">
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:hidden">
               {filteredProducts.slice(0, Math.min(mobileProductLimit, 100)).map(p => (
                 <article className="rounded-2xl border border-stone-200/80 bg-white p-3 shadow-sm shadow-stone-900/5" key={p.id}>
                   <div className="flex gap-3">
-                    <label className="pt-1">
-                      <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} />
-                    </label>
                     <div className="h-24 w-20 shrink-0 overflow-hidden rounded-xl bg-stone-100">
                       {p.image_url ? (
                         <img alt="" className="h-full w-full object-cover" src={p.image_url} />
@@ -3879,35 +3896,31 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       </div>
                     </div>
                   </div>
-                  {isOwner ? <div className="mt-3 grid grid-cols-3 gap-2">
+                  {isOwner ? <div className="mt-3 grid grid-cols-2 gap-2">
                     <button className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-ink shadow-sm hover:bg-stone-50" onClick={() => startEdit(p)} type="button">编辑</button>
-                    <button className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-ink shadow-sm hover:bg-stone-50" onClick={() => copyProduct(p)} type="button">复制</button>
                     {p.is_active ? (
                       <button className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-black text-red-600 hover:bg-red-100" onClick={() => confirmDeleteProduct(p)} type="button">下架</button>
                     ) : (
                       <button className="rounded-xl border border-green-100 bg-green-50 px-3 py-2 text-xs font-black text-green-700 hover:bg-green-100" onClick={() => confirmRestoreProduct(p)} type="button">上架</button>
                     )}
                   </div> : null}
-                  {!p.is_active && isOwner ? (
-                    <button className="mt-2 w-full rounded-xl border border-red-100 bg-white px-3 py-2 text-xs font-bold text-red-400 hover:bg-red-50" onClick={() => void permanentDelete(p)} type="button">永久删除</button>
-                  ) : null}
                 </article>
               ))}
-              {filteredProducts.length === 0 ? <p className="py-10 text-center text-sm text-stone-400">没有匹配的商品</p> : null}
+              {filteredProducts.length === 0 ? <p className="py-10 text-center text-sm text-stone-400 md:col-span-2 lg:col-span-3">没有匹配的商品</p> : null}
               {filteredProducts.length > mobileProductLimit && mobileProductLimit < 100 ? (
                 <button
-                  className="min-h-11 rounded-xl border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm font-black text-ink transition hover:bg-stone-100"
+                  className="min-h-11 rounded-xl border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm font-black text-ink transition hover:bg-stone-100 md:col-span-2 lg:col-span-3"
                   onClick={() => setMobileProductLimit(current => Math.min(current + 12, 100))}
                   type="button"
                 >
                   显示更多商品（剩余 {Math.min(filteredProducts.length, 100) - mobileProductLimit}）
                 </button>
               ) : null}
-              {filteredProducts.length > 100 && mobileProductLimit >= 100 ? <p className="py-3 text-center text-xs text-stone-400">显示前 100 条，使用搜索筛选查看更多</p> : null}
+              {filteredProducts.length > 100 && mobileProductLimit >= 100 ? <p className="py-3 text-center text-xs text-stone-400 md:col-span-2 lg:col-span-3">显示前 100 条，使用搜索筛选查看更多</p> : null}
             </div>
 
             {/* Desktop table */}
-            <div className="hidden overflow-x-auto lg:block">
+            <div className="hidden overflow-x-auto xl:block">
               <table className="w-full text-left">
                 <thead><tr className="bg-stone-50/80 text-stone-400">
                   <th className="py-2.5 pr-3 text-xs font-bold w-8"><input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === filteredProducts.slice(0, 100).length} onChange={selectAll} /></th>
@@ -4040,6 +4053,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
         {tab === "add" ? (
           <form className="flex flex-col gap-5" onSubmit={submitProduct}>
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-bold leading-5 text-blue-800 xl:hidden">
+              手机 / 平板编辑模式只显示基础信息、尺码库存、多语言和图片上传。供货资料、AI 高级字段、欧盟追溯资料和图片 URL 请在桌面端维护。
+            </div>
             {/* Basic info card */}
             <section className="admin-panel">
               <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
@@ -4109,30 +4125,50 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               ) : null}
 
               {Object.keys(sizeStock).length > 0 ? (
-                <div className="overflow-x-auto rounded-lg border border-stone-200">
-                  <table className="w-full min-w-[840px] text-sm"><thead><tr className="bg-stone-50 text-stone-500"><th className="py-2 px-3 text-left text-xs font-bold">尺码</th><th className="py-2 px-3 text-left text-xs font-bold">库存</th><th className="py-2 px-3 text-left text-xs font-bold">供货商 SKU（选填）</th><th className="py-2 px-3 text-left text-xs font-bold">成本价 €（选填）</th><th className="py-2 px-3 text-left text-xs font-bold">补货线（选填）</th><th className="py-2 px-3 text-center text-xs font-bold w-20">状态</th><th className="py-2 px-3 text-right text-xs font-bold w-12">操作</th></tr></thead>
-                    <tbody>
-                      {sortSizeKeys(Object.keys(sizeStock)).map(sz => { const qty = sizeStock[sz]; return (
-                        <tr className="border-t border-stone-100" key={sz}>
-                          <td className="py-1.5 px-3 text-sm font-bold text-ink align-middle">{sz}</td>
-                          <td className="py-1.5 px-3 align-middle"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm text-center" min="0" step="1" type="number" value={qty} onChange={e => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, parseInt(e.target.value) || 0) }))} /></td>
-                          <td className="py-1.5 px-3 align-middle"><input className="w-36 rounded border border-stone-200 px-2 py-1 font-mono text-xs" value={variantProcurement[sz]?.supplier_sku || ""} onChange={e => setVariantProcurement(prev => ({ ...prev, [sz]: { ...(prev[sz] || { cost_price: null, reorder_level: null }), supplier_sku: e.target.value } }))} /></td>
-                          <td className="py-1.5 px-3 align-middle"><input className="w-24 rounded border border-stone-200 px-2 py-1 text-sm" min="0" step="0.01" type="number" value={variantProcurement[sz]?.cost_price ?? ""} onChange={e => setVariantProcurement(prev => ({ ...prev, [sz]: { ...(prev[sz] || { supplier_sku: "", reorder_level: null }), cost_price: e.target.value === "" ? null : Math.max(0, Number(e.target.value)) } }))} /></td>
-                          <td className="py-1.5 px-3 align-middle"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm" min="0" step="1" type="number" value={variantProcurement[sz]?.reorder_level ?? ""} onChange={e => setVariantProcurement(prev => ({ ...prev, [sz]: { ...(prev[sz] || { supplier_sku: "", cost_price: null }), reorder_level: e.target.value === "" ? null : Math.max(0, Math.trunc(Number(e.target.value))) } }))} /></td>
-                          <td className="py-1.5 px-3 text-center align-middle">{qty > 0 ? <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800 whitespace-nowrap">有货</span> : <span className="inline-block rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-400 whitespace-nowrap">售罄</span>}</td>
-                          <td className="py-1.5 px-3 text-right">{form.size_system !== "one_size" ? <button className="text-[11px] font-bold text-red-500 hover:text-red-700" onClick={() => { setSizeStock(prev => { const n = { ...prev }; delete n[sz]; return n; }); setVariantProcurement(prev => { const n = { ...prev }; delete n[sz]; return n; }); }} type="button">×</button> : null}</td>
-                        </tr>
-                      )})}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:hidden">
+                    {sortSizeKeys(Object.keys(sizeStock)).map(sz => { const qty = sizeStock[sz]; return (
+                      <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3" key={`${sz}-compact`}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-base font-black text-ink">{sz}</p>
+                            <p className={`mt-0.5 text-[10px] font-black ${qty > 0 ? "text-emerald-700" : "text-stone-400"}`}>{qty > 0 ? "有货" : "售罄"}</p>
+                          </div>
+                          {form.size_system !== "one_size" ? <button className="min-h-10 rounded-xl border border-red-100 bg-white px-3 text-xs font-black text-red-500" onClick={() => { setSizeStock(prev => { const n = { ...prev }; delete n[sz]; return n; }); setVariantProcurement(prev => { const n = { ...prev }; delete n[sz]; return n; }); }} type="button">删除</button> : null}
+                        </div>
+                        <div className="mt-3 grid grid-cols-[44px_minmax(0,1fr)_44px] gap-2">
+                          <button className="min-h-11 rounded-xl border border-stone-300 bg-white text-lg font-black text-ink" onClick={() => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, qty - 1) }))} type="button">−</button>
+                          <input aria-label={`${sz} 库存`} className="min-w-0 rounded-xl border border-stone-300 bg-white px-3 text-center text-lg font-black text-ink" inputMode="numeric" min="0" step="1" type="number" value={qty} onChange={e => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, parseInt(e.target.value) || 0) }))} />
+                          <button className="min-h-11 rounded-xl border border-stone-300 bg-white text-lg font-black text-ink" onClick={() => setSizeStock(prev => ({ ...prev, [sz]: qty + 1 }))} type="button">+</button>
+                        </div>
+                      </div>
+                    )})}
+                  </div>
+                  <div className="hidden overflow-x-auto rounded-lg border border-stone-200 xl:block">
+                    <table className="w-full min-w-[840px] text-sm"><thead><tr className="bg-stone-50 text-stone-500"><th className="py-2 px-3 text-left text-xs font-bold">尺码</th><th className="py-2 px-3 text-left text-xs font-bold">库存</th><th className="py-2 px-3 text-left text-xs font-bold">供货商 SKU（选填）</th><th className="py-2 px-3 text-left text-xs font-bold">成本价 €（选填）</th><th className="py-2 px-3 text-left text-xs font-bold">补货线（选填）</th><th className="py-2 px-3 text-center text-xs font-bold w-20">状态</th><th className="py-2 px-3 text-right text-xs font-bold w-12">操作</th></tr></thead>
+                      <tbody>
+                        {sortSizeKeys(Object.keys(sizeStock)).map(sz => { const qty = sizeStock[sz]; return (
+                          <tr className="border-t border-stone-100" key={sz}>
+                            <td className="py-1.5 px-3 text-sm font-bold text-ink align-middle">{sz}</td>
+                            <td className="py-1.5 px-3 align-middle"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm text-center" min="0" step="1" type="number" value={qty} onChange={e => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, parseInt(e.target.value) || 0) }))} /></td>
+                            <td className="py-1.5 px-3 align-middle"><input className="w-36 rounded border border-stone-200 px-2 py-1 font-mono text-xs" value={variantProcurement[sz]?.supplier_sku || ""} onChange={e => setVariantProcurement(prev => ({ ...prev, [sz]: { ...(prev[sz] || { cost_price: null, reorder_level: null }), supplier_sku: e.target.value } }))} /></td>
+                            <td className="py-1.5 px-3 align-middle"><input className="w-24 rounded border border-stone-200 px-2 py-1 text-sm" min="0" step="0.01" type="number" value={variantProcurement[sz]?.cost_price ?? ""} onChange={e => setVariantProcurement(prev => ({ ...prev, [sz]: { ...(prev[sz] || { supplier_sku: "", reorder_level: null }), cost_price: e.target.value === "" ? null : Math.max(0, Number(e.target.value)) } }))} /></td>
+                            <td className="py-1.5 px-3 align-middle"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm" min="0" step="1" type="number" value={variantProcurement[sz]?.reorder_level ?? ""} onChange={e => setVariantProcurement(prev => ({ ...prev, [sz]: { ...(prev[sz] || { supplier_sku: "", cost_price: null }), reorder_level: e.target.value === "" ? null : Math.max(0, Math.trunc(Number(e.target.value))) } }))} /></td>
+                            <td className="py-1.5 px-3 text-center align-middle">{qty > 0 ? <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800 whitespace-nowrap">有货</span> : <span className="inline-block rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-400 whitespace-nowrap">售罄</span>}</td>
+                            <td className="py-1.5 px-3 text-right">{form.size_system !== "one_size" ? <button className="text-[11px] font-bold text-red-500 hover:text-red-700" onClick={() => { setSizeStock(prev => { const n = { ...prev }; delete n[sz]; return n; }); setVariantProcurement(prev => { const n = { ...prev }; delete n[sz]; return n; }); }} type="button">×</button> : null}</td>
+                          </tr>
+                        )})}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               ) : <p className="text-xs text-stone-400">请选择尺码并填写库存。库存为 0 的尺码前台显示为售罄。</p>}
               {Object.keys(sizeStock).length > 0 ? <p className="mt-2 text-xs text-stone-500">总库存（所有尺码合计）：{Object.values(sizeStock).reduce((a,b)=>a+b,0)}，保存时自动同步到基础信息的库存和 sizes 字段。</p> : null}
             </section>
 
-            <section className="admin-panel">
-              <h2 className="mb-1 text-base font-black text-ink">供货与进货资料（全部选填）</h2>
-              <p className="mb-4 text-xs text-stone-500">没有供货商 SKU 或成本价可以留空；这些资料仅在后台使用，不会显示给顾客或发送到 Skroutz。</p>
+            <details className="admin-panel hidden xl:block">
+              <summary className="cursor-pointer list-none text-base font-black text-ink">供货与进货资料（全部选填） <span className="ml-2 text-xs font-bold text-stone-400">点击展开</span></summary>
+              <p className="mb-4 mt-2 text-xs text-stone-500">没有供货商 SKU 或成本价可以留空；这些资料仅在后台使用，不会显示给顾客或发送到 Skroutz。</p>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                 <Field label="主要供货商">
                   <select className="input" value={form.supplier_id} onChange={e => updateField("supplier_id", e.target.value)}>
@@ -4143,7 +4179,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <Field label="供货商款号"><input className="input" value={form.supplier_style_code} onChange={e => updateField("supplier_style_code", e.target.value)} placeholder="例如 supplier style / model code" /></Field>
                 <div className="flex items-end"><button className="admin-button-secondary w-full" onClick={() => setTab("suppliers")} type="button">管理供货商</button></div>
               </div>
-            </section>
+            </details>
 
             {/* i18n card */}
             <section className="admin-panel">
@@ -4161,9 +4197,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </section>
 
             {/* AI 导购信息 card */}
-            <section className="admin-panel">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-black text-ink">AI 导购信息</h2>
+            <details className="admin-panel hidden xl:block">
+              <summary className="cursor-pointer list-none text-base font-black text-ink">AI 导购信息（选填） <span className="ml-2 text-xs font-bold text-stone-400">点击展开</span></summary>
+              <div className="mb-4 mt-3 flex justify-end">
                 {adminFeatures.ai_tools ? <button className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiMetaLoading || !form.name_cn.trim() && !form.name_en.trim()} onClick={() => void generateAiMeta()} type="button">{aiMetaLoading ? "生成中..." : "自动生成 AI 导购信息"}</button> : null}
               </div>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
@@ -4200,11 +4236,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   </Field>
                 )}
               </div>
-            </section>
+            </details>
 
-            <section className="admin-panel">
-              <h2 className="mb-1 text-base font-black text-ink">欧盟服装与追溯资料（全部选填）</h2>
-              <p className="mb-4 text-xs text-stone-500">只填写吊牌、水洗标或供货商明确提供的资料。没有可靠信息时留空，不影响普通网站上架。</p>
+            <details className="admin-panel hidden xl:block">
+              <summary className="cursor-pointer list-none text-base font-black text-ink">欧盟服装与追溯资料（全部选填） <span className="ml-2 text-xs font-bold text-stone-400">点击展开</span></summary>
+              <p className="mb-4 mt-2 text-xs text-stone-500">只填写吊牌、水洗标或供货商明确提供的资料。没有可靠信息时留空，不影响普通网站上架。</p>
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="纤维成分（希腊语）"><textarea className="input min-h-20" value={form.fiber_composition_gr} onChange={e => updateField("fiber_composition_gr", e.target.value)} placeholder="例如：100% Βαμβάκι" /></Field>
                 <Field label="纤维成分（英语）"><textarea className="input min-h-20" value={form.fiber_composition_en} onChange={e => updateField("fiber_composition_en", e.target.value)} placeholder="例如：100% Cotton" /></Field>
@@ -4217,11 +4253,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <Field label="安全说明（希腊语）"><textarea className="input min-h-20" value={form.product_safety_notes_gr} onChange={e => updateField("product_safety_notes_gr", e.target.value)} /></Field>
                 <Field label="安全说明（英语）"><textarea className="input min-h-20" value={form.product_safety_notes_en} onChange={e => updateField("product_safety_notes_en", e.target.value)} /></Field>
               </div>
-            </section>
+            </details>
 
             {/* Image & links card */}
             <section className="admin-panel">
-              <h2 className="mb-4 text-base font-black text-ink">图片与链接</h2>
+              <h2 className="mb-4 text-base font-black text-ink"><span className="xl:hidden">商品图片</span><span className="hidden xl:inline">图片与链接</span></h2>
 
               {/* Inline upload — only when editing */}
               {editingId ? (
@@ -4239,7 +4275,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" disabled={loading} multiple onChange={e => { void uploadImages(e.target.files, { sku: form.sku, mode: "gallery" }); e.currentTarget.value = ""; }} type="file" />
                     </label>
                   </div>
-                  {adminFeatures.ai_tools ? <div className="mt-4 rounded-lg border border-amber-100 bg-amber-50/60 p-3">
+                  {adminFeatures.ai_tools ? <div className="mt-4 hidden rounded-lg border border-amber-100 bg-amber-50/60 p-3 xl:block">
                     <p className="text-xs font-black text-ink">AI 模特穿搭图（选填）</p>
                     <p className="mt-1 text-[11px] text-stone-500">先上传真实正面/背面图，再生成参考穿搭图。生成图会加入多图，不会替换主图。</p>
                     <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
@@ -4274,23 +4310,26 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
               )}
 
-              {/* URL fields */}
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                <Field label="主图 URL"><input className="input" data-admin-field="image_url" value={form.image_url} onChange={e => updateField("image_url", e.target.value)} /></Field>
-                <Field label="Skroutz URL"><input className="input" placeholder="https://www.skroutz.gr/..." value={form.skroutz_url} onChange={e => updateField("skroutz_url", e.target.value)} /></Field>
-                <Field label="品牌（可选）"><input className="input" value={form.brand} onChange={e => updateField("brand", e.target.value)} placeholder="如无可留空" /></Field>
-                <Field label="内部条码（可选）"><input className="input" value={form.barcode} onChange={e => updateField("barcode", e.target.value)} placeholder="门店扫码使用，不自动当作 EAN" /></Field>
-                <Field label="真实 EAN（Skroutz 选填）"><input className="input" inputMode="numeric" value={form.ean} onChange={e => updateField("ean", e.target.value)} placeholder="商品真实 EAN，没有可留空" /></Field>
-                <Field label="制造商 MPN（Skroutz 选填）"><input className="input" value={form.mpn} onChange={e => updateField("mpn", e.target.value)} placeholder="没有可留空；缺失时不进入 Feed" /></Field>
-                <Field label="VAT"><input className="input" min="0" step="0.01" type="number" value={form.vat} onChange={e => updateField("vat", Number(e.target.value))} /></Field>
-                <Field label="颜色（选填）"><input className="input" value={form.color} onChange={e => updateField("color", e.target.value)} placeholder="black / red / blue，可留空" /></Field>
-              </div>
-              <div className="mt-3"><Field label="多图 URL（一行一个，可用逗号分隔）"><textarea className="input min-h-24" value={form.image_urls} onChange={e => updateField("image_urls", e.target.value)} /></Field></div>
+              {/* Optional identifiers and URL fields */}
+              <details className="hidden rounded-2xl border border-stone-200 bg-white xl:block">
+                <summary className="cursor-pointer list-none px-4 py-3 text-sm font-black text-ink hover:bg-stone-50">链接、条码与商品标识（选填） <span className="ml-2 text-xs font-bold text-stone-400">点击展开</span></summary>
+                <div className="grid gap-3 border-t border-stone-100 p-4 md:grid-cols-2 lg:grid-cols-4">
+                  <Field label="主图 URL"><input className="input" data-admin-field="image_url" value={form.image_url} onChange={e => updateField("image_url", e.target.value)} /></Field>
+                  <Field label="Skroutz URL"><input className="input" placeholder="https://www.skroutz.gr/..." value={form.skroutz_url} onChange={e => updateField("skroutz_url", e.target.value)} /></Field>
+                  <Field label="品牌（可选）"><input className="input" value={form.brand} onChange={e => updateField("brand", e.target.value)} placeholder="如无可留空" /></Field>
+                  <Field label="内部条码（可选）"><input className="input" value={form.barcode} onChange={e => updateField("barcode", e.target.value)} placeholder="门店扫码使用，不自动当作 EAN" /></Field>
+                  <Field label="真实 EAN（Skroutz 选填）"><input className="input" inputMode="numeric" value={form.ean} onChange={e => updateField("ean", e.target.value)} placeholder="商品真实 EAN，没有可留空" /></Field>
+                  <Field label="制造商 MPN（Skroutz 选填）"><input className="input" value={form.mpn} onChange={e => updateField("mpn", e.target.value)} placeholder="没有可留空；缺失时不进入 Feed" /></Field>
+                  <Field label="VAT"><input className="input" min="0" step="0.01" type="number" value={form.vat} onChange={e => updateField("vat", Number(e.target.value))} /></Field>
+                  <Field label="颜色（选填）"><input className="input" value={form.color} onChange={e => updateField("color", e.target.value)} placeholder="black / red / blue，可留空" /></Field>
+                  <div className="md:col-span-2 lg:col-span-4"><Field label="多图 URL（一行一个，可用逗号分隔）"><textarea className="input min-h-24" value={form.image_urls} onChange={e => updateField("image_urls", e.target.value)} /></Field></div>
+                </div>
+              </details>
             </section>
 
             {/* Save buttons — sticky at bottom */}
             <div className="admin-sticky-actions">
-              <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:gap-3">
+              <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:gap-3">
                 <button className="admin-button-primary w-full sm:w-auto" disabled={loading} type="submit">{editingId ? "保存修改" : "新增商品"}</button>
                 {editingId ? <button className="admin-button-secondary w-full sm:w-auto" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setVariantProcurement({}); setTab("dashboard"); }} type="button">取消编辑</button> : null}
               </div>
