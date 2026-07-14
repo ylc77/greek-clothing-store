@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { adminActorFromContext, adminHasPermission, getAdminAuthContextFromRequest } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import { getMainInventoryLocation, syncLegacyStockFromErp } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -69,12 +69,24 @@ function usePosRpc() {
   return process.env.USE_POS_RPC === "true";
 }
 
+function posRpcRequiredResponse() {
+  return NextResponse.json(
+    {
+      error: "POS transactional RPC is required. Set USE_POS_RPC=true and deploy the POS RPC migrations before voiding an order.",
+      code: "POS_RPC_REQUIRED",
+      requiresConfiguration: true,
+    },
+    { status: 503 },
+  );
+}
+
 function voidErrorStatus(message: string) {
   const normalized = message.toLowerCase();
+  if (normalized.includes("pos_void_reconciliation_required")) return 409;
   if (normalized.includes("not found")) return 404;
   if (normalized.includes("refunded") || normalized.includes("only completed")) return 409;
   if (normalized.includes("required") || normalized.includes("at least")) return 400;
-  return 500;
+  return 503;
 }
 
 function logVoidError(context: string, error: unknown, extra?: Record<string, unknown>) {
@@ -116,7 +128,8 @@ async function markOrderVoided(supabase: any, orderId: string) {
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
-  if (!(await adminRequestHasPermissionAsync(request, "pos:void"))) return unauthorized();
+  const authContext = await getAdminAuthContextFromRequest(request);
+  if (!adminHasPermission(authContext, "pos:void")) return unauthorized();
   if (!(await isFeatureEnabled("pos_void"))) return featureDisabledResponse("pos_void");
 
   const supabase = getSupabaseAdminClient();
@@ -140,20 +153,37 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (!clientRequestId) {
     return NextResponse.json({ error: "clientRequestId is required." }, { status: 400 });
   }
+  const posRpcEnabled = usePosRpc();
+  if (!posRpcEnabled) return posRpcRequiredResponse();
+  const actor = adminActorFromContext(authContext!);
 
   try {
-    if (usePosRpc()) {
+    if (posRpcEnabled) {
       const { data, error } = await (supabase as any).rpc("pos_void_rpc", {
         p_order_id: orderId,
         p_client_request_id: clientRequestId,
         p_reason: reason,
-        p_created_by: "admin",
+        p_created_by: actor,
       });
 
       if (error) {
         logVoidError("RPC void failed", error, { orderId, clientRequestId });
         const message = String(error.message || "Failed to void POS order.");
-        return NextResponse.json({ error: message }, { status: voidErrorStatus(message) });
+        const status = voidErrorStatus(message);
+        const reconciliation = message.toLowerCase().includes("pos_void_reconciliation_required");
+        return NextResponse.json(
+          {
+            error: reconciliation ? message.replace(/^POS_VOID_RECONCILIATION_REQUIRED:\s*/i, "") : message,
+            code: reconciliation
+              ? "POS_VOID_RECONCILIATION_REQUIRED"
+              : status === 503
+                ? "POS_RPC_UNAVAILABLE"
+                : undefined,
+            requiresManualReconciliation: reconciliation,
+            requiresConfiguration: status === 503,
+          },
+          { status },
+        );
       }
 
       const result = data || {};
@@ -168,8 +198,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         alreadyProcessed: result.already_processed === true,
         message:
           result.already_processed === true
-            ? "该订单已作废。"
-            : "订单已作废，库存已加回。",
+            ? "该订单已完整作废，库存不会重复加回。"
+            : "订单已作废，缺少的库存恢复已在同一事务内补齐。",
         order: result.order,
         items: result.items || [],
         payments: result.payments || [],
@@ -177,6 +207,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       });
     }
 
+    // Historical audit reference only: the configuration guard and RPC branch
+    // above cover every runtime path. This JS multi-write path cannot execute.
     const { data: order, error: orderError } = await (supabase as any)
       .from("sales_orders")
       .select("id, order_number, status, payment_status, total, currency, voided_at")
