@@ -7,6 +7,9 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test:pos-operation-ids": "node --experimental-strip-types --test tests/pos-operation-id.test.ts",
+    "test:pos-integration": "node scripts/pos-integration-test.mjs",
+    "test:pos": "npm run test:pos-operation-ids && npm run test:pos-integration",
     "check:site": "node scripts/site-smoke-check.js",
     "check:skroutz": "node scripts/site-smoke-check.js --strict-feed"
   },
