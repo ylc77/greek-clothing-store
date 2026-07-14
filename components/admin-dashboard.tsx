@@ -68,6 +68,8 @@ type LabelProductGroup = {
   productId: number;
   productName: string;
   productSku: string;
+  category: string;
+  subcategory: string;
   items: InventoryItem[];
 };
 type LabelStockFilter = "all" | "in_stock" | "out_of_stock";
@@ -343,6 +345,7 @@ const allTabKeys = tabs.map(item => item.key);
 const adminCommonTabsStorageKey = "clothing-admin-common-tabs-v1";
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
 const ownerOnlyTabs = new Set<Tab>(["quickAdd", "quickSale", "add", "csv", "images", "categories", "suppliers"]);
+const desktopOnlyTabs = new Set<Tab>(["pos"]);
 const tabPermissions: Partial<Record<Tab, AdminPermission>> = {
   dashboard: "products:read",
   check: "products:read",
@@ -755,6 +758,8 @@ export function AdminDashboard() {
   const [movementLimit, setMovementLimit] = useState(50);
   const [adjustInventory, setAdjustInventory] = useState<InventoryAdjustState>({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" });
   const [labelSearch, setLabelSearch] = useState("");
+  const [labelCategory, setLabelCategory] = useState("");
+  const [labelSubcategory, setLabelSubcategory] = useState("");
   const [labelProductId, setLabelProductId] = useState("");
   const [labelSizeFilter, setLabelSizeFilter] = useState("");
   const [labelStockFilter, setLabelStockFilter] = useState<LabelStockFilter>("all");
@@ -765,6 +770,7 @@ export function AdminDashboard() {
   const [labelGenerating, setLabelGenerating] = useState(false);
   const [labelMessage, setLabelMessage] = useState("");
   const [labelPreviewItems, setLabelPreviewItems] = useState<PrintableVariantLabel[] | null>(null);
+  const labelVariantPanelRef = useRef<HTMLDivElement | null>(null);
   const posSearchInputRef = useRef<HTMLInputElement | null>(null);
   const [posQuery, setPosQuery] = useState("");
   const [posResults, setPosResults] = useState<PosSearchItem[]>([]);
@@ -897,6 +903,20 @@ export function AdminDashboard() {
     const nextTab = visibleCommonTabKeys[0] || visibleAdvancedTabKeys[0] || "dashboard";
     setTab(nextTab);
   }, [adminSession, adminFeatures, tab, visibleCommonTabKeys, visibleAdvancedTabKeys]);
+  useEffect(() => {
+    if (tab !== "pos") return;
+    const compactViewport = window.matchMedia("(max-width: 1279px)");
+    const leaveDesktopOnlyPos = () => {
+      if (!compactViewport.matches) return;
+      const nextTab = visibleCommonTabKeys.find(key => !desktopOnlyTabs.has(key))
+        || visibleAdvancedTabKeys.find(key => !desktopOnlyTabs.has(key))
+        || "dashboard";
+      setTab(nextTab);
+    };
+    leaveDesktopOnlyPos();
+    compactViewport.addEventListener("change", leaveDesktopOnlyPos);
+    return () => compactViewport.removeEventListener("change", leaveDesktopOnlyPos);
+  }, [tab, visibleCommonTabKeys, visibleAdvancedTabKeys]);
 
   const csvSummary = useMemo(() => {
     const valid = csvRows.filter(r => validatePreviewRow(r).length === 0).length;
@@ -962,7 +982,7 @@ export function AdminDashboard() {
 
   const inventorySummary = useMemo(() => {
     const threshold = Math.max(0, Math.trunc(lowStockThreshold) || 0);
-    return inventoryItems.reduce((summary, item) => {
+    return filteredInventoryItems.reduce((summary, item) => {
       const status = inventoryStatusFor(item, threshold).key;
       summary.totalVariants += 1;
       summary.totalOnHand += item.quantity_on_hand;
@@ -973,7 +993,7 @@ export function AdminDashboard() {
       if (status === "mismatch") summary.mismatch += 1;
       return summary;
     }, { totalVariants: 0, totalOnHand: 0, totalAvailable: 0, outOfStock: 0, lowStock: 0, inactive: 0, mismatch: 0 });
-  }, [inventoryItems, lowStockThreshold]);
+  }, [filteredInventoryItems, lowStockThreshold]);
 
   const stockLookupGroups = useMemo(() => {
     const groups = new Map<number, StockLookupGroup>();
@@ -1012,10 +1032,13 @@ export function AdminDashboard() {
         existing.items.push(item);
         continue;
       }
+      const product = products.find(candidate => Number(candidate.id) === item.product_id);
       groups.set(item.product_id, {
         productId: item.product_id,
         productName: item.product_name || item.product_sku,
         productSku: item.product_sku,
+        category: product?.category || "",
+        subcategory: product?.subcategory || "",
         items: [item],
       });
     }
@@ -1029,17 +1052,19 @@ export function AdminDashboard() {
         return group;
       })
       .sort((left, right) => left.productName.localeCompare(right.productName, "zh-CN") || left.productSku.localeCompare(right.productSku));
-  }, [inventoryItems]);
+  }, [inventoryItems, products]);
 
   const labelProductOptions = useMemo(() => {
     const query = labelSearch.trim().toLowerCase();
-    if (!query) return labelProductGroups;
     return labelProductGroups.filter(group => {
+      if (labelCategory && group.category !== labelCategory) return false;
+      if (labelSubcategory && group.subcategory !== labelSubcategory) return false;
+      if (!query) return true;
       if (`${group.productName} ${group.productSku}`.toLowerCase().includes(query)) return true;
       return group.items.some(item => [item.variant_sku, item.barcode, item.supplier_sku, item.size, item.color]
         .some(value => String(value || "").toLowerCase().includes(query)));
     });
-  }, [labelProductGroups, labelSearch]);
+  }, [labelProductGroups, labelSearch, labelCategory, labelSubcategory]);
 
   const selectedLabelProduct = useMemo(() => {
     return labelProductGroups.find(group => String(group.productId) === labelProductId) || null;
@@ -1784,6 +1809,7 @@ export function AdminDashboard() {
     setLabelProductId(productId);
     setLabelSizeFilter("");
     setLabelMessage("");
+    if (productId) window.setTimeout(() => labelVariantPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
   function locateLabelProduct() {
     const query = labelSearch.trim().toLowerCase();
@@ -1795,15 +1821,20 @@ export function AdminDashboard() {
     const exactVariant = inventoryItems.find(item => [item.variant_sku, item.barcode, item.supplier_sku]
       .some(value => String(value || "").trim().toLowerCase() === query));
     if (exactVariant) {
+      setLabelCategory("");
+      setLabelSubcategory("");
       setLabelProductId(String(exactVariant.product_id));
       setLabelSizeFilter(exactVariant.size || "ONE SIZE");
       setLabelMessage(`已定位 ${exactVariant.product_name || exactVariant.product_sku} · ${exactVariant.size || "ONE SIZE"}`);
+      window.setTimeout(() => labelVariantPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
       return;
     }
 
     const exactProduct = labelProductGroups.find(group => [group.productSku, group.productName]
       .some(value => value.trim().toLowerCase() === query));
     if (exactProduct) {
+      setLabelCategory("");
+      setLabelSubcategory("");
       chooseLabelProduct(String(exactProduct.productId));
       return;
     }
@@ -1816,7 +1847,7 @@ export function AdminDashboard() {
       setLabelMessage("没有找到匹配的商品，请检查名称、SKU 或条码。");
       return;
     }
-    setLabelMessage(`找到 ${labelProductOptions.length} 件匹配商品，请在商品选择器中选择。`);
+    setLabelMessage(`找到 ${labelProductOptions.length} 件匹配商品，请在下方商品列表中选择。`);
   }
   function labelFromInventoryItem(item: InventoryItem): PrintableVariantLabel {
     return {
@@ -2540,7 +2571,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <button
                   data-admin-tab={key}
                   key={key}
-                  className={`flex min-h-12 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-black transition sm:min-h-14 sm:px-4 sm:py-3 ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
+                  className={`${desktopOnlyTabs.has(key) ? "hidden xl:flex" : "flex"} min-h-12 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-black transition sm:min-h-14 sm:px-4 sm:py-3 ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
                   onClick={() => { setTab(key); setCustomizingCommonTabs(false); }}
                   type="button"
                 >
@@ -2559,7 +2590,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                   {visibleCommonTabKeys.map((key, index) => (
-                    <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5" key={`${key}-custom`}>
+                    <div className={`${desktopOnlyTabs.has(key) ? "hidden xl:block" : "block"} rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5`} key={`${key}-custom`}>
                       <p className="text-sm font-black text-ink">{tabLabelByKey.get(key) || key}</p>
                       <div className="mt-3 grid grid-cols-3 gap-1.5">
                         <button aria-label={`将${tabLabelByKey.get(key) || key}向前移动`} className="min-h-9 rounded-lg border border-stone-200 text-sm font-black text-stone-600 disabled:opacity-30" disabled={index === 0} onClick={() => moveCommonTab(key, -1)} type="button">←</button>
@@ -2574,14 +2605,14 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     <p className="text-xs font-black text-stone-500">可加入的管理工具</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {visibleAdvancedTabKeys.map(key => (
-                        <button className="min-h-10 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-600 hover:border-stone-400 hover:text-ink" key={`${key}-available`} onClick={() => addCommonTab(key)} type="button">＋ {tabLabelByKey.get(key) || key}</button>
+                        <button className={`${desktopOnlyTabs.has(key) ? "hidden xl:inline-flex" : "inline-flex"} min-h-10 items-center rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-600 hover:border-stone-400 hover:text-ink`} key={`${key}-available`} onClick={() => addCommonTab(key)} type="button">＋ {tabLabelByKey.get(key) || key}</button>
                       ))}
                     </div>
                   </div>
                 ) : null}
               </div>
             ) : null}
-            <p className="border-t border-stone-100 px-3 py-2.5 text-[11px] font-bold leading-5 text-stone-400 xl:hidden">手机 / 平板显示你选择的常用操作；需要其他功能时点击“自定义”加入常用。</p>
+            <p className="border-t border-stone-100 px-3 py-2.5 text-[11px] font-bold leading-5 text-stone-400 xl:hidden">手机 / 平板显示你选择的常用操作；POS 扫码仅在桌面端显示。</p>
             {visibleAdvancedTabKeys.length > 0 ? (
               <details className="hidden border-t border-stone-100 xl:block">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black text-ink hover:bg-stone-50">
@@ -3730,11 +3761,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </div>
 
             <div className="admin-panel">
-              <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
-                建议先用测试 SKU 验证库存调整流程，确认流水、对账和前台库存都正常后，再处理真实商品。
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-stone-400">Inventory Overview</p>
+                  <h3 className="mt-1 text-lg font-black text-ink">库存总览</h3>
+                  <p className="mt-1 text-xs text-stone-500">搜索、筛选并调整具体尺码库存；每次调整都会写入 ERP 流水并同步旧库存字段。</p>
+                </div>
+                <span className="w-fit rounded-full bg-stone-100 px-3 py-1.5 text-xs font-black text-stone-600">当前结果 {filteredInventoryItems.length} 个规格</span>
               </div>
-              <p className="mb-2 text-xs font-black uppercase tracking-[0.16em] text-stone-400">当前筛选结果统计</p>
-              <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
+
+              <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7" data-inventory-summary>
                 {[
                   { label: "Variant 总数", value: inventorySummary.totalVariants, tone: "text-ink" },
                   { label: "总库存", value: inventorySummary.totalOnHand, tone: "text-ink" },
@@ -3750,68 +3786,93 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   </div>
                 ))}
               </div>
-              <div className="mb-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_120px_150px_150px_150px_auto_auto_auto]">
-                <input className="input" placeholder="搜索商品 / SKU / barcode / 供货商 SKU / 供货商" value={inventoryQ} onChange={e => setInventoryQ(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
-                <input className="input" placeholder="尺码，如 S / 38" value={inventorySize} onChange={e => setInventorySize(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
-                <select className="input" value={inventoryStatus} onChange={e => setInventoryStatus(e.target.value as InventoryStatusFilter)}><option value="all">全部状态</option><option value="normal">正常</option><option value="low_stock">低库存</option><option value="out_of_stock">缺货</option><option value="inactive">停用</option><option value="mismatch">对账异常</option></select>
-                <select className="input" value={inventorySort} onChange={e => setInventorySort(e.target.value as InventorySort)}><option value="stock_asc">库存从低到高</option><option value="stock_desc">库存从高到低</option><option value="sku">SKU</option></select>
-                <select className="input" value={lowStockThreshold} onChange={e => setLowStockThreshold(Math.max(1, Math.trunc(Number(e.target.value) || 3)))}><option value={1}>低库存 ≤ 1</option><option value={2}>低库存 ≤ 2</option><option value={3}>低库存 ≤ 3</option><option value={5}>低库存 ≤ 5</option><option value={10}>低库存 ≤ 10</option></select>
-                <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={inventoryLoading} onClick={() => void loadInventoryData()} type="button">搜索</button>
-                <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50" disabled={filteredInventoryItems.length === 0} onClick={downloadInventoryCsv} type="button">导出库存 CSV</button>
+
+              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">
+                建议先用测试 SKU 验证库存调整流程，确认流水、对账和前台库存都正常后，再处理真实商品。
               </div>
-              <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <h3 className="text-base font-black text-ink">库存总览</h3>
-                  <p className="text-xs text-stone-500">当前筛选结果 {filteredInventoryItems.length} 个 variant。上方统计只代表当前筛选结果，不是全库统计。调整库存会写 ERP 流水，并同步回旧库存字段。</p>
+
+              <div className="mb-5 rounded-2xl border border-stone-200 bg-stone-50/70 p-4" data-inventory-filter-panel>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
+                  <label className="block xl:col-span-4">
+                    <span className="mb-1.5 block text-xs font-black text-stone-600">搜索商品或编码</span>
+                    <input className="input" data-inventory-search placeholder="商品名 / Product SKU / Variant SKU / barcode / 供货商" value={inventoryQ} onChange={e => setInventoryQ(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
+                  </label>
+                  <label className="block xl:col-span-2">
+                    <span className="mb-1.5 block text-xs font-black text-stone-600">尺码</span>
+                    <input className="input" placeholder="如 S / EU 38" value={inventorySize} onChange={e => setInventorySize(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
+                  </label>
+                  <label className="block xl:col-span-2">
+                    <span className="mb-1.5 block text-xs font-black text-stone-600">库存状态</span>
+                    <select className="input" data-inventory-status value={inventoryStatus} onChange={e => setInventoryStatus(e.target.value as InventoryStatusFilter)}><option value="all">全部状态</option><option value="normal">正常</option><option value="low_stock">低库存</option><option value="out_of_stock">缺货</option><option value="inactive">停用</option><option value="mismatch">对账异常</option></select>
+                  </label>
+                  <label className="block xl:col-span-2">
+                    <span className="mb-1.5 block text-xs font-black text-stone-600">排序</span>
+                    <select className="input" value={inventorySort} onChange={e => setInventorySort(e.target.value as InventorySort)}><option value="stock_asc">库存从低到高</option><option value="stock_desc">库存从高到低</option><option value="sku">按 SKU</option></select>
+                  </label>
+                  <label className="block xl:col-span-2">
+                    <span className="mb-1.5 block text-xs font-black text-stone-600">低库存标准</span>
+                    <select className="input" value={lowStockThreshold} onChange={e => setLowStockThreshold(Math.max(1, Math.trunc(Number(e.target.value) || 3)))}><option value={1}>可用库存 ≤ 1</option><option value={2}>可用库存 ≤ 2</option><option value={3}>可用库存 ≤ 3</option><option value={5}>可用库存 ≤ 5</option><option value={10}>可用库存 ≤ 10</option></select>
+                  </label>
                 </div>
-                {inventoryLoading ? <p className="text-xs font-bold text-stone-400">加载中...</p> : null}
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  <button className="min-h-11 rounded-xl bg-ink px-5 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={inventoryLoading} onClick={() => void loadInventoryData()} type="button">应用筛选</button>
+                  <button className="min-h-11 rounded-xl border border-stone-300 bg-white px-5 py-2.5 text-sm font-black text-ink hover:bg-stone-50" disabled={filteredInventoryItems.length === 0} onClick={downloadInventoryCsv} type="button">导出当前结果</button>
+                </div>
               </div>
+
+              {inventoryLoading ? <p className="mb-3 text-xs font-bold text-stone-400">正在加载库存...</p> : null}
               {filteredInventoryItems.length === 0 && !inventoryLoading ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">暂无库存数据</p> : null}
-              <div className="overflow-x-auto rounded-2xl border border-stone-200">
-                <table className="min-w-[1420px] w-full text-left text-sm">
-                  <thead className="bg-stone-50 text-stone-500">
+
+              <div className="hidden overflow-x-auto rounded-2xl border border-stone-200 xl:block" data-inventory-desktop-table>
+                <table className="min-w-[1180px] w-full table-fixed text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-stone-50 text-stone-500">
                     <tr>
-                      <th className="px-3 py-2 text-xs font-black">商品</th>
-                      <th className="px-3 py-2 text-xs font-black">Product SKU</th>
-                      <th className="px-3 py-2 text-xs font-black">Variant SKU</th>
-                      <th className="px-3 py-2 text-xs font-black">尺码</th>
-                      <th className="px-3 py-2 text-xs font-black">颜色</th>
-                      <th className="px-3 py-2 text-xs font-black">Barcode</th>
-                      <th className="px-3 py-2 text-xs font-black">供货商 / 款号</th>
-                      <th className="px-3 py-2 text-xs font-black">供货商 SKU</th>
-                      <th className="px-3 py-2 text-right text-xs font-black">成本 / 补货线</th>
-                      <th className="px-3 py-2 text-right text-xs font-black">现有</th>
-                      <th className="px-3 py-2 text-right text-xs font-black">预留</th>
-                      <th className="px-3 py-2 text-right text-xs font-black">可用</th>
-                      <th className="px-3 py-2 text-xs font-black">状态</th>
-                      <th className="px-3 py-2 text-xs font-black">对账</th>
-                      <th className="px-3 py-2 text-right text-xs font-black">操作</th>
+                      <th className="w-[17%] px-4 py-3 text-xs font-black">商品</th>
+                      <th className="w-[18%] px-4 py-3 text-xs font-black">规格与编码</th>
+                      <th className="w-[10%] px-4 py-3 text-xs font-black">条码</th>
+                      <th className="w-[14%] px-4 py-3 text-xs font-black">供货信息</th>
+                      <th className="w-[10%] px-4 py-3 text-xs font-black">成本 / 补货</th>
+                      <th className="w-[12%] px-4 py-3 text-xs font-black">库存</th>
+                      <th className="w-[9%] px-4 py-3 text-xs font-black">状态</th>
+                      <th className="w-[10%] px-4 py-3 text-right text-xs font-black">操作</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-stone-100">
                     {filteredInventoryItems.map(item => {
                       const reconciled = item.stock_matches_legacy && item.size_stock_matches_legacy;
                       const stockStatus = inventoryStatusFor(item, lowStockThreshold);
                       return (
-                        <tr className="border-t border-stone-100 bg-white align-top" key={item.variant_id}>
-                          <td className="max-w-[220px] px-3 py-3"><p className="line-clamp-2 font-black text-ink">{item.product_name || "-"}</p></td>
-                          <td className="px-3 py-3 font-mono text-xs font-bold text-stone-600">{item.product_sku || "-"}</td>
-                          <td className="px-3 py-3 font-mono text-xs font-bold text-stone-600">{item.variant_sku || "-"}</td>
-                          <td className="px-3 py-3 text-xs font-bold">{item.size || "-"}</td>
-                          <td className="px-3 py-3 text-xs">{item.color || "-"}</td>
-                          <td className="px-3 py-3 font-mono text-xs">{item.barcode || "-"}</td>
-                          <td className="px-3 py-3 text-xs"><p className="font-bold">{item.supplier_name || "-"}</p><p className="font-mono text-stone-400">{item.supplier_style_code || ""}</p></td>
-                          <td className="px-3 py-3 font-mono text-xs">{item.supplier_sku || "-"}</td>
-                          <td className="px-3 py-3 text-right text-xs"><p>{item.cost_price === null ? "-" : formatEuro(item.cost_price)}</p><p className="text-stone-400">补货 ≤ {item.reorder_level ?? lowStockThreshold}</p></td>
-                          <td className="px-3 py-3 text-right text-sm font-black text-ink">{item.quantity_on_hand}</td>
-                          <td className="px-3 py-3 text-right text-sm font-bold text-stone-500">{item.quantity_reserved}</td>
-                          <td className={`px-3 py-3 text-right text-sm font-black ${item.quantity_available <= 0 ? "text-red-600" : item.quantity_available <= (item.reorder_level ?? lowStockThreshold) ? "text-amber-600" : "text-emerald-700"}`}>{item.quantity_available}</td>
-                          <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${stockStatus.className}`}>{stockStatus.label}</span></td>
-                          <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${reconciled ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{reconciled ? "正常" : "异常"}</span></td>
-                          <td className="px-3 py-3 text-right">
-                            <div className="flex justify-end gap-2">
+                        <tr className="bg-white align-top transition hover:bg-stone-50/70" key={item.variant_id}>
+                          <td className="px-4 py-4">
+                            <p className="line-clamp-2 font-black text-ink">{item.product_name || "-"}</p>
+                            <p className="mt-1 break-all font-mono text-[11px] font-bold text-stone-500">{item.product_sku || "-"}</p>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex flex-wrap gap-1.5 text-[11px] font-black"><span className="rounded-full bg-stone-100 px-2 py-1 text-ink">{item.size || "ONE SIZE"}</span>{item.color ? <span className="rounded-full bg-stone-100 px-2 py-1 text-stone-600">{item.color}</span> : null}</div>
+                            <p className="mt-2 break-all font-mono text-[11px] font-bold text-stone-500">{item.variant_sku || "-"}</p>
+                          </td>
+                          <td className="px-4 py-4"><p className="break-all font-mono text-[11px] font-bold text-stone-600">{item.barcode || "未生成"}</p></td>
+                          <td className="px-4 py-4 text-xs">
+                            <p className="font-black text-ink">{item.supplier_name || "未填写"}</p>
+                            {item.supplier_style_code ? <p className="mt-1 font-mono text-[11px] text-stone-500">款号 {item.supplier_style_code}</p> : null}
+                            {item.supplier_sku ? <p className="mt-1 break-all font-mono text-[11px] text-stone-500">SKU {item.supplier_sku}</p> : null}
+                          </td>
+                          <td className="px-4 py-4 text-xs"><p className="font-black text-ink">{item.cost_price === null ? "未填写" : formatEuro(item.cost_price)}</p><p className="mt-1 text-stone-400">补货线 ≤ {item.reorder_level ?? lowStockThreshold}</p></td>
+                          <td className="px-4 py-4">
+                            <div className="grid grid-cols-3 gap-1 text-center">
+                              <div><p className="text-sm font-black text-ink">{item.quantity_on_hand}</p><p className="text-[10px] font-bold text-stone-400">现有</p></div>
+                              <div><p className="text-sm font-black text-stone-500">{item.quantity_reserved}</p><p className="text-[10px] font-bold text-stone-400">预留</p></div>
+                              <div><p className={`text-sm font-black ${item.quantity_available <= 0 ? "text-red-600" : item.quantity_available <= (item.reorder_level ?? lowStockThreshold) ? "text-amber-600" : "text-emerald-700"}`}>{item.quantity_available}</p><p className="text-[10px] font-bold text-stone-400">可用</p></div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-black ${stockStatus.className}`}>{stockStatus.label}</span>
+                            <span className={`mt-2 inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-black ${reconciled ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>对账{reconciled ? "正常" : "异常"}</span>
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            <div className="flex flex-col items-stretch gap-2">
                               <button className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white hover:bg-stone-800" onClick={() => openInventoryAdjust(item)} type="button">调整库存</button>
-                              <button className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => { setMovementVariantId(item.variant_id); void loadInventoryMovements(item.variant_id); }} type="button">查看流水</button>
+                              <button className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => { setMovementVariantId(item.variant_id); void loadInventoryMovements(item.variant_id); }} type="button">查看流水</button>
                             </div>
                           </td>
                         </tr>
@@ -3819,6 +3880,48 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     })}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="grid gap-3 xl:hidden" data-inventory-mobile-list>
+                {filteredInventoryItems.map(item => {
+                  const reconciled = item.stock_matches_legacy && item.size_stock_matches_legacy;
+                  const stockStatus = inventoryStatusFor(item, lowStockThreshold);
+                  return (
+                    <article className="rounded-2xl border border-stone-200 bg-white p-4" data-inventory-card={item.variant_id} key={item.variant_id}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h4 className="line-clamp-2 text-sm font-black text-ink">{item.product_name || "-"}</h4>
+                          <p className="mt-1 break-all font-mono text-[11px] font-bold text-stone-500">{item.product_sku}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black ${stockStatus.className}`}>{stockStatus.label}</span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs font-black">
+                        <span className="rounded-full bg-stone-100 px-2.5 py-1.5 text-ink">{item.size || "ONE SIZE"}</span>
+                        {item.color ? <span className="rounded-full bg-stone-100 px-2.5 py-1.5 text-stone-600">{item.color}</span> : null}
+                        <span className={`rounded-full px-2.5 py-1.5 ${reconciled ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>对账{reconciled ? "正常" : "异常"}</span>
+                      </div>
+                      <div className="mt-3 rounded-xl bg-stone-50 p-3">
+                        <p className="break-all font-mono text-[11px] font-bold text-stone-600">Variant：{item.variant_sku}</p>
+                        <p className="mt-1 break-all font-mono text-[11px] text-stone-500">Barcode：{item.barcode || "未生成"}</p>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-xl border border-stone-100 p-2"><p className="text-lg font-black text-ink">{item.quantity_on_hand}</p><p className="text-[10px] font-bold text-stone-400">现有</p></div>
+                        <div className="rounded-xl border border-stone-100 p-2"><p className="text-lg font-black text-stone-500">{item.quantity_reserved}</p><p className="text-[10px] font-bold text-stone-400">预留</p></div>
+                        <div className="rounded-xl border border-stone-100 p-2"><p className={`text-lg font-black ${item.quantity_available <= 0 ? "text-red-600" : item.quantity_available <= (item.reorder_level ?? lowStockThreshold) ? "text-amber-600" : "text-emerald-700"}`}>{item.quantity_available}</p><p className="text-[10px] font-bold text-stone-400">可用</p></div>
+                      </div>
+                      {(item.supplier_name || item.supplier_sku || item.cost_price !== null) ? (
+                        <div className="mt-3 grid gap-1 rounded-xl border border-stone-100 px-3 py-2 text-[11px] text-stone-500 sm:grid-cols-2">
+                          <p><span className="font-black text-stone-700">供货：</span>{item.supplier_name || item.supplier_sku || "未填写"}</p>
+                          <p><span className="font-black text-stone-700">成本：</span>{item.cost_price === null ? "未填写" : formatEuro(item.cost_price)} · 补货线 ≤ {item.reorder_level ?? lowStockThreshold}</p>
+                        </div>
+                      ) : null}
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        <button className="min-h-11 rounded-xl bg-ink px-3 py-2 text-sm font-black text-white hover:bg-stone-800" onClick={() => openInventoryAdjust(item)} type="button">调整库存</button>
+                        <button className="min-h-11 rounded-xl border border-stone-300 px-3 py-2 text-sm font-black text-ink hover:bg-stone-50" onClick={() => { setMovementVariantId(item.variant_id); void loadInventoryMovements(item.variant_id); }} type="button">查看流水</button>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             </div>
 
@@ -4254,28 +4357,32 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
               {inventoryError ? <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{inventoryError}</p> : null}
               {labelMessage ? <p className="mt-4 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-bold text-stone-700">{labelMessage}</p> : null}
-              <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(180px,0.8fr)_minmax(180px,0.8fr)]">
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black text-stone-600">1. 查找商品</span>
+                  <span className="mb-1.5 block text-xs font-black text-stone-600">查找商品</span>
                   <span className="flex gap-2">
                     <input className="input min-w-0 flex-1" data-label-search placeholder="商品名 / SKU / 条码 / 供货商 SKU" value={labelSearch} onChange={e => setLabelSearch(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); locateLabelProduct(); } }} />
                     <button className="min-h-11 shrink-0 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800" onClick={locateLabelProduct} type="button">查找</button>
                   </span>
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black text-stone-600">2. 选择商品</span>
-                  <select className="input" data-label-product-selector value={labelProductId} onChange={e => chooseLabelProduct(e.target.value)}>
-                    <option value="">请选择商品（共 {labelProductOptions.length} 件匹配）</option>
-                    {selectedLabelProduct && !labelProductOptions.some(group => group.productId === selectedLabelProduct.productId) ? (
-                      <option value={selectedLabelProduct.productId}>{selectedLabelProduct.productSku} · {selectedLabelProduct.productName}</option>
-                    ) : null}
-                    {labelProductOptions.map(group => <option key={group.productId} value={group.productId}>{group.productSku} · {group.productName}（{group.items.length} 个规格）</option>)}
+                  <span className="mb-1.5 block text-xs font-black text-stone-600">一级分类</span>
+                  <select className="input" data-label-category-filter value={labelCategory} onChange={e => { setLabelCategory(e.target.value); setLabelSubcategory(""); }}>
+                    <option value="">全部一级分类</option>
+                    {adminCategoryOptions.map(category => <option key={String(category.slug)} value={String(category.slug)}>{categoryOptionLabel(category)}</option>)}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-black text-stone-600">二级分类</span>
+                  <select className="input" data-label-subcategory-filter value={labelSubcategory} onChange={e => setLabelSubcategory(e.target.value)}>
+                    <option value="">全部二级分类</option>
+                    {labelCategory ? adminSubcategoryOptions(labelCategory).map(subcategory => <option key={String(subcategory.slug)} value={String(subcategory.slug)}>{subcategoryOptionLabel(subcategory)}</option>) : null}
                   </select>
                 </label>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black text-stone-600">3. 筛选尺码</span>
+                  <span className="mb-1.5 block text-xs font-black text-stone-600">尺码筛选</span>
                   <select className="input" data-label-size-filter disabled={!selectedLabelProduct} value={labelSizeFilter} onChange={e => setLabelSizeFilter(e.target.value)}>
                     <option value="">全部尺码</option>
                     {labelAvailableSizes.map(size => <option key={size} value={size}>{size}</option>)}
@@ -4305,67 +4412,95 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-stone-500">
-                <span className="rounded-full bg-stone-100 px-3 py-1.5">商品 {labelProductGroups.length} 件</span>
+                <span className="rounded-full bg-stone-100 px-3 py-1.5">显示商品 {labelProductOptions.length} / {labelProductGroups.length} 件</span>
                 <span className="rounded-full bg-stone-100 px-3 py-1.5">当前显示 {filteredLabelItems.length} 个规格</span>
                 <span className="rounded-full bg-stone-100 px-3 py-1.5 text-ink">待打印 {selectedLabelVariantIds.size} 个标签</span>
               </div>
             </div>
 
             <div className="admin-panel">
+              <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-ink">选择商品</h3>
+                  <p className="mt-1 text-xs text-stone-500">默认显示全部商品；可使用一级分类、二级分类或搜索缩小范围。</p>
+                </div>
+                <p className="text-xs font-black text-stone-400">{labelProductOptions.length} 件商品</p>
+              </div>
               {inventoryLoading ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">正在加载标签商品...</p> : null}
-              {!inventoryLoading && !selectedLabelProduct ? (
-                <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-5 py-12 text-center" data-label-empty>
-                  <p className="text-base font-black text-ink">先选择一件商品</p>
-                  <p className="mt-2 text-sm text-stone-500">选择后这里只显示该商品的尺码和颜色，不再把所有商品规格堆在同一张表里。</p>
+              {!inventoryLoading && labelProductOptions.length === 0 ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">当前分类或搜索条件下没有商品</p> : null}
+              {!inventoryLoading && labelProductOptions.length > 0 ? (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-label-product-grid>
+                  {labelProductOptions.map(group => {
+                    const selected = labelProductId === String(group.productId);
+                    const selectedCount = group.items.filter(item => selectedLabelVariantIds.has(item.variant_id)).length;
+                    const totalStock = group.items.reduce((sum, item) => sum + item.quantity_on_hand, 0);
+                    return (
+                      <button className={`min-w-0 rounded-2xl border p-4 text-left transition ${selected ? "border-ink bg-stone-50 shadow-sm" : "border-stone-200 bg-white hover:border-stone-400"}`} data-label-product-card={group.productId} key={group.productId} onClick={() => chooseLabelProduct(String(group.productId))} type="button">
+                        <span className="flex items-start justify-between gap-3">
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-black text-ink">{group.productName}</span>
+                            <span className="mt-1 block truncate font-mono text-[11px] font-bold text-stone-500">{group.productSku}</span>
+                          </span>
+                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black ${totalStock > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>库存 {totalStock}</span>
+                        </span>
+                        <span className="mt-3 block truncate text-xs font-bold text-stone-500">{group.category ? categoryPathDisplayLabel(group.category, group.subcategory) : "未分类"}</span>
+                        <span className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs font-black">
+                          <span className="text-stone-500">{group.items.length} 个尺码 / 规格</span>
+                          <span className={selectedCount > 0 ? "text-copper" : "text-ink"}>{selectedCount > 0 ? `已选 ${selectedCount}` : "选择尺码 →"}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               ) : null}
-              {!inventoryLoading && selectedLabelProduct ? (
-                <>
-                  <div className="flex flex-col gap-3 border-b border-stone-200 pb-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-xs font-black text-stone-400">当前商品</p>
-                      <h3 className="mt-1 truncate text-lg font-black text-ink">{selectedLabelProduct.productName}</h3>
-                      <p className="mt-1 font-mono text-xs font-bold text-stone-500">{selectedLabelProduct.productSku}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button className="min-h-10 rounded-xl bg-ink px-3 py-2 text-xs font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={filteredLabelItems.length === 0} onClick={() => updateLabelSelection(filteredLabelItems, true)} type="button">选择当前显示</button>
-                      <button className="min-h-10 rounded-xl border border-stone-300 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={filteredLabelItems.every(item => item.quantity_on_hand <= 0)} onClick={() => updateLabelSelection(filteredLabelItems.filter(item => item.quantity_on_hand > 0), true)} type="button">选择有库存尺码</button>
-                      <button className="min-h-10 rounded-xl border border-stone-300 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => updateLabelSelection(selectedLabelProduct.items, false)} type="button">清除此商品已选</button>
-                    </div>
-                  </div>
-                  {filteredLabelItems.length === 0 ? (
-                    <p className="mt-4 rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">当前商品没有符合筛选条件的尺码</p>
-                  ) : (
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-label-variant-grid>
-                      {filteredLabelItems.map(item => {
-                        const selected = selectedLabelVariantIds.has(item.variant_id);
-                        return (
-                          <label className={`flex cursor-pointer gap-3 rounded-2xl border p-4 transition ${selected ? "border-ink bg-stone-50 shadow-sm" : "border-stone-200 bg-white hover:border-stone-400"}`} data-label-variant={item.variant_id} key={item.variant_id}>
-                            <input className="mt-1 h-5 w-5 shrink-0 accent-stone-900" checked={selected} onChange={() => toggleLabelVariant(item.variant_id)} type="checkbox" />
-                            <span className="min-w-0 flex-1">
-                              <span className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="text-lg font-black text-ink">{item.size || "ONE SIZE"}</span>
-                                <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${item.quantity_on_hand > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>库存 {item.quantity_on_hand}</span>
-                              </span>
-                              <span className="mt-2 block text-xs font-bold text-stone-600">颜色：{item.color || "未填写"}</span>
-                              <span className="mt-1 block break-all font-mono text-[11px] font-bold text-stone-500">{item.variant_sku}</span>
-                              <span className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                                {item.barcode ? <span className="break-all font-mono text-[11px] text-stone-500">{item.barcode}</span> : <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-black text-amber-700">barcode 未生成</span>}
-                                <span className="text-sm font-black text-copper">{formatEuro(item.price)}</span>
-                              </span>
-                              {!item.active ? <span className="mt-2 inline-flex rounded-full bg-stone-100 px-2 py-1 text-[11px] font-black text-stone-500">已停用</span> : null}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </>
-              ) : null}
-              <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-xs font-bold leading-relaxed text-amber-800">
-                打印前请先用真实标签纸测试。第一版不做 ESC/POS 或打印机 SDK，只使用浏览器打印。
-              </p>
             </div>
+
+            {selectedLabelProduct ? (
+              <div className="admin-panel scroll-mt-4" data-label-size-panel ref={labelVariantPanelRef}>
+                <div className="flex flex-col gap-3 border-b border-stone-200 pb-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-black text-stone-400">当前商品 · 选择尺码</p>
+                    <h3 className="mt-1 truncate text-lg font-black text-ink">{selectedLabelProduct.productName}</h3>
+                    <p className="mt-1 font-mono text-xs font-bold text-stone-500">{selectedLabelProduct.productSku}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button className="min-h-10 rounded-xl bg-ink px-3 py-2 text-xs font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={filteredLabelItems.length === 0} onClick={() => updateLabelSelection(filteredLabelItems, true)} type="button">选择当前显示</button>
+                    <button className="min-h-10 rounded-xl border border-stone-300 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={filteredLabelItems.every(item => item.quantity_on_hand <= 0)} onClick={() => updateLabelSelection(filteredLabelItems.filter(item => item.quantity_on_hand > 0), true)} type="button">选择有库存尺码</button>
+                    <button className="min-h-10 rounded-xl border border-stone-300 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => updateLabelSelection(selectedLabelProduct.items, false)} type="button">清除此商品已选</button>
+                  </div>
+                </div>
+                {filteredLabelItems.length === 0 ? (
+                  <p className="mt-4 rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">当前商品没有符合筛选条件的尺码</p>
+                ) : (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-label-variant-grid>
+                    {filteredLabelItems.map(item => {
+                      const selected = selectedLabelVariantIds.has(item.variant_id);
+                      return (
+                        <label className={`flex cursor-pointer gap-3 rounded-2xl border p-4 transition ${selected ? "border-ink bg-stone-50 shadow-sm" : "border-stone-200 bg-white hover:border-stone-400"}`} data-label-variant={item.variant_id} key={item.variant_id}>
+                          <input className="mt-1 h-5 w-5 shrink-0 accent-stone-900" checked={selected} onChange={() => toggleLabelVariant(item.variant_id)} type="checkbox" />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-lg font-black text-ink">{item.size || "ONE SIZE"}</span>
+                              <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${item.quantity_on_hand > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>库存 {item.quantity_on_hand}</span>
+                            </span>
+                            <span className="mt-2 block text-xs font-bold text-stone-600">颜色：{item.color || "未填写"}</span>
+                            <span className="mt-1 block break-all font-mono text-[11px] font-bold text-stone-500">{item.variant_sku}</span>
+                            <span className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                              {item.barcode ? <span className="break-all font-mono text-[11px] text-stone-500">{item.barcode}</span> : <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-black text-amber-700">barcode 未生成</span>}
+                              <span className="text-sm font-black text-copper">{formatEuro(item.price)}</span>
+                            </span>
+                            {!item.active ? <span className="mt-2 inline-flex rounded-full bg-stone-100 px-2 py-1 text-[11px] font-black text-stone-500">已停用</span> : null}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-xs font-bold leading-relaxed text-amber-800">
+                  打印前请先用真实标签纸测试。第一版不做 ESC/POS 或打印机 SDK，只使用浏览器打印。
+                </p>
+              </div>
+            ) : null}
 
             {selectedLabelGroups.length > 0 ? (
               <div className="admin-panel" data-label-print-queue>
