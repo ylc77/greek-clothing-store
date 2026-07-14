@@ -80,6 +80,8 @@ export type SyncProductVariantActiveResult = {
 export type InventoryOverviewParams = {
   q?: string;
   size?: string;
+  category?: string;
+  subcategory?: string;
   zeroStock?: boolean;
   inactive?: boolean;
   limit?: number;
@@ -90,6 +92,8 @@ export type InventoryOverviewItem = {
   product_id: number;
   product_name: string;
   product_sku: string;
+  category: string;
+  subcategory: string;
   variant_id: string;
   variant_sku: string;
   size: string | null;
@@ -423,7 +427,7 @@ async function loadInventoryOverviewRows(): Promise<InventoryOverviewItem[]> {
     await Promise.all([
       supabase
         .from("products")
-        .select("id, sku, name_cn, name_en, name_gr, price, stock, size_stock, is_active, supplier_id, supplier_style_code"),
+        .select("id, sku, name_cn, name_en, name_gr, category, subcategory, price, stock, size_stock, is_active, supplier_id, supplier_style_code"),
       supabase
         .from("product_variants")
         .select("id, product_id, variant_sku, barcode, size, color, price, active, supplier_sku, cost_price, reorder_level"),
@@ -518,6 +522,8 @@ async function loadInventoryOverviewRows(): Promise<InventoryOverviewItem[]> {
       product_id: productId,
       product_name: productDisplayName(product),
       product_sku: String(product.sku || ""),
+      category: String(product.category || ""),
+      subcategory: String(product.subcategory || ""),
       variant_id: String(variant.id || ""),
       variant_sku: String(variant.variant_sku || ""),
       size: variant.size === null || variant.size === undefined ? null : String(variant.size),
@@ -546,9 +552,17 @@ export async function getInventoryOverview(params: InventoryOverviewParams = {})
   const offset = offsetValue(params.offset);
   const q = (params.q || "").trim().toLowerCase();
   const size = (params.size || "").trim().toUpperCase();
+  const category = (params.category || "").trim().toLowerCase();
+  const subcategory = (params.subcategory || "").trim().toLowerCase();
   const rows = await loadInventoryOverviewRows();
 
   let filtered: InventoryOverviewItem[] = rows;
+  if (category) {
+    filtered = filtered.filter((row) => row.category.toLowerCase() === category);
+  }
+  if (subcategory) {
+    filtered = filtered.filter((row) => row.subcategory.toLowerCase() === subcategory);
+  }
   if (q) {
     filtered = filtered.filter((row) => {
       return [

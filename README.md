@@ -70,6 +70,12 @@ ADMIN_PASSWORD=设置一个强密码
 USE_POS_RPC=false
 ```
 
+`ADMIN_PASSWORD` 是仅供维护者使用的服务器端紧急 owner 密码，每个客户建议设置不同值，不要告诉购买系统的商家。商家日常使用通过 Supabase Auth 创建的员工账号，不使用这个环境变量密码。
+
+店铺设置和法律设置另有独立的开发者密码。`client-init.sql` 已把该密码的加盐哈希写入私有表，新客户部署时不需要再增加一个明文环境变量；只有维护者保留并输入原始密码。数据库、Git、README 和 Vercel 环境变量中都不保存该明文。
+
+如果希望商家始终无法自行修改这些内容，Supabase / Vercel 项目所有权、`service_role`、源码仓库写权限也应由维护者保管。拥有这些基础设施最高权限的人始终可以直接修改数据库或代码，应用内密码无法限制基础设施所有者。
+
 可选 AI 功能：
 
 ```env
@@ -86,13 +92,21 @@ OPENAI_IMAGE_MODEL=gpt-image-1
 ### 五、首次后台配置
 
 1. 打开 `https://你的域名/admin`。
-2. 使用 `ADMIN_PASSWORD` 登录。
-3. 填写店铺名称、地址、电话、营业时间和联系方式。
+2. 维护者使用 `ADMIN_PASSWORD` 登录，并为商家创建所需的员工账号；不要把紧急 owner 密码交给商家。
+3. 进入 **店铺设置**，再用维护者专属的开发者密码解锁，填写店铺名称、地址、电话、营业时间和联系方式。
 4. 上传 Logo 和首页图片。
 5. 设置 WhatsApp、Instagram、Google Maps 和 Skroutz。
 6. 添加商品或通过 CSV 导入商品。
-7. 进入 **Settings → Legal Settings**，填写商家法律信息并发布 `v1`。
+7. 进入 **Settings → Legal Settings**，使用同一个开发者密码解锁，填写商家法律信息并发布 `v1`。
 8. 根据客户购买内容选择 Basic、Standard 或 Advanced。
+
+当前三档版本：
+
+- **Basic 基础版**：双语前台、商品 / 图片 / 分类 / 供货商、尺码库存快查、库存作业、调整、流水和对账。
+- **Standard 标准版（推荐实体店）**：包含基础版，并增加 POS 扫码扣库存、销售记录与作废恢复、日报、销售记录小票、条码标签、CSV 导入和员工账号。
+- **Advanced 高级版**：包含标准版，并增加 Skroutz Feed 与前台入口、AI 商品 / 图片 / 导购工具和维护数据导出。
+
+POS 模块只负责系统内扫码销售记录和库存同步，不代替真实收银机、银行 POS、税务小票或 myDATA。
 
 ### 六、上线检查
 
@@ -108,6 +122,8 @@ OPENAI_IMAGE_MODEL=gpt-image-1
 后台：
 
 - [ ] 后台可以登录。
+- [ ] 商家员工账号不能进入或修改店铺设置、法律设置。
+- [ ] 维护者开发者密码可以解锁店铺设置和法律设置，退出或关闭浏览器后需要重新解锁。
 - [ ] 可以新增、编辑和下架商品。
 - [ ] 可以上传、替换和删除商品图片。
 - [ ] Logo 和首页图上传正常。
@@ -145,6 +161,8 @@ Supabase Storage：
 
 - `supabase/migrations` 是数据库开发和升级的权威来源。
 - `supabase/client-init.sql` 是根据 migrations 生成的新客户空库部署快照。
+- `public.developer_access` 只保存开发者密码的加盐哈希；`anon` 和 `authenticated` 无权读取或修改，应用只通过服务器端 `service_role` 校验。
+- 店铺设置和法律设置不能改回普通 owner/员工权限；相关 API 必须继续要求开发者会话。
 - 新增或修改 migration 后，运行：
 
 ```powershell

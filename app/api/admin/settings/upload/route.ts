@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { developerRequestIsAuthorized } from "@/lib/developer-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 const bucket = "product-images"; // reuse existing bucket, store under store/ folder
 
 export async function POST(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "settings:write"))) {
+  const developerAuthorized = await developerRequestIsAuthorized(request);
+  const catalogAuthorized = developerAuthorized
+    ? false
+    : await adminRequestHasPermissionAsync(request, "categories:write");
+  if (!developerAuthorized && !catalogAuthorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { adminRequestIsOwnerAsync, getAdminAuthContextFromRequest } from "@/lib/admin-auth";
+import { getAdminAuthContextFromRequest } from "@/lib/admin-auth";
 import { cacheTags } from "@/lib/cache-tags";
+import { developerRequestIsAuthorized } from "@/lib/developer-auth";
 import {
   getFeatureFlagsForPlan,
   getFeatureSettingsUncached,
@@ -16,13 +17,14 @@ function unauthorized() {
 }
 
 export async function GET(request: NextRequest) {
-  if (!(await getAdminAuthContextFromRequest(request))) return unauthorized();
+  const admin = await getAdminAuthContextFromRequest(request);
+  if (!admin && !(await developerRequestIsAuthorized(request))) return unauthorized();
 
   return NextResponse.json({ ok: true, settings: await getFeatureSettingsUncached() });
 }
 
 export async function PUT(request: NextRequest) {
-  if (!(await adminRequestIsOwnerAsync(request))) return unauthorized();
+  if (!(await developerRequestIsAuthorized(request))) return unauthorized();
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
@@ -48,16 +50,13 @@ export async function PUT(request: NextRequest) {
   const features = plan === "custom"
     ? normalizeFeatureFlags(payload.features, current.features)
     : getFeatureFlagsForPlan(plan);
-  const auth = await getAdminAuthContextFromRequest(request);
-  const updatedBy = auth?.email || auth?.displayName || auth?.role || "owner";
-
   const { error } = await (supabase as any)
     .from("feature_settings")
     .upsert({
       id: 1,
       plan,
       features,
-      updated_by: updatedBy,
+      updated_by: "developer",
       updated_at: new Date().toISOString(),
     }, { onConflict: "id" });
 

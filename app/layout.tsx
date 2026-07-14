@@ -2,13 +2,14 @@ import { ChatLauncher } from "@/components/chat-launcher";
 import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
+import { getFeatureSettings } from "@/lib/features";
 import { getPublishedLegalSettings } from "@/lib/legal-settings";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Online Store",
   description:
-    "Selected clothing, shoes, bags and accessories. Browse our collection and shop via WhatsApp or Skroutz.",
+    "Selected clothing, shoes, bags and accessories from a local fashion boutique.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
@@ -28,7 +29,10 @@ export default async function RootLayout({
 }: Readonly<{
   children: ReactNode;
 }>) {
-  const legal = await getPublishedLegalSettings();
+  const [legal, featureSettings] = await Promise.all([
+    getPublishedLegalSettings(),
+    getFeatureSettings(),
+  ]);
   return (
     <html lang="el" suppressHydrationWarning>
       <head>
@@ -40,9 +44,11 @@ export default async function RootLayout({
       </head>
       <body>
         {children}
-        <Suspense fallback={null}>
-          <ChatLauncher />
-        </Suspense>
+        {featureSettings.features.ai_tools ? (
+          <Suspense fallback={null}>
+            <ChatLauncher />
+          </Suspense>
+        ) : null}
         <CookieConsentBanner config={{
           essentialDescription: legal.settings.essentialStorageDescription,
           analyticsEnabled: legal.settings.analyticsEnabled,

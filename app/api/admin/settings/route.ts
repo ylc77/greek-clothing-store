@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { invalidateSettingsCache } from "@/lib/cache";
+import { developerRequestIsAuthorized } from "@/lib/developer-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getBusinessSettings, getBusinessSettingsUncached } from "@/lib/settings";
 
@@ -9,7 +9,7 @@ function unauthorized() {
 }
 
 export async function GET(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "settings:write"))) {
+  if (!(await developerRequestIsAuthorized(request))) {
     return unauthorized();
   }
 
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "settings:write"))) {
+  if (!(await developerRequestIsAuthorized(request))) {
     return unauthorized();
   }
 

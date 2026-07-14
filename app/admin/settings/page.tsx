@@ -2,50 +2,35 @@
 
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import type { BusinessSettings } from "@/lib/settings";
-import type { FeatureFlags, FeatureKey, FeaturePlan, FeatureSettings } from "@/lib/features";
+import {
+  featureCatalog,
+  featureGroups,
+  featureKeys,
+  featurePlanInfo,
+  featurePlanPresets,
+  toggleFeatureWithDependencies,
+  type FeatureKey,
+  type FeaturePlan,
+} from "@/lib/feature-catalog";
+import type { FeatureSettings } from "@/lib/features";
 
-const featureKeys: FeatureKey[] = [
-  "storefront", "product_management", "inventory", "pos_checkout", "pos_orders", "pos_void",
-  "pos_reports", "receipt_printing", "barcode_labels", "csv_import", "skroutz_feed",
-  "staff_accounts", "ai_tools", "backup_tools",
-];
-
-const featureLabels: Record<FeatureKey, { label: string; desc: string }> = {
-  storefront: { label: "前台官网", desc: "首页、分类页和商品详情页" },
-  product_management: { label: "商品管理", desc: "商品、图片、分类和上下架" },
-  inventory: { label: "ERP 库存", desc: "库存总览、调整、流水和对账" },
-  pos_checkout: { label: "POS 收银", desc: "搜索、预检和完成收银" },
-  pos_orders: { label: "POS 订单", desc: "订单历史、详情和小票入口" },
-  pos_void: { label: "POS 作废", desc: "作废订单并恢复库存" },
-  pos_reports: { label: "POS 日报", desc: "销售汇总和支付方式统计" },
-  receipt_printing: { label: "小票打印", desc: "浏览器小票预览和打印" },
-  barcode_labels: { label: "Barcode 标签", desc: "条码生成、标签预览和打印" },
-  csv_import: { label: "CSV 导入", desc: "批量导入商品数据" },
-  skroutz_feed: { label: "Skroutz Feed", desc: "Feed 管理与 XML 输出" },
-  staff_accounts: { label: "员工账号", desc: "员工登录和角色权限" },
-  ai_tools: { label: "AI 工具", desc: "翻译、文案、SEO 和图片生成" },
-  backup_tools: { label: "备份工具", desc: "后台数据导出入口" },
-};
-
-const advancedFeatures = Object.fromEntries(featureKeys.map((key) => [key, true])) as FeatureFlags;
 const emptyFeatureSettings: FeatureSettings = {
   id: 1,
-  plan: "advanced",
-  features: advancedFeatures,
+  plan: "basic",
+  features: { ...featurePlanPresets.basic },
   updated_by: null,
   created_at: null,
   updated_at: null,
   configured: false,
 };
 
-async function uploadStoreImage(file: File, name: string, password: string): Promise<string> {
+async function uploadStoreImage(file: File, name: string): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("name", name);
 
   const response = await fetch("/api/admin/settings/upload", {
     method: "POST",
-    headers: { "x-admin-password": password },
     body: formData,
   });
   const data = await response.json();
@@ -140,7 +125,9 @@ function UploadButton({
 
 export default function AdminSettingsPage() {
   const [password, setPassword] = useState("");
-  const [activePassword, setActivePassword] = useState("");
+  const [authorized, setAuthorized] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authError, setAuthError] = useState("");
   const [settings, setSettings] = useState<BusinessSettings>(emptySettings);
   const [featureSettings, setFeatureSettings] = useState<FeatureSettings>(emptyFeatureSettings);
   const [status, setStatus] = useState("");
@@ -152,13 +139,51 @@ export default function AdminSettingsPage() {
       ...init,
       headers: {
         "Content-Type": "application/json",
-        "x-admin-password": activePassword,
         ...(init.headers || {}),
       },
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "请求失败");
+    if (!response.ok) {
+      if (response.status === 401) setAuthorized(false);
+      throw new Error(data.error || "请求失败");
+    }
     return data;
+  }
+
+  async function checkDeveloperSession() {
+    try {
+      const response = await fetch("/api/admin/developer-session", { cache: "no-store" });
+      setAuthorized(response.ok);
+    } finally {
+      setAuthChecking(false);
+    }
+  }
+
+  async function loginDeveloper(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthError("");
+    setLoading(true);
+    try {
+      const response = await fetch("/api/admin/developer-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "登录失败");
+      setPassword("");
+      setAuthorized(true);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "登录失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function logoutDeveloper() {
+    await fetch("/api/admin/developer-session", { method: "DELETE" }).catch(() => null);
+    setAuthorized(false);
+    setPassword("");
   }
 
   async function loadSettings() {
@@ -179,27 +204,14 @@ export default function AdminSettingsPage() {
   }
 
   function selectFeaturePlan(plan: Exclude<FeaturePlan, "custom">) {
-    const presets: Record<Exclude<FeaturePlan, "custom">, FeatureFlags> = {
-      basic: {
-        ...advancedFeatures,
-        inventory: false, pos_checkout: false, pos_orders: false, pos_void: false,
-        pos_reports: false, receipt_printing: false, barcode_labels: false, csv_import: false,
-        skroutz_feed: false, staff_accounts: false, ai_tools: false, backup_tools: false,
-      },
-      standard: {
-        ...advancedFeatures,
-        pos_void: false, ai_tools: false, backup_tools: false,
-      },
-      advanced: advancedFeatures,
-    };
-    setFeatureSettings((current) => ({ ...current, plan, features: { ...presets[plan] } }));
+    setFeatureSettings((current) => ({ ...current, plan, features: { ...featurePlanPresets[plan] } }));
   }
 
   function toggleFeature(key: FeatureKey) {
     setFeatureSettings((current) => ({
       ...current,
       plan: "custom",
-      features: { ...current.features, [key]: !current.features[key] },
+      features: toggleFeatureWithDependencies(current.features, key),
     }));
   }
 
@@ -221,9 +233,8 @@ export default function AdminSettingsPage() {
     }
   }
 
-  useEffect(() => {
-    if (activePassword) void loadSettings();
-  }, [activePassword]);
+  useEffect(() => { void checkDeveloperSession(); }, []);
+  useEffect(() => { if (authorized) void loadSettings(); }, [authorized]);
 
   function updateField(key: keyof BusinessSettings, value: string | boolean | number) {
     setSettings((current) => ({ ...current, [key]: value }));
@@ -246,7 +257,7 @@ export default function AdminSettingsPage() {
 
   async function uploadImage(file: File, type: "logo" | "hero") {
     try {
-      const url = await uploadStoreImage(file, type, activePassword);
+      const url = await uploadStoreImage(file, type);
       updateField(type === "logo" ? "logo_url" : "hero_image_url", url);
       setStatus(type === "logo" ? "✓ Logo 已上传" : "✓ 首页大图已上传");
     } catch (error) {
@@ -254,7 +265,11 @@ export default function AdminSettingsPage() {
     }
   }
 
-  if (!activePassword) {
+  if (authChecking) {
+    return <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#fbfaf6] via-white to-stone-100"><p className="text-sm font-black text-stone-500">正在检查开发者权限...</p></main>;
+  }
+
+  if (!authorized) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#fbfaf6] via-white to-stone-100 px-4 py-10">
         <section className="w-full max-w-sm rounded-3xl border border-stone-200/80 bg-white p-8 text-center shadow-xl shadow-stone-900/10">
@@ -265,18 +280,19 @@ export default function AdminSettingsPage() {
           </div>
           <h1 className="mt-5 text-2xl font-black text-ink">店铺设置</h1>
           <p className="mt-2 text-sm leading-6 text-stone-500">
-            管理店铺名称、Logo、首页大图、联系方式和 Skroutz 设置。
+            此页面仅供项目开发者维护，商家后台账号不能进入。
           </p>
-          <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); setActivePassword(password); }}>
+          <form className="mt-6 space-y-4" onSubmit={loginDeveloper}>
             <input
               className="input text-center"
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="管理密码"
+              placeholder="开发者设置密码"
               type="password"
               value={password}
             />
-            <button className="w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800">
-              登录
+            {authError ? <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{authError}</p> : null}
+            <button className="w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50" disabled={loading}>
+              {loading ? "验证中..." : "开发者登录"}
             </button>
           </form>
         </section>
@@ -306,7 +322,7 @@ export default function AdminSettingsPage() {
             </a>
             <button
               className="rounded-full border border-stone-200 bg-white px-4 py-2 text-xs font-black text-ink shadow-sm hover:bg-stone-50"
-              onClick={() => { setActivePassword(""); setPassword(""); }}
+              onClick={() => void logoutDeveloper()}
               type="button"
             >
               退出
@@ -468,52 +484,71 @@ export default function AdminSettingsPage() {
             </div>
           </Section>
 
-          <Section title="版本与功能" desc="客户版本决定可用模块；员工角色仍会在此基础上继续限制操作权限。">
+          <Section title="版本与功能" desc="按当前服装实体店工作流划分；客户版本控制模块，员工角色继续限制个人权限。">
             {!featureSettings.configured ? (
               <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">
                 当前使用兼容默认配置（全部开启）。保存前请先部署 feature_settings migration。
               </div>
             ) : null}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid gap-2 sm:grid-cols-3">
               {(["basic", "standard", "advanced"] as const).map((plan) => (
                 <button
-                  className={`min-h-11 rounded-xl border px-3 text-sm font-black transition ${featureSettings.plan === plan ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink hover:bg-stone-50"}`}
+                  className={`relative min-h-20 rounded-xl border px-3 py-3 text-left transition ${featureSettings.plan === plan ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink hover:bg-stone-50"}`}
                   key={plan}
                   onClick={() => selectFeaturePlan(plan)}
                   type="button"
                 >
-                  {plan === "basic" ? "基础版" : plan === "standard" ? "标准版" : "高级版"}
+                  <span className="block text-sm font-black">{featurePlanInfo[plan].label}{plan === "standard" ? " · 推荐实体店" : ""}</span>
+                  <span className={`mt-1 block text-[11px] leading-4 ${featureSettings.plan === plan ? "text-white/70" : "text-stone-500"}`}>{featurePlanInfo[plan].audience}</span>
                 </button>
               ))}
-              <div className={`flex min-h-11 items-center justify-center rounded-xl border px-3 text-sm font-black ${featureSettings.plan === "custom" ? "border-olive bg-olive/10 text-olive" : "border-stone-200 bg-stone-50 text-stone-400"}`}>
-                自定义
-              </div>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {featureKeys.map((key) => {
-                const enabled = featureSettings.features[key];
-                return (
-                  <button
-                    aria-pressed={enabled}
-                    className={`flex min-h-20 items-center justify-between gap-3 rounded-xl border p-3 text-left transition ${enabled ? "border-emerald-200 bg-emerald-50/60" : "border-stone-200 bg-stone-50"}`}
-                    key={key}
-                    onClick={() => toggleFeature(key)}
-                    type="button"
-                  >
-                    <span>
-                      <span className="block text-sm font-black text-ink">{featureLabels[key].label}</span>
-                      <span className="mt-1 block text-xs leading-4 text-stone-500">{featureLabels[key].desc}</span>
-                    </span>
-                    <span className={`flex h-6 w-10 shrink-0 items-center rounded-full p-1 transition ${enabled ? "justify-end bg-emerald-500" : "justify-start bg-stone-300"}`}>
-                      <span className="h-4 w-4 rounded-full bg-white shadow-sm" />
-                    </span>
-                  </button>
-                );
-              })}
+            <div className={`mt-3 rounded-xl border px-4 py-3 ${featureSettings.plan === "custom" ? "border-olive/30 bg-olive/5" : "border-stone-200 bg-stone-50"}`}>
+              <p className="text-xs font-black text-ink">当前：{featureSettings.plan === "custom" ? "自定义组合" : featurePlanInfo[featureSettings.plan].label}</p>
+              <p className="mt-1 text-xs leading-5 text-stone-500">
+                {featureSettings.plan === "custom"
+                  ? "手动开关功能后会自动标记为自定义；依赖模块会同步开启或关闭。"
+                  : featurePlanInfo[featureSettings.plan].highlights.join(" · ")}
+              </p>
+            </div>
+            <div className="mt-4 space-y-5">
+              {featureGroups.map((group) => (
+                <div key={group.key}>
+                  <div className="mb-2">
+                    <p className="text-sm font-black text-ink">{group.label}</p>
+                    <p className="mt-1 text-xs leading-5 text-stone-500">{group.desc}</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {featureKeys.filter((key) => featureCatalog[key].group === group.key).map((key) => {
+                      const enabled = featureSettings.features[key];
+                      const locked = featureCatalog[key].alwaysOn === true;
+                      return (
+                        <button
+                          aria-pressed={enabled}
+                          className={`flex min-h-20 items-center justify-between gap-3 rounded-xl border p-3 text-left transition ${enabled ? "border-emerald-200 bg-emerald-50/60" : "border-stone-200 bg-stone-50"} ${locked ? "cursor-default" : "hover:border-stone-300"}`}
+                          disabled={locked}
+                          key={key}
+                          onClick={() => toggleFeature(key)}
+                          type="button"
+                        >
+                          <span>
+                            <span className="block text-sm font-black text-ink">{featureCatalog[key].label}</span>
+                            <span className="mt-1 block text-xs leading-4 text-stone-500">{featureCatalog[key].desc}</span>
+                            {locked ? <span className="mt-2 inline-flex rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-emerald-700 ring-1 ring-emerald-200">所有版本固定开启</span> : null}
+                          </span>
+                          <span className={`flex h-6 w-10 shrink-0 items-center rounded-full p-1 transition ${enabled ? "justify-end bg-emerald-500" : "justify-start bg-stone-300"}`}>
+                            <span className="h-4 w-4 rounded-full bg-white shadow-sm" />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
             <div className="mt-4 flex flex-col gap-3 rounded-xl border border-stone-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs leading-5 text-stone-500">
-                关闭模块只隐藏入口并阻止后续受保护的 API，不会删除历史订单或库存数据。
+                关闭模块会隐藏前后台入口并让受保护 API 返回 403，不会删除历史商品、订单、库存流水或条码。POS 作废、小票和日报会跟随 POS 依赖关系自动调整。
               </p>
               <button className="admin-button-primary shrink-0" disabled={featureSaving} onClick={saveFeatureSettings} type="button">
                 {featureSaving ? "保存中..." : "保存版本功能"}

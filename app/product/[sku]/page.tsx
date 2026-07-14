@@ -17,6 +17,7 @@ import {
 } from "@/lib/i18n";
 import { getProductBySku } from "@/lib/products";
 import { getTotalStock } from "@/lib/product-stock";
+import { getFeatureSettings } from "@/lib/features";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 
@@ -84,9 +85,10 @@ export default async function ProductPage({
   const [{ sku }, resolvedSearchParams] = await Promise.all([params, searchParams]);
   const language = getLanguage(resolvedSearchParams.lang);
   const t = text[language];
-  const [settings, productResult] = await Promise.all([
+  const [settings, productResult, featureSettings] = await Promise.all([
     getBusinessSettings(),
     getProductBySku(decodeURIComponent(sku)),
+    getFeatureSettings(),
   ]);
   const { product, error } = productResult;
 
@@ -251,7 +253,8 @@ export default async function ProductPage({
                 sizeStock={safeSizeStock}
                 stock={Number(product.stock)}
                 skroutzUrl={product.skroutz_url}
-                skroutzEnabled={settings.enable_skroutz}
+                skroutzEnabled={featureSettings.features.skroutz_feed && settings.enable_skroutz}
+                aiEnabled={featureSettings.features.ai_tools}
                 language={language}
                 category={product.category}
                 subcategory={product.subcategory || undefined}
@@ -265,7 +268,7 @@ export default async function ProductPage({
 
             {/* Purchase note */}
             <p className="mt-4 text-xs leading-relaxed text-stone-400">
-              {t.purchaseNote}
+              {featureSettings.features.skroutz_feed && settings.enable_skroutz ? t.purchaseNote : t.purchaseContactNote}
             </p>
 
             {/* Details (collapsible or always shown) */}

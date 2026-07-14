@@ -21,6 +21,8 @@ export async function GET(request: NextRequest) {
     const result = await getInventoryOverview({
       q: url.searchParams.get("q") || undefined,
       size: url.searchParams.get("size") || undefined,
+      category: url.searchParams.get("category") || undefined,
+      subcategory: url.searchParams.get("subcategory") || undefined,
       zeroStock: parseBoolean(url.searchParams.get("zeroStock")),
       inactive: parseBoolean(url.searchParams.get("inactive")),
       limit: Number(url.searchParams.get("limit")) || undefined,

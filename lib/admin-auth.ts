@@ -1,4 +1,5 @@
 import { getSupabaseAdminClient } from "./supabase";
+import { isFeatureEnabled } from "./features";
 
 export type AdminRole = "owner" | "staff" | "inventory" | "readonly";
 
@@ -13,7 +14,6 @@ export type AdminPermission =
   | "pos:void"
   | "labels:write"
   | "categories:write"
-  | "settings:write"
   | "feed:read"
   | "backup:read"
   | "ai:write";
@@ -39,7 +39,6 @@ const ROLE_PERMISSIONS: Record<AdminRole, AdminPermission[]> = {
     "pos:void",
     "labels:write",
     "categories:write",
-    "settings:write",
     "feed:read",
     "backup:read",
     "ai:write",
@@ -101,7 +100,10 @@ function isAdminRole(value: unknown): value is AdminRole {
 
 export async function getAdminAuthContextFromRequest(request: Request): Promise<AdminAuthContext | null> {
   const passwordContext = getAdminContextFromRequest(request);
-  if (passwordContext) return passwordContext;
+  if (passwordContext) {
+    if (passwordContext.role !== "owner" && !(await isFeatureEnabled("staff_accounts"))) return null;
+    return passwordContext;
+  }
 
   const token = getBearerToken(request);
   if (!token) return null;
@@ -122,6 +124,7 @@ export async function getAdminAuthContextFromRequest(request: Request): Promise<
 
   if (adminUserError || !adminUser || !isAdminRole(adminUser.role)) return null;
   const role = adminUser.role as AdminRole;
+  if (role !== "owner" && !(await isFeatureEnabled("staff_accounts"))) return null;
 
   return {
     role,

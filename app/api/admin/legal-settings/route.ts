@@ -1,16 +1,12 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync, adminRequestIsOwnerAsync, getAdminAuthContextFromRequest } from "@/lib/admin-auth";
 import { cacheTags } from "@/lib/cache-tags";
+import { developerRequestIsAuthorized } from "@/lib/developer-auth";
 import { getAdminLegalSettings, normalizeLegalSettings, validateLegalSettings } from "@/lib/legal-settings";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
-
-function actor(auth: Awaited<ReturnType<typeof getAdminAuthContextFromRequest>>) {
-  return auth?.userId || auth?.email || auth?.displayName || auth?.role || "owner";
 }
 
 function refreshLegalPages() {
@@ -21,16 +17,15 @@ function refreshLegalPages() {
 }
 
 export async function GET(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "settings:write"))) return unauthorized();
+  if (!(await developerRequestIsAuthorized(request))) return unauthorized();
   return NextResponse.json({ ok: true, record: await getAdminLegalSettings() });
 }
 
 export async function PUT(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "settings:write"))) return unauthorized();
+  if (!(await developerRequestIsAuthorized(request))) return unauthorized();
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 500 });
 
-  const auth = await getAdminAuthContextFromRequest(request);
   const payload = await request.json().catch(() => null);
   if (!payload) return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   const settings = normalizeLegalSettings(payload.settings);
@@ -40,7 +35,7 @@ export async function PUT(request: NextRequest) {
     id: 1,
     draft: settings,
     is_complete: errors.length === 0,
-    updated_by: actor(auth),
+    updated_by: "developer",
     updated_at: new Date().toISOString(),
   }, { onConflict: "id" });
 
@@ -52,11 +47,10 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!(await adminRequestIsOwnerAsync(request))) return unauthorized();
+  if (!(await developerRequestIsAuthorized(request))) return unauthorized();
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 500 });
 
-  const auth = await getAdminAuthContextFromRequest(request);
   const payload = await request.json().catch(() => null);
   if (!payload) return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   const settings = normalizeLegalSettings(payload.settings);
@@ -74,7 +68,7 @@ export async function POST(request: NextRequest) {
   const versionNumber = Number(latest?.version_number || 0) + 1;
   const versionLabel = `v${versionNumber}`;
   const publishedAt = new Date().toISOString();
-  const publishedBy = actor(auth);
+  const publishedBy = "developer";
 
   const { data: version, error: versionError } = await (supabase as any)
     .from("legal_settings_versions")

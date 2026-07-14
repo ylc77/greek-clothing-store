@@ -31,7 +31,9 @@ function Field({ label, required, children }: { label: string; required?: boolea
 
 export default function LegalSettingsPage() {
   const [password, setPassword] = useState("");
-  const [activePassword, setActivePassword] = useState("");
+  const [authorized, setAuthorized] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authError, setAuthError] = useState("");
   const [record, setRecord] = useState<LegalSettingsRecord>(emptyRecord);
   const [settings, setSettings] = useState<LegalSettingsData>(emptyRecord.settings);
   const [status, setStatus] = useState("");
@@ -42,15 +44,52 @@ export default function LegalSettingsPage() {
   async function api(method: string, body?: unknown) {
     const response = await fetch("/api/admin/legal-settings", {
       method,
-      headers: { "Content-Type": "application/json", "x-admin-password": activePassword },
+      headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await response.json();
     if (!response.ok) {
+      if (response.status === 401) setAuthorized(false);
       setErrors(Array.isArray(data.errors) ? data.errors : []);
       throw new Error(data.error || "请求失败");
     }
     return data;
+  }
+
+  async function checkDeveloperSession() {
+    try {
+      const response = await fetch("/api/admin/developer-session", { cache: "no-store" });
+      setAuthorized(response.ok);
+    } finally {
+      setAuthChecking(false);
+    }
+  }
+
+  async function loginDeveloper(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthError("");
+    setBusy(true);
+    try {
+      const response = await fetch("/api/admin/developer-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "登录失败");
+      setPassword("");
+      setAuthorized(true);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "登录失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logoutDeveloper() {
+    await fetch("/api/admin/developer-session", { method: "DELETE" }).catch(() => null);
+    setAuthorized(false);
+    setPassword("");
   }
 
   async function load() {
@@ -74,7 +113,8 @@ export default function LegalSettingsPage() {
     setLinkChecks(Object.fromEntries(results));
   }
 
-  useEffect(() => { if (activePassword) void load(); }, [activePassword]);
+  useEffect(() => { void checkDeveloperSession(); }, []);
+  useEffect(() => { if (authorized) void load(); }, [authorized]);
 
   function update<K extends keyof LegalSettingsData>(key: K, value: LegalSettingsData[K]) {
     setSettings((current) => ({ ...current, [key]: value }));
@@ -109,15 +149,20 @@ export default function LegalSettingsPage() {
     finally { setBusy(false); }
   }
 
-  if (!activePassword) {
+  if (authChecking) {
+    return <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#fbfaf6] via-white to-stone-100"><p className="text-sm font-black text-stone-500">正在检查开发者权限...</p></main>;
+  }
+
+  if (!authorized) {
     return <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#fbfaf6] via-white to-stone-100 px-4 py-10">
       <section className="w-full max-w-sm rounded-3xl border border-stone-200 bg-white p-8 text-center shadow-xl">
         <p className="text-xs font-black uppercase tracking-[0.18em] text-olive">Legal Settings</p>
         <h1 className="mt-3 text-2xl font-black text-ink">法律与商家信息设置</h1>
-        <p className="mt-2 text-sm text-stone-500">需要后台设置权限才能读取或修改法律配置。</p>
-        <form className="mt-6 space-y-4" onSubmit={(event) => { event.preventDefault(); setActivePassword(password); }}>
-          <input className="input text-center" onChange={(event) => setPassword(event.target.value)} placeholder="管理密码" type="password" value={password} />
-          <button className="admin-button-primary w-full" type="submit">登录</button>
+        <p className="mt-2 text-sm text-stone-500">此页面仅供项目开发者维护，商家后台账号不能进入。</p>
+        <form className="mt-6 space-y-4" onSubmit={loginDeveloper}>
+          <input className="input text-center" onChange={(event) => setPassword(event.target.value)} placeholder="开发者设置密码" type="password" value={password} />
+          {authError ? <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{authError}</p> : null}
+          <button className="admin-button-primary w-full" disabled={busy} type="submit">{busy ? "验证中..." : "开发者登录"}</button>
         </form>
       </section>
     </main>;
@@ -130,7 +175,7 @@ export default function LegalSettingsPage() {
     <div className="mx-auto max-w-6xl">
       <header className="mb-6 flex flex-col gap-4 rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div><p className="text-xs font-black uppercase tracking-[0.18em] text-olive">Clothing Store Legal Settings</p><h1 className="mt-1 text-2xl font-black text-ink">服装店法律与商家信息</h1><p className="mt-1 text-xs text-stone-400">仅包含本服装零售项目需要的内容。草稿不会影响前台，发布后才生成正式版本。</p></div>
-        <div className="flex flex-wrap gap-2"><a className="admin-button-secondary" href="/admin/settings">返回 Settings</a><a className="admin-button-secondary" href="/admin">返回后台</a></div>
+        <div className="flex flex-wrap gap-2"><a className="admin-button-secondary" href="/admin/settings">返回 Settings</a><a className="admin-button-secondary" href="/admin">返回后台</a><button className="admin-button-secondary" onClick={() => void logoutDeveloper()} type="button">退出开发者设置</button></div>
       </header>
 
       {!record.complete ? <div data-testid="legal-incomplete-warning" className="mb-5 rounded-2xl border border-red-300 bg-red-50 px-5 py-4 text-sm font-black text-red-800">法律信息未完成，不建议正式商用上线。</div> : null}

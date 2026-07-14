@@ -7,6 +7,7 @@ import { SiteHeader } from "@/components/site-header";
 import { loadCategories } from "@/lib/categories-data";
 import { categoryLabels, getLanguage, localizeHours, text, withLanguage } from "@/lib/i18n";
 import { getCategoryImages, getLatestProducts } from "@/lib/products";
+import { getFeatureSettings } from "@/lib/features";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 import { categories } from "@/lib/types";
@@ -40,12 +41,20 @@ export async function generateMetadata({
 export default async function HomePage({ searchParams }: HomePageProps) {
   const language = getLanguage((await searchParams).lang);
   const t = text[language];
-  const [settings, latestProducts, categoryImages, categoryData] = await Promise.all([
+  const [settings, latestProducts, categoryImages, categoryData, featureSettings] = await Promise.all([
     getBusinessSettings(),
     getLatestProducts(4),
     Promise.resolve(getCategoryImages()),
     loadCategories(),
+    getFeatureSettings(),
   ]);
+  const skroutzEnabled = featureSettings.features.skroutz_feed && settings.enable_skroutz;
+  const howToBuySteps = [
+    { title: t.step1Title, desc: t.step1Desc },
+    { title: t.step2Title, desc: t.step2Desc },
+    { title: t.step3Title, desc: t.step3Desc },
+    ...(skroutzEnabled ? [{ title: t.step4Title, desc: t.step4Desc }] : []),
+  ];
   const { products, error } = latestProducts;
   const categoryCoverImages = {
     ...categoryImages,
@@ -214,13 +223,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </h2>
           </div>
 
-          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { title: t.step1Title, desc: t.step1Desc },
-              { title: t.step2Title, desc: t.step2Desc },
-              { title: t.step3Title, desc: t.step3Desc },
-              { title: t.step4Title, desc: t.step4Desc },
-            ].map((step, i) => (
+          <div className={`grid gap-8 sm:grid-cols-2 ${howToBuySteps.length === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
+            {howToBuySteps.map((step, i) => (
               <div key={i} className="group flex flex-col items-center text-center">
                 {/* numbered circle */}
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-ink text-lg font-bold text-white transition group-hover:bg-stone-800">
@@ -244,7 +248,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <div className="mb-10 text-center">
             <h2 className="text-3xl font-black tracking-tight text-ink sm:text-4xl">{t.whyUs}</h2>
           </div>
-          <div className="grid gap-8 sm:grid-cols-3">
+          <div className={`grid gap-8 ${skroutzEnabled ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
             <div className="flex flex-col items-center text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-stone-100">
                 <svg className="h-6 w-6 text-ink" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
@@ -252,13 +256,13 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               <p className="mt-4 text-base font-black text-ink">{t.whyLocal}</p>
               <p className="mt-2 max-w-xs text-sm leading-relaxed text-stone-500">{t.whyLocalDesc}</p>
             </div>
-            <div className="flex flex-col items-center text-center">
+            {skroutzEnabled ? <div className="flex flex-col items-center text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-stone-100">
                 <svg className="h-6 w-6 text-ink" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
               </div>
               <p className="mt-4 text-base font-black text-ink">{t.whySkroutz}</p>
               <p className="mt-2 max-w-xs text-sm leading-relaxed text-stone-500">{t.whySkroutzDesc}</p>
-            </div>
+            </div> : null}
             <div className="flex flex-col items-center text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-stone-100">
                 <svg className="h-6 w-6 text-ink" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path d="M21 15v-2a7 7 0 00-7-7H10a7 7 0 00-7 7v2m18 0a2 2 0 00-2-2H8a2 2 0 00-2 2v0a2 2 0 002 2h11a2 2 0 002-2z"/></svg>

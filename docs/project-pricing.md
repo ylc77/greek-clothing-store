@@ -158,9 +158,9 @@
 适合客户：
 
 - 刚开店的小型服装店
-- 只需要官网展示和简单商品后台
+- 需要官网、商品后台和尺码库存快查
+- 由店主单人维护
 - 暂时不需要 POS 收银
-- 暂时不需要复杂库存系统
 
 包含功能：
 
@@ -168,8 +168,13 @@
 - 分类页
 - 商品详情页
 - 商品后台管理
+- 拍照上新与新增 / 编辑
 - 图片上传
 - 分类管理
+- 供货商与供货商 SKU（选填）
+- 尺码库存快查
+- 库存作业、手动调整、流水和对账
+- 快速售出扣库存
 - 联系页面
 - 基础法律页面模板
 - Cookie Banner 结构
@@ -181,10 +186,13 @@
 不包含：
 
 - POS 收银
-- ERP 库存流水
+- POS 扫码扣库存和销售记录
 - Barcode 标签打印
-- Skroutz Feed 深度配置
+- CSV 批量导入
+- Skroutz Feed
+- AI 商品与前台导购
 - 员工权限
+- 维护数据导出
 - myDATA
 - 电子发票
 - 银行 POS 联动
@@ -204,35 +212,29 @@
 适合客户：
 
 - 已经有一定商品数量的服装店
-- 想管理库存
+- 需要实体店扫码快速扣减系统库存
 - 想打印商品标签
-- 想接 Skroutz
-- 暂时不需要完整收银闭环
+- 需要员工协作和批量导入
 
 包含功能：
 
 - 基础版全部功能
-- ERP 库存管理
-- 变体库存
-- 尺码 / 颜色库存
-- 库存流水
-- 手动库存调整
-- 低库存提醒
-- 库存对账状态
+- POS 扫码搜索与 Dry Run 预检
+- POS 确认后扣减系统库存
+- POS 销售记录与详情
+- POS 作废恢复库存
+- POS 营业日报
+- 销售记录小票预览与浏览器打印
 - CSV 导入
-- Skroutz Feed
 - Barcode 生成
-- 商品标签打印 UI
-- 库存 CSV 导出
-- 后台基础权限结构
-- AI 商品文案 / 翻译功能，需客户提供 API Key
+- 商品标签筛选、预览和打印
+- 员工账号与角色权限
 
 不包含：
 
-- POS 收银正式启用
-- POS 订单历史
-- POS 作废
-- 小票打印
+- Skroutz Feed 与渠道配置
+- AI 商品文案、翻译、图片和前台导购
+- 维护数据导出
 - myDATA
 - 电子发票
 - 银行 POS 联动
@@ -253,28 +255,20 @@
 
 适合客户：
 
-- 有实体店收银需求的服装店
-- 需要官网 + 后台 + ERP + POS 一体化
-- 希望扫码卖货、扣库存、打印小票
-- 后续准备接 myDATA / 电子发票服务商
+- 需要实体店运营能力并同时拓展 Skroutz 渠道
+- 希望使用 AI 加快商品资料、翻译和导购内容维护
+- 需要完整现有模块和维护数据导出
 
 包含功能：
 
 - 标准版全部功能
-- POS 收银
-- POS dryRun 预检
-- POS 订单历史
-- POS 订单详情
-- POS 作废订单
-- POS 日报
-- POS RPC transaction
-- 付款方式记录：cash / card / other
-- 小票预览
-- 浏览器打印小票
-- 58mm / 80mm 小票样式
-- POS health check
-- ERP / POS 对账 SQL
-- 后台员工账号基础结构
+- Skroutz Feed、XML 输出和商品完整度检查
+- 前台 Skroutz 入口
+- AI 商品文案、希腊语 / 英语翻译和资料补全
+- AI 商品图片能力（需要对应 API Key）
+- 前台 AI 导购
+- 维护数据导出入口
+- 高级上线检查
 - 生产环境部署协助
 - 基础操作培训
 
@@ -381,16 +375,16 @@
 
 我们提供一套适合服装店的官网 + 后台管理 + 库存 + POS 收银系统。
 
-系统可以帮助商家展示商品、管理库存、打印商品标签、进行线下收银、查看订单记录，并支持 Skroutz Feed。相比普通展示网站，这套系统更适合实体店和网店一起经营。
+系统可以帮助商家展示商品、管理尺码库存、打印商品标签、扫码记录销售并同步扣减系统库存，也可以按高级版启用 Skroutz 和 AI。真实收款仍由实体收银机完成。
 
 报价方案：
 
 - 基础版：`€900 - €1,500`  
-  适合只需要官网展示和商品后台的小型商家。
+  适合需要双语官网、商品管理和尺码库存快查的单人小店。
 - 标准版：`€2,200 - €3,500`  
-  适合需要库存管理、CSV 导入、Skroutz Feed、Barcode 和标签打印的商家。
+  推荐实体店使用，包含 POS 扫码扣库存、销售记录与作废、CSV、Barcode 标签和员工账号。
 - 高级版：`€4,500 - €7,500`  
-  适合需要 ERP 库存、POS 收银、订单历史、小票打印和完整后台系统的实体店。
+  在标准版之上增加 Skroutz Feed、AI 商品与导购工具和维护数据导出。
 
 说明：当前系统不包含正式税务发票、myDATA、银行 POS 联动和电子发票服务商对接。这些功能可以根据客户需求后续定制开发。
 
@@ -398,16 +392,16 @@
 
 We provide a custom website, admin dashboard, inventory system and POS solution for fashion and retail stores.
 
-The system helps merchants display products online, manage inventory, print barcode labels, run in-store checkout, track orders and generate Skroutz feeds. Compared with a normal showcase website, this solution is designed for both online and physical store operations.
+The system helps merchants display products online, manage size-level inventory, print barcode labels, scan sales and update system stock. Skroutz and AI are available in the Advanced Plan; real payment remains on the physical cash register.
 
 Pricing options:
 
 - Basic Plan: `€900 - €1,500`  
-  Suitable for small shops that need a product website and basic admin dashboard.
+  Suitable for owner-operated shops that need a bilingual storefront, product management and size-level inventory lookup.
 - Standard Plan: `€2,200 - €3,500`  
-  Suitable for stores that need inventory management, CSV import, Skroutz Feed, barcode generation and label printing.
+  Recommended for physical stores that need POS barcode stock deduction, sale records and voids, CSV import, barcode labels and staff accounts.
 - Advanced Plan: `€4,500 - €7,500`  
-  Suitable for physical stores that need ERP inventory, POS checkout, order history, receipt printing and a complete admin system.
+  Adds Skroutz Feed, AI product and shopping-assistant tools, and maintenance data export to the Standard Plan.
 
 Note: This version does not include official tax invoicing, myDATA, bank POS integration or electronic invoice provider integration. These can be added later as custom development.
 
@@ -415,16 +409,16 @@ Note: This version does not include official tax invoicing, myDATA, bank POS int
 
 Προσφέρουμε μια προσαρμοσμένη λύση για καταστήματα μόδας και λιανικής, που περιλαμβάνει ιστοσελίδα, διαχείριση προϊόντων, αποθήκη και POS.
 
-Το σύστημα βοηθά τον έμπορο να παρουσιάζει προϊόντα online, να διαχειρίζεται απόθεμα, να εκτυπώνει barcode labels, να κάνει πωλήσεις στο φυσικό κατάστημα, να βλέπει παραγγελίες και να δημιουργεί Skroutz Feed. Σε αντίθεση με μια απλή ιστοσελίδα παρουσίασης, αυτή η λύση είναι σχεδιασμένη για online και φυσικό κατάστημα μαζί.
+Το σύστημα βοηθά τον έμπορο να παρουσιάζει προϊόντα online, να διαχειρίζεται απόθεμα ανά μέγεθος, να εκτυπώνει barcode labels και να καταγράφει πωλήσεις με σάρωση ώστε να ενημερώνεται το απόθεμα. Η πραγματική πληρωμή συνεχίζει να γίνεται στην ταμειακή μηχανή.
 
 Πακέτα τιμών:
 
 - Basic Plan: `€900 - €1,500`  
-  Για μικρά καταστήματα που χρειάζονται ιστοσελίδα προϊόντων και βασικό admin.
+  Για μικρά καταστήματα που χρειάζονται δίγλωσση ιστοσελίδα, διαχείριση προϊόντων και γρήγορο έλεγχο αποθέματος ανά μέγεθος.
 - Standard Plan: `€2,200 - €3,500`  
-  Για καταστήματα που χρειάζονται διαχείριση αποθήκης, CSV import, Skroutz Feed, barcode και εκτύπωση labels.
+  Για φυσικά καταστήματα που χρειάζονται σάρωση barcode για αφαίρεση αποθέματος, ιστορικό και ακύρωση πωλήσεων, CSV, labels και λογαριασμούς προσωπικού.
 - Advanced Plan: `€4,500 - €7,500`  
-  Για φυσικά καταστήματα που χρειάζονται ERP αποθήκη, POS checkout, ιστορικό παραγγελιών, απόδειξη παραγγελίας και πλήρες admin σύστημα.
+  Περιλαμβάνει επιπλέον Skroutz Feed, εργαλεία AI για προϊόντα και εξαγωγή δεδομένων συντήρησης.
 
 Σημείωση: Η παρούσα έκδοση δεν περιλαμβάνει επίσημη φορολογική τιμολόγηση, myDATA, σύνδεση με τραπεζικό POS ή πάροχο ηλεκτρονικής τιμολόγησης. Αυτές οι λειτουργίες μπορούν να προστεθούν αργότερα ως custom development.
 

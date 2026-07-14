@@ -103,3 +103,27 @@ This repository was observed returning temporary local 500 errors when `next bui
 
 Before running `npm run build`, stop this repository's development server. After the build finishes, restart `npm run dev -- -p 3010` before continuing Playwright or browser verification. Do not treat errors caused by concurrent `next dev` and `next build` as application regressions until the development server has been restarted cleanly.
 
+
+\---
+
+
+\## 9. Developer-only store and legal settings
+
+
+Store Settings and Legal Settings intentionally do not use normal admin roles, including `owner`. They require the separate developer session backed by the salted hash in `public.developer_access`. Never replace this with `settings:write`, expose the credential through a public API, or add the plaintext password to environment variables, documentation, source code, screenshots, or logs.
+
+
+The settings image-upload route is also reused by category management. Keep `categories:write` access for that upload path so normal catalog work is not broken, but keep the store-settings and legal-settings read/write APIs developer-only.
+
+
+\---
+
+
+\## 10. Customer version feature source of truth
+
+
+`lib/feature-catalog.ts` is the shared source of truth for Basic, Standard, Advanced, feature labels, fixed core features, and dependency behavior. Do not duplicate plan presets inside the Settings page or admin dashboard.
+
+
+Feature disabling must cover all four layers where applicable: public storefront copy/actions, admin navigation and controls, direct API calls, and employee authentication. The previous implementation left the public AI launcher, product AI button, Skroutz storefront copy, and employee account authorization active after their feature flags were disabled. Keep these surfaces gated and use the safe Basic preset while feature configuration is loading or unavailable so premium modules do not flash open.
+

@@ -45,7 +45,7 @@ function stringValue(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-async function toOptimizedWebp(file: File): Promise<{ buffer: Buffer; width: number; height: number; warning?: string }> {
+async function toOptimizedWebp(file: File, skroutzEnabled: boolean): Promise<{ buffer: Buffer; width: number; height: number; warning?: string }> {
   // Reject HEIC/HEIF early with a clear message
   const fileNameLower = file.name.toLowerCase();
   if (
@@ -74,7 +74,7 @@ async function toOptimizedWebp(file: File): Promise<{ buffer: Buffer; width: num
   let warning: string | undefined;
 
   // Skroutz check: both sides < 1000px
-  if (srcW > 0 && srcH > 0 && srcW < SKROUTZ_MIN_PX && srcH < SKROUTZ_MIN_PX) {
+  if (skroutzEnabled && srcW > 0 && srcH > 0 && srcW < SKROUTZ_MIN_PX && srcH < SKROUTZ_MIN_PX) {
     warning = `图片尺寸 ${srcW}x${srcH} 不满足 Skroutz 最低要求（至少一边 ≥ ${SKROUTZ_MIN_PX}px）`;
   }
 
@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
     return unauthorized();
   }
   if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
+  const skroutzEnabled = await isFeatureEnabled("skroutz_feed");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
@@ -248,7 +249,7 @@ export async function POST(request: NextRequest) {
 
     let webpBuffer: Buffer; let imgW = 0; let imgH = 0; let sizeWarning: string | undefined;
     try {
-      const result = await toOptimizedWebp(file);
+      const result = await toOptimizedWebp(file, skroutzEnabled);
       webpBuffer = result.buffer; imgW = result.width; imgH = result.height; sizeWarning = result.warning;
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown conversion error";
