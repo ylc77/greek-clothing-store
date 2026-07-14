@@ -5,6 +5,7 @@ import {
   type AdminProductPayload,
   type ProductMutation,
 } from "@/lib/admin-products";
+import type { VariantProcurement } from "@/lib/types";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { invalidateProductsCache } from "@/lib/cache";
@@ -29,6 +30,7 @@ type ImportResult = {
 type ValidImportRow = {
   rowNumber: number;
   mutation: ProductMutation;
+  variantProcurement?: Record<string, VariantProcurement>;
 };
 
 type ErpSyncError = {
@@ -61,17 +63,50 @@ function parseCsvSizeStock(value: unknown) {
   }
 
   const sizeStock: Record<string, number> = {};
-  value.split(/[,\s]+/).forEach((pair) => {
-    const [size, qty] = pair.split(":");
-    if (!size || qty === undefined) return;
-
-    const parsedQty = parseInt(qty, 10);
+  for (const match of value.matchAll(/([^,;]+?):\s*(\d+)/g)) {
+    const size = match[1]?.trim();
+    const parsedQty = parseInt(match[2], 10);
+    if (!size) continue;
     if (!Number.isNaN(parsedQty) && parsedQty >= 0) {
       sizeStock[size.trim().toUpperCase()] = parsedQty;
     }
-  });
+  }
 
   return Object.keys(sizeStock).length > 0 ? sizeStock : null;
+}
+
+function parseCsvVariantValues(value: unknown) {
+  const result: Record<string, string> = {};
+  if (typeof value !== "string" || !value.trim()) return result;
+
+  value.split(/[;,]/).forEach((pair) => {
+    const separator = pair.indexOf(":");
+    if (separator <= 0) return;
+    const size = pair.slice(0, separator).trim().toUpperCase();
+    const item = pair.slice(separator + 1).trim();
+    if (size && item) result[size] = item;
+  });
+  return result;
+}
+
+function parseCsvVariantProcurement(row: ImportRow) {
+  const supplierSkus = parseCsvVariantValues(row.variant_supplier_skus);
+  const costPrices = parseCsvVariantValues(row.variant_cost_prices);
+  const reorderLevels = parseCsvVariantValues(row.variant_reorder_levels);
+  const sizes = new Set([...Object.keys(supplierSkus), ...Object.keys(costPrices), ...Object.keys(reorderLevels)]);
+  const result: Record<string, VariantProcurement> = {};
+
+  sizes.forEach((size) => {
+    const costPrice = Number(costPrices[size]);
+    const reorderLevel = Number(reorderLevels[size]);
+    result[size] = {
+      supplier_sku: supplierSkus[size] || "",
+      cost_price: Number.isFinite(costPrice) && costPrice >= 0 ? costPrice : null,
+      reorder_level: Number.isFinite(reorderLevel) && reorderLevel >= 0 ? Math.trunc(reorderLevel) : null,
+    };
+  });
+
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function readableImportMessage(message: string) {
@@ -141,7 +176,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    validRows.push({ rowNumber, mutation });
+    validRows.push({ rowNumber, mutation, variantProcurement: parseCsvVariantProcurement(row) });
   });
 
   const translateResults = await batchTranslateRows(
@@ -223,8 +258,10 @@ export async function POST(request: NextRequest) {
             }
 
             try {
+              const importedRow = rowsToUpsert.find((row) => skuKey(row.mutation.sku) === skuKey(productSku));
               await syncProductInventoryFromLegacy({
                 productId,
+                variantProcurement: importedRow?.variantProcurement,
                 reason: "CSV 导入同步库存",
                 sourceType: "csv_import",
                 sourceId: batchId,

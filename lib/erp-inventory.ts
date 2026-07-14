@@ -1,6 +1,7 @@
 // This module must only run on the server. Never import it from client components.
 
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import type { VariantProcurement } from "@/lib/types";
 
 type LegacyProductInventory = {
   id: number | string;
@@ -11,6 +12,7 @@ type LegacyProductInventory = {
   stock?: number | string | null;
   size_stock?: Record<string, unknown> | null;
   is_active?: boolean | null;
+  supplier_id?: string | null;
 };
 
 type ProductVariantRecord = {
@@ -55,6 +57,7 @@ export type SyncProductInventoryInput = {
   movementType: InventoryMovementType;
   idempotencyKey: string;
   createdBy?: string | null;
+  variantProcurement?: Record<string, VariantProcurement>;
 };
 
 export type SyncProductInventoryResult = {
@@ -92,6 +95,11 @@ export type InventoryOverviewItem = {
   size: string | null;
   color: string | null;
   barcode: string | null;
+  supplier_sku: string | null;
+  supplier_name: string | null;
+  supplier_style_code: string | null;
+  cost_price: number | null;
+  reorder_level: number | null;
   price: number;
   active: boolean;
   quantity_on_hand: number;
@@ -216,6 +224,25 @@ function nonBlank(value: string) {
 
 function normalizedVariantIdentity(size: string | null | undefined, color: string | null | undefined) {
   return `${(size || "").trim().toUpperCase()}::${(color || "").trim().toUpperCase()}`;
+}
+
+function procurementForSize(
+  values: Record<string, VariantProcurement> | undefined,
+  size: string,
+) {
+  if (!values) return null;
+  const target = normalizeSize(size);
+  const match = Object.entries(values).find(([key]) => normalizeSize(key) === target)?.[1];
+  if (!match) return null;
+  const cost = match.cost_price === null || match.cost_price === undefined ? null : Number(match.cost_price);
+  const reorder = match.reorder_level === null || match.reorder_level === undefined
+    ? null
+    : Math.max(0, Math.trunc(Number(match.reorder_level)));
+  return {
+    supplier_sku: String(match.supplier_sku || "").trim() || null,
+    cost_price: Number.isFinite(cost) && Number(cost) >= 0 ? Number(cost) : null,
+    reorder_level: Number.isFinite(reorder) ? reorder : null,
+  };
 }
 
 function normalizedSizeStock(value: unknown) {
@@ -395,10 +422,10 @@ async function loadInventoryOverviewRows(): Promise<InventoryOverviewItem[]> {
     await Promise.all([
       supabase
         .from("products")
-        .select("id, sku, name_cn, name_en, name_gr, price, stock, size_stock, is_active"),
+        .select("id, sku, name_cn, name_en, name_gr, price, stock, size_stock, is_active, supplier_id, supplier_style_code"),
       supabase
         .from("product_variants")
-        .select("id, product_id, variant_sku, barcode, size, color, price, active"),
+        .select("id, product_id, variant_sku, barcode, size, color, price, active, supplier_sku, cost_price, reorder_level"),
     ]);
 
   if (productsError) {
@@ -411,6 +438,17 @@ async function loadInventoryOverviewRows(): Promise<InventoryOverviewItem[]> {
   const productMap = new Map<number, Record<string, unknown>>();
   for (const product of products || []) {
     productMap.set(Number(product.id), product as Record<string, unknown>);
+  }
+
+  const supplierIds = Array.from(new Set((products || []).map((product: { supplier_id?: string | null }) => product.supplier_id).filter(Boolean))) as string[];
+  const supplierNames = new Map<string, string>();
+  if (supplierIds.length > 0) {
+    const { data: suppliers, error: suppliersError } = await supabase
+      .from("suppliers")
+      .select("id, name")
+      .in("id", supplierIds);
+    if (suppliersError) throw new Error(`Failed to load suppliers: ${suppliersError.message}`);
+    for (const supplier of suppliers || []) supplierNames.set(String(supplier.id), String(supplier.name || ""));
   }
 
   const variantIds = (variants || []).map((variant: { id: string }) => variant.id);
@@ -484,6 +522,11 @@ async function loadInventoryOverviewRows(): Promise<InventoryOverviewItem[]> {
       size: variant.size === null || variant.size === undefined ? null : String(variant.size),
       color: variant.color === null || variant.color === undefined ? null : String(variant.color),
       barcode: variant.barcode === null || variant.barcode === undefined ? null : String(variant.barcode),
+      supplier_sku: variant.supplier_sku === null || variant.supplier_sku === undefined ? null : String(variant.supplier_sku),
+      supplier_name: product.supplier_id ? supplierNames.get(String(product.supplier_id)) || null : null,
+      supplier_style_code: product.supplier_style_code === null || product.supplier_style_code === undefined ? null : String(product.supplier_style_code),
+      cost_price: numberMoney(variant.cost_price),
+      reorder_level: variant.reorder_level === null || variant.reorder_level === undefined ? null : numberQuantity(variant.reorder_level),
       price: numberMoney(variant.price ?? product.price) ?? 0,
       active: variant.active !== false,
       quantity_on_hand: quantityOnHand,
@@ -512,6 +555,9 @@ export async function getInventoryOverview(params: InventoryOverviewParams = {})
         row.product_sku,
         row.variant_sku,
         row.barcode || "",
+        row.supplier_sku || "",
+        row.supplier_name || "",
+        row.supplier_style_code || "",
         row.color || "",
         row.size || "",
       ].some((value) => value.toLowerCase().includes(q));
@@ -907,7 +953,7 @@ export async function syncProductInventoryFromLegacy(input: SyncProductInventory
 
   const { data: product, error: productError } = await supabase
     .from("products")
-    .select("id, sku, barcode, color, price, stock, size_stock, is_active")
+    .select("id, sku, barcode, color, price, stock, size_stock, is_active, supplier_id")
     .eq("id", input.productId)
     .maybeSingle();
 
@@ -969,6 +1015,7 @@ export async function syncProductInventoryFromLegacy(input: SyncProductInventory
 
     const variantPayload: Record<string, unknown> = {
       product_id: input.productId,
+      supplier_id: product.supplier_id || null,
       variant_sku: target.variantSku,
       size: target.size,
       color: target.color,
@@ -977,6 +1024,13 @@ export async function syncProductInventoryFromLegacy(input: SyncProductInventory
       sort_order: index,
       updated_at: new Date().toISOString(),
     };
+
+    const procurement = procurementForSize(input.variantProcurement, target.size);
+    if (procurement) {
+      variantPayload.supplier_sku = procurement.supplier_sku;
+      variantPayload.cost_price = procurement.cost_price;
+      variantPayload.reorder_level = procurement.reorder_level;
+    }
 
     if (!existingVariant || (!existingVariant.barcode && targetBarcode)) {
       variantPayload.barcode = targetBarcode;

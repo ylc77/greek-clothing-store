@@ -15,6 +15,7 @@ import type { Product, ProductCategory, ProductSubcategory } from "@/lib/types";
 import { siteUrl } from "@/lib/site";
 import { unstable_cache } from "next/cache";
 import { cacheTags } from "@/lib/cache-tags";
+import { normalizeSkroutzSizes, skroutzReadinessIssues } from "@/lib/skroutz-readiness";
 
 /* ── Category paths (English, used in Skroutz feed) ─────────── */
 export const categoryPathEn: Record<ProductCategory, string> = {
@@ -120,6 +121,10 @@ const FEED_PRODUCT_SELECT = [
   "color",
   "mpn",
   "availability",
+  "material",
+  "fiber_composition_gr",
+  "fiber_composition_en",
+  "country_of_origin",
   "category_path_en",
   "category_path_gr",
   "is_active",
@@ -162,10 +167,7 @@ export async function getFeedProducts(): Promise<Product[]> {
 /* ── Feed builder: Skroutz / MyWebstore ───────────────────── */
 export function buildSkroutzFeed(products: Product[], brandName: string, minStock = 1): string {
   const requiredStock = Math.max(1, Math.trunc(Number(minStock) || 1));
-  const eligibleProducts = products.filter(product => (
-    getTotalStock(product) >= requiredStock &&
-    isAbsoluteHttpUrl(product.image_url)
-  ));
+  const eligibleProducts = products.filter(product => skroutzReadinessIssues(product, requiredStock).length === 0);
 
   const rows = eligibleProducts.map(product => {
     const stockQty = getTotalStock(product);
@@ -175,8 +177,8 @@ export function buildSkroutzFeed(products: Product[], brandName: string, minStoc
       .filter(isAbsoluteHttpUrl)
       .map(u => `      <additional_imageurl>${xmlEscape(u)}</additional_imageurl>`)
       .join("\n");
-    const mpn = product.mpn?.trim() || product.sku;
-    const ean = product.ean?.trim() || product.barcode?.trim() || "";
+    const mpn = product.mpn?.trim() || "";
+    const ean = product.ean?.trim() || "";
     const availability = product.availability?.trim() || "In stock";
 
     return `    <product>
@@ -192,7 +194,7 @@ ${imageTag}      <category>${xmlEscape(feedCategory(product))}</category>
       <availability>${xmlEscape(availability)}</availability>
       <manufacturer>${xmlEscape(product.brand || brandName)}</manufacturer>
       <mpn>${xmlEscape(mpn)}</mpn>
-${opt("ean", ean)}${opt("size", product.sizes)}${opt("color", product.color)}      <quantity>${Math.max(0, Math.trunc(stockQty))}</quantity>
+${opt("ean", ean)}${opt("size", normalizeSkroutzSizes(product.sizes))}${opt("color", product.color)}${opt("country_of_origin", product.country_of_origin)}      <quantity>${Math.max(0, Math.trunc(stockQty))}</quantity>
       <description>${xmlEscape(feedDescription(product))}</description>
 ${extras ? `${extras}\n` : ""}    </product>`;
   }).join("\n");

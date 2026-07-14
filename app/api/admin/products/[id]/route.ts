@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
-import { productForForm, validateProductPayload } from "@/lib/admin-products";
+import { parseVariantProcurement, productForForm, validateProductPayload } from "@/lib/admin-products";
 import { invalidateProductsCache } from "@/lib/cache";
 import {
   hasInventoryMovementsForProduct,
@@ -42,6 +42,7 @@ export async function PUT(request: NextRequest, context: ProductRouteContext) {
   const { id } = await context.params;
   const payload = await request.json();
   const { errors, mutation } = validateProductPayload(payload);
+  const variantProcurement = parseVariantProcurement(payload.variant_procurement);
 
   if (!mutation) {
     return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
@@ -110,6 +111,7 @@ export async function PUT(request: NextRequest, context: ProductRouteContext) {
       movementType: "correction",
       idempotencyKey: `admin_edit:${productId}:${Date.now()}`,
       createdBy: "admin",
+      variantProcurement,
     });
   } catch (syncError) {
     erpSyncWarning =

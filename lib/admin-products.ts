@@ -4,7 +4,9 @@ import {
   subcategoriesByCategory,
   subcategoryList,
   type Product,
-  type ProductFormData
+  type ProductFormData,
+  type SizeSystem,
+  type VariantProcurement
 } from "./types";
 
 export { adminPasswordIsValid } from "./admin-auth";
@@ -22,10 +24,13 @@ export type AdminProductPayload = {
   price?: unknown;
   stock?: unknown;
   sizes?: unknown;
+  size_system?: unknown;
   size_stock?: unknown;
   image_url?: unknown;
   image_urls?: unknown;
   brand?: unknown;
+  supplier_id?: unknown;
+  supplier_style_code?: unknown;
   barcode?: unknown;
   ean?: unknown;
   vat?: unknown;
@@ -33,6 +38,16 @@ export type AdminProductPayload = {
   additional_image_urls?: unknown;
   skroutz_url?: unknown;
   material?: unknown;
+  fiber_composition_gr?: unknown;
+  fiber_composition_en?: unknown;
+  care_instructions_gr?: unknown;
+  care_instructions_en?: unknown;
+  country_of_origin?: unknown;
+  manufacturer_name?: unknown;
+  manufacturer_contact?: unknown;
+  eu_responsible_person?: unknown;
+  product_safety_notes_gr?: unknown;
+  product_safety_notes_en?: unknown;
   fit?: unknown;
   season?: unknown;
   mpn?: unknown;
@@ -47,8 +62,10 @@ export type AdminProductPayload = {
   material_verified?: unknown;
 };
 
-export type ProductMutation = Omit<ProductFormData, "category" | "image_urls" | "ai_keywords" | "style_tags" | "size_chart" | "fit_type"> & {
+export type ProductMutation = Omit<ProductFormData, "category" | "image_urls" | "ai_keywords" | "style_tags" | "size_chart" | "fit_type" | "supplier_id" | "size_system"> & {
   category: Product["category"];
+  supplier_id: string | null;
+  size_system: SizeSystem | null;
   image_urls: string[];
   size_stock?: Record<string, number>;
   ai_keywords?: string[];
@@ -109,6 +126,27 @@ function parseSizeStock(value: unknown): Record<string, number> | undefined {
   return Object.keys(rec).length > 0 ? rec : undefined;
 }
 
+export function parseVariantProcurement(value: unknown): Record<string, VariantProcurement> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const result: Record<string, VariantProcurement> = {};
+  for (const [size, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!size.trim() || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const row = raw as Record<string, unknown>;
+    const cost = row.cost_price === "" || row.cost_price === null || row.cost_price === undefined
+      ? null
+      : numberValue(row.cost_price);
+    const reorder = row.reorder_level === "" || row.reorder_level === null || row.reorder_level === undefined
+      ? null
+      : numberValue(row.reorder_level);
+    result[size.trim().toUpperCase()] = {
+      supplier_sku: stringValue(row.supplier_sku),
+      cost_price: Number.isFinite(cost) && Number(cost) >= 0 ? Number(cost) : null,
+      reorder_level: Number.isFinite(reorder) && Number(reorder) >= 0 ? Math.trunc(Number(reorder)) : null,
+    };
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 function imageUrlsValue(value: unknown) {
   if (Array.isArray(value)) {
     return value
@@ -129,6 +167,20 @@ function imageUrlsValue(value: unknown) {
 
 function defaultSubcategory(category: string) {
   return subcategoryList[category]?.[0] || "";
+}
+
+const sizeSystems = new Set<SizeSystem>([
+  "letter",
+  "eu_women_numeric",
+  "eu_men_numeric",
+  "eu_shoes",
+  "one_size",
+  "custom",
+]);
+
+function sizeSystemValue(value: unknown): SizeSystem | null {
+  const normalized = stringValue(value) as SizeSystem;
+  return sizeSystems.has(normalized) ? normalized : null;
 }
 
 export function validateProductPayload(payload: AdminProductPayload) {
@@ -179,10 +231,15 @@ export function validateProductPayload(payload: AdminProductPayload) {
           price,
           stock: Math.trunc(stock),
           sizes: stringValue(payload.sizes),
+          size_system: sizeSystemValue(payload.size_system),
           image_url: stringValue(payload.image_url),
           image_urls: imageUrlsValue(payload.image_urls),
           brand: stringValue(payload.brand),
+          supplier_id: stringValue(payload.supplier_id) || null,
+          supplier_style_code: stringValue(payload.supplier_style_code),
           barcode: stringValue(payload.barcode),
+          ean: stringValue(payload.ean),
+          mpn: stringValue(payload.mpn),
           vat,
           color: stringValue(payload.color),
           skroutz_url: stringValue(payload.skroutz_url),
@@ -190,6 +247,16 @@ export function validateProductPayload(payload: AdminProductPayload) {
           size_stock: parseSizeStock(payload.size_stock),
           fit_type: stringValue(payload.fit_type || "regular"),
           material: stringValue(payload.material),
+          fiber_composition_gr: stringValue(payload.fiber_composition_gr),
+          fiber_composition_en: stringValue(payload.fiber_composition_en),
+          care_instructions_gr: stringValue(payload.care_instructions_gr),
+          care_instructions_en: stringValue(payload.care_instructions_en),
+          country_of_origin: stringValue(payload.country_of_origin),
+          manufacturer_name: stringValue(payload.manufacturer_name),
+          manufacturer_contact: stringValue(payload.manufacturer_contact),
+          eu_responsible_person: stringValue(payload.eu_responsible_person),
+          product_safety_notes_gr: stringValue(payload.product_safety_notes_gr),
+          product_safety_notes_en: stringValue(payload.product_safety_notes_en),
           ai_keywords: parseStringArray(payload.ai_keywords),
           style_tags: parseStringArray(payload.style_tags),
           size_chart: parseSizeChart(payload.size_chart),
@@ -215,10 +282,15 @@ export function productForForm(product: Product): ProductFormData & { id: string
     price: Number(product.price),
     stock: Number(product.stock),
     sizes: product.sizes || "",
+    size_system: product.size_system || "",
     image_url: product.image_url || "",
     image_urls: Array.isArray(product.image_urls) ? product.image_urls.join("\n") : "",
     brand: product.brand || "",
+    supplier_id: product.supplier_id || "",
+    supplier_style_code: product.supplier_style_code || "",
     barcode: product.barcode || "",
+    ean: product.ean || "",
+    mpn: product.mpn || "",
     vat: Number(product.vat ?? 24),
     color: product.color || "",
     skroutz_url: product.skroutz_url || "",
@@ -226,6 +298,16 @@ export function productForForm(product: Product): ProductFormData & { id: string
     size_stock: (product as Record<string, unknown>).size_stock as Record<string, number> | null | undefined,
     fit_type: String((product as Record<string, unknown>).fit_type || "regular"),
     material: product.material || "",
+    fiber_composition_gr: product.fiber_composition_gr || "",
+    fiber_composition_en: product.fiber_composition_en || "",
+    care_instructions_gr: product.care_instructions_gr || "",
+    care_instructions_en: product.care_instructions_en || "",
+    country_of_origin: product.country_of_origin || "",
+    manufacturer_name: product.manufacturer_name || "",
+    manufacturer_contact: product.manufacturer_contact || "",
+    eu_responsible_person: product.eu_responsible_person || "",
+    product_safety_notes_gr: product.product_safety_notes_gr || "",
+    product_safety_notes_en: product.product_safety_notes_en || "",
     ai_keywords: Array.isArray((product as Record<string, unknown>).ai_keywords) ? ((product as Record<string, unknown>).ai_keywords as string[]).join(", ") : String((product as Record<string, unknown>).ai_keywords || ""),
     style_tags: Array.isArray((product as Record<string, unknown>).style_tags) ? ((product as Record<string, unknown>).style_tags as string[]).join(", ") : String((product as Record<string, unknown>).style_tags || ""),
     size_chart: typeof (product as Record<string, unknown>).size_chart === "object" ? JSON.stringify((product as Record<string, unknown>).size_chart) : String((product as Record<string, unknown>).size_chart || ""),

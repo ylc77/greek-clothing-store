@@ -9,6 +9,9 @@ import {
   subcategoryList,
   type ProductCategory,
   type ProductFormData,
+  type SizeSystem,
+  type Supplier,
+  type VariantProcurement,
 } from "@/lib/types";
 import { getTotalStock as effectiveStock } from "@/lib/product-stock";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -18,15 +21,16 @@ import { LabelPrintPreview, type LabelSize, type PrintableVariantLabel } from "@
 import type { AdminPermission, AdminRole } from "@/lib/admin-auth";
 import type { FeatureFlags, FeatureKey } from "@/lib/features";
 import { getSupabaseBrowserAuthClient } from "@/lib/supabase";
+import { skroutzReadinessIssues } from "@/lib/skroutz-readiness";
 
 /* ── Types ───────────────────────────────────────────────── */
-type AdminProduct = ProductFormData & { id: string; size_stock?: Record<string, number> | null };
+type AdminProduct = ProductFormData & { id: string; size_stock?: Record<string, number> | null; variant_procurement?: Record<string, VariantProcurement> };
 type ApiResult = { rowNumber?: number; fileName?: string; sku: string; ok: boolean; message: string; imageUrl?: string; translated?: boolean; translateError?: string };
 type CsvRow = Record<string, string | number>;
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "pos" | "posOrders" | "posDaily" | "inventory" | "labels" | "add" | "csv" | "images" | "skroutz" | "categories";
+type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "pos" | "posOrders" | "posDaily" | "inventory" | "labels" | "add" | "csv" | "images" | "skroutz" | "categories" | "suppliers";
 type AdminSession = { role: AdminRole; permissions: AdminPermission[]; authType?: "password" | "account"; email?: string | null; displayName?: string | null };
 type InventoryItem = {
   product_id: number;
@@ -37,6 +41,11 @@ type InventoryItem = {
   size: string | null;
   color: string | null;
   barcode: string | null;
+  supplier_sku: string | null;
+  supplier_name: string | null;
+  supplier_style_code: string | null;
+  cost_price: number | null;
+  reorder_level: number | null;
   price: number;
   active: boolean;
   quantity_on_hand: number;
@@ -243,8 +252,8 @@ type QuickAddState = {
 };
 
 /* ── Constants ───────────────────────────────────────────── */
-const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_en: "", description_cn: "", description_gr: "", description_en: "", category: "men", subcategory: "tshirts", price: 0, stock: 0, sizes: "", image_url: "", image_urls: "", brand: "", barcode: "", vat: 24, color: "", skroutz_url: "", is_active: true, fit_type: "regular", material: "", ai_keywords: "", style_tags: "", size_chart: "", material_verified: false };
-const csvFields = ["sku","name_cn","description_cn","name_en","description_en","name_gr","description_gr","category","subcategory","price","stock","sizes","size_stock","image_url","image_urls","brand","barcode","vat","color","skroutz_url","is_active","material","fit_type","ai_keywords","style_tags","size_chart","material_verified"];
+const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_en: "", description_cn: "", description_gr: "", description_en: "", category: "men", subcategory: "tshirts", price: 0, stock: 0, sizes: "", size_system: "letter", image_url: "", image_urls: "", brand: "", supplier_id: "", supplier_style_code: "", barcode: "", ean: "", mpn: "", vat: 24, color: "", skroutz_url: "", is_active: true, fit_type: "regular", material: "", fiber_composition_gr: "", fiber_composition_en: "", care_instructions_gr: "", care_instructions_en: "", country_of_origin: "", manufacturer_name: "", manufacturer_contact: "", eu_responsible_person: "", product_safety_notes_gr: "", product_safety_notes_en: "", ai_keywords: "", style_tags: "", size_chart: "", material_verified: false };
+const csvFields = ["sku","name_cn","description_cn","name_en","description_en","name_gr","description_gr","category","subcategory","price","stock","sizes","size_system","size_stock","variant_supplier_skus","variant_cost_prices","variant_reorder_levels","image_url","image_urls","brand","supplier_id","supplier_style_code","barcode","ean","mpn","vat","color","skroutz_url","is_active","material","fiber_composition_gr","fiber_composition_en","care_instructions_gr","care_instructions_en","country_of_origin","manufacturer_name","manufacturer_contact","eu_responsible_person","product_safety_notes_gr","product_safety_notes_en","fit_type","ai_keywords","style_tags","size_chart","material_verified"];
 const quickCsvFields = ["sku","name_cn","description_cn","category","subcategory","price","stock","sizes","brand","color","image_url","image_urls","is_active"];
 const csvFieldLabels: Record<string, string> = {
   sku: "SKU（必填，唯一商品编号）",
@@ -259,16 +268,34 @@ const csvFieldLabels: Record<string, string> = {
   price: "价格（必填，数字，不加 €）",
   stock: "总库存（必填，数字）",
   sizes: "尺码（选填，如 S,M,L）",
+  size_system: "尺码体系（选填：letter/eu_women_numeric/eu_men_numeric/eu_shoes/one_size/custom）",
   size_stock: "尺码库存（选填，如 S:2,M:3,L:1）",
+  variant_supplier_skus: "各尺码供货商 SKU（选填，如 S:SUP-01-S,M:SUP-01-M）",
+  variant_cost_prices: "各尺码进货价（选填，如 S:8.5,M:8.5）",
+  variant_reorder_levels: "各尺码补货提醒值（选填，如 S:2,M:2）",
   image_url: "主图 URL（选填，可后续上传图片自动绑定）",
   image_urls: "多图 URL（选填，多个用逗号或换行）",
   brand: "品牌（选填）",
-  barcode: "条码 / EAN（选填，有真实条码再填）",
+  supplier_id: "供货商 ID（选填）",
+  supplier_style_code: "供货商款号（选填）",
+  barcode: "店内 Code 128 条码（选填，不等于 EAN）",
+  ean: "真实 EAN（Skroutz 商品使用，选填）",
+  mpn: "制造商 MPN（Skroutz 商品使用，选填）",
   vat: "VAT（选填，默认 24）",
   color: "颜色（选填，建议填写）",
   skroutz_url: "Skroutz 链接（选填，没有可留空）",
   is_active: "是否上架（TRUE/FALSE）",
   material: "材质（选填）",
+  fiber_composition_gr: "希腊语纤维成分（选填）",
+  fiber_composition_en: "英语纤维成分（选填）",
+  care_instructions_gr: "希腊语护理说明（选填）",
+  care_instructions_en: "英语护理说明（选填）",
+  country_of_origin: "原产国（选填）",
+  manufacturer_name: "制造商名称（选填）",
+  manufacturer_contact: "制造商联系方式（选填）",
+  eu_responsible_person: "EU 责任方（选填）",
+  product_safety_notes_gr: "希腊语安全说明（选填）",
+  product_safety_notes_en: "英语安全说明（选填）",
   fit_type: "版型（选填：regular/slim/loose）",
   ai_keywords: "AI 关键词（选填）",
   style_tags: "风格标签（选填）",
@@ -282,13 +309,13 @@ const tabs: { key: Tab; label: string }[] = [
   { key: "posDaily", label: "POS 日报" },
   { key: "inventory", label: "库存管理" },
   { key: "labels", label: "标签打印" },
-  { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "skroutz", label: "Skroutz Feed" },
+  { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "suppliers", label: "供货商" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
 const primaryTabKeys: Tab[] = ["quickAdd", "pos", "posOrders", "posDaily", "quickSale", "dashboard", "check"];
-const managementTabKeys: Tab[] = ["inventory", "labels", "add", "images", "csv", "categories", "skroutz"];
-const mobileHiddenTabKeys = new Set<Tab>(["check", "labels", "add", "images", "csv", "categories", "skroutz"]);
+const managementTabKeys: Tab[] = ["inventory", "labels", "add", "images", "csv", "categories", "suppliers", "skroutz"];
+const mobileHiddenTabKeys = new Set<Tab>(["check", "labels", "add", "images", "csv", "categories", "suppliers", "skroutz"]);
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
-const ownerOnlyTabs = new Set<Tab>(["quickAdd", "quickSale", "add", "csv", "images", "categories"]);
+const ownerOnlyTabs = new Set<Tab>(["quickAdd", "quickSale", "add", "csv", "images", "categories", "suppliers"]);
 const tabPermissions: Partial<Record<Tab, AdminPermission>> = {
   dashboard: "products:read",
   check: "products:read",
@@ -313,6 +340,7 @@ const tabFeatures: Partial<Record<Tab, FeatureKey>> = {
   csv: "csv_import",
   images: "product_management",
   categories: "product_management",
+  suppliers: "product_management",
   skroutz: "skroutz_feed",
 };
 const defaultAdminFeatures = {
@@ -332,20 +360,31 @@ const defaultAdminFeatures = {
   backup_tools: true,
 } satisfies FeatureFlags;
 const clothingSizeOptions = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
-const shoeSizeOptions = ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45"];
+const womenEuSizeOptions = Array.from({ length: 12 }, (_, index) => `EU ${32 + index * 2}`);
+const menEuSizeOptions = Array.from({ length: 12 }, (_, index) => `EU ${42 + index * 2}`);
+const shoeSizeOptions = Array.from({ length: 14 }, (_, index) => `EU ${35 + index}`);
 const oneSizeOptions = ["ONE SIZE"];
-const sizeSortOrder = [...clothingSizeOptions, ...shoeSizeOptions, ...oneSizeOptions];
+const sizeSortOrder = [...clothingSizeOptions, ...womenEuSizeOptions, ...menEuSizeOptions, ...shoeSizeOptions, ...oneSizeOptions];
 function sizeKindForCategory(category: string) {
   const normalized = category.trim().toLowerCase();
   if (normalized === "shoes") return "shoes";
   if (normalized === "men" || normalized === "women") return "clothing";
   return "one";
 }
-function sizeOptionsForCategory(category: string) {
+function inferredSizeSystem(category: string): SizeSystem {
   const kind = sizeKindForCategory(category);
-  if (kind === "shoes") return shoeSizeOptions;
-  if (kind === "clothing") return clothingSizeOptions;
-  return oneSizeOptions;
+  if (kind === "shoes") return "eu_shoes";
+  if (kind === "one") return "one_size";
+  return "letter";
+}
+function sizeOptionsForSystem(system: SizeSystem | "", category: string) {
+  const selected = system || inferredSizeSystem(category);
+  if (selected === "eu_women_numeric") return womenEuSizeOptions;
+  if (selected === "eu_men_numeric") return menEuSizeOptions;
+  if (selected === "eu_shoes") return shoeSizeOptions;
+  if (selected === "one_size") return oneSizeOptions;
+  if (selected === "custom") return [];
+  return clothingSizeOptions;
 }
 function stockTotal(stock: Record<string, number>) {
   return Object.values(stock).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
@@ -393,7 +432,8 @@ function inventoryStatusFor(item: InventoryItem, lowStockThreshold: number) {
   if (!reconciled) return { key: "mismatch", label: "对账异常", className: "bg-red-50 text-red-700" };
   if (!item.active) return { key: "inactive", label: "停用", className: "bg-stone-100 text-stone-500" };
   if (item.quantity_available <= 0) return { key: "out_of_stock", label: "缺货", className: "bg-red-50 text-red-700" };
-  if (item.quantity_available <= lowStockThreshold) return { key: "low_stock", label: "低库存", className: "bg-amber-50 text-amber-700" };
+  const threshold = item.reorder_level ?? lowStockThreshold;
+  if (item.quantity_available <= threshold) return { key: "low_stock", label: "低库存", className: "bg-amber-50 text-amber-700" };
   return { key: "normal", label: "正常", className: "bg-emerald-50 text-emerald-700" };
 }
 function inventoryCsvStatus(item: InventoryItem, lowStockThreshold: number) {
@@ -530,7 +570,7 @@ function productIssues(product: AdminProduct) {
   return issues;
 }
 function entersSkroutzFeed(product: AdminProduct) {
-  return product.is_active && !isTestProductSku(product.sku) && effectiveStock(product) > 0 && isHttpUrl(product.image_url) && Number(product.price) > 0;
+  return product.is_active && !isTestProductSku(product.sku) && skroutzReadinessIssues(product).length === 0;
 }
 function needsAiCompletion(product: AdminProduct) {
   const hasChinese = hasText(product.name_cn) || hasText(product.description_cn);
@@ -538,7 +578,7 @@ function needsAiCompletion(product: AdminProduct) {
   const raw = product as Record<string, unknown>;
   const hasKeywords = Array.isArray(raw.ai_keywords) ? raw.ai_keywords.length > 0 : hasText(raw.ai_keywords);
   const hasStyleTags = Array.isArray(raw.style_tags) ? raw.style_tags.length > 0 : hasText(raw.style_tags);
-  const missingMeta = (hasText(product.name_cn) || hasText(product.name_en) || hasText(product.name_gr)) && (!hasKeywords || !hasStyleTags || !hasText(raw.material));
+  const missingMeta = (hasText(product.name_cn) || hasText(product.name_en) || hasText(product.name_gr)) && (!hasKeywords || !hasStyleTags);
   return missingTranslation || missingMeta;
 }
 /* ── Main component ──────────────────────────────────────── */
@@ -569,6 +609,8 @@ export function AdminDashboard() {
   const [confirm, setConfirm] = useState<{ open: boolean; title: string; desc: string; confirmText: string; variant: "danger"|"success"|"default"; action: () => void; prompt?: boolean; promptValue?: string }>({ open: false, title: "", desc: "", confirmText: "确认", variant: "default", action: () => {} });
   const [newMainFile, setNewMainFile] = useState<File | null>(null); const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
   const [sizeStock, setSizeStock] = useState<Record<string, number>>({});
+  const [variantProcurement, setVariantProcurement] = useState<Record<string, VariantProcurement>>({});
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [showSizeSummary, setShowSizeSummary] = useState(false);
   const [quickAdd, setQuickAdd] = useState<QuickAddState>(emptyQuickAdd);
   const [quickMainFile, setQuickMainFile] = useState<File | null>(null);
@@ -599,6 +641,7 @@ export function AdminDashboard() {
   const [adjustInventory, setAdjustInventory] = useState<InventoryAdjustState>({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" });
   const [labelOnlyMissingBarcode, setLabelOnlyMissingBarcode] = useState(false);
   const [labelSize, setLabelSize] = useState<LabelSize>("50x30");
+  const [labelShowSupplierSku, setLabelShowSupplierSku] = useState(false);
   const [selectedLabelVariantIds, setSelectedLabelVariantIds] = useState<Set<string>>(new Set());
   const [labelGenerating, setLabelGenerating] = useState(false);
   const [labelMessage, setLabelMessage] = useState("");
@@ -704,6 +747,7 @@ export function AdminDashboard() {
       noImage: stockReady.filter(p => !isHttpUrl(p.image_url)).length,
       noDesc: stockReady.filter(p => !p.description_en && !p.description_gr && !p.description_cn).length,
       noStock: activeRealProducts.filter(p => effectiveStock(p) <= 0).length,
+      missingRequired: stockReady.filter(p => skroutzReadinessIssues(p).length > 0).length,
       testHidden: products.filter(p => p.is_active && isTestProductSku(p.sku)).length,
     };
   }, [products]);
@@ -805,6 +849,11 @@ export function AdminDashboard() {
       "size",
       "color",
       "barcode",
+      "supplier_name",
+      "supplier_style_code",
+      "supplier_sku",
+      "cost_price",
+      "reorder_level",
       "active",
       "quantity_on_hand",
       "quantity_reserved",
@@ -821,6 +870,11 @@ export function AdminDashboard() {
       item.size || "",
       item.color || "",
       item.barcode || "",
+      item.supplier_name || "",
+      item.supplier_style_code || "",
+      item.supplier_sku || "",
+      item.cost_price === null ? "" : String(item.cost_price),
+      item.reorder_level === null ? "" : String(item.reorder_level),
       item.active ? "TRUE" : "FALSE",
       String(item.quantity_on_hand),
       String(item.quantity_reserved),
@@ -1145,7 +1199,8 @@ export function AdminDashboard() {
   }
 
   async function loadProducts() { setLoading(true); try { const d = await api("/api/admin/products?limit=500"); setProducts(d.products||[]); } catch (e) { toast(e instanceof Error ? e.message : "商品读取失败", "err"); } finally { setLoading(false); } }
-  useEffect(() => { if (adminSession) void loadProducts(); }, [adminSession, adminAuthToken, activePassword]);
+  async function loadSuppliers() { try { const d = await api("/api/admin/suppliers"); setSuppliers(d.suppliers || []); } catch { setSuppliers([]); } }
+  useEffect(() => { if (adminSession) { void loadProducts(); void loadSuppliers(); } }, [adminSession, adminAuthToken, activePassword]);
 
   async function loadInventoryOverview() {
     const params = new URLSearchParams();
@@ -1206,6 +1261,7 @@ export function AdminDashboard() {
       price: item.price,
       quantity_on_hand: item.quantity_on_hand,
       active: item.active,
+      supplier_sku: item.supplier_sku,
     };
   }
   async function generateSelectedBarcodes() {
@@ -1425,7 +1481,10 @@ export function AdminDashboard() {
         const prefix = skuPrefix(nextCat, nextSub);
         const oldPrefix = skuPrefix(c.category, c.subcategory);
         const skuEmpty = !c.sku.trim() || c.sku === oldPrefix || c.sku.trim() === oldPrefix.replace(/-$/, "");
-        return { ...c, category: nextCat, subcategory: nextSub, sku: skuEmpty ? prefix : c.sku };
+        const nextSizeSystem = !c.size_system || c.size_system === inferredSizeSystem(c.category)
+          ? inferredSizeSystem(nextCat)
+          : c.size_system;
+        return { ...c, category: nextCat, subcategory: nextSub, size_system: nextSizeSystem, sku: skuEmpty ? prefix : c.sku };
       }
       if (key === "subcategory") {
         const prefix = skuPrefix(c.category, value as string);
@@ -1437,9 +1496,9 @@ export function AdminDashboard() {
     });
   }
   function generateNextSku() { const prefix = skuPrefix(form.category, form.subcategory); const existing = products.filter(p => p.sku.startsWith(prefix)); let max = 0; for (const p of existing) { const rest = p.sku.slice(prefix.length); const n = parseInt(rest, 10); if (!isNaN(n) && n > max) max = n; } const next = String(max + 1).padStart(3, "0"); updateField("sku", prefix + next); toast(`SKU 已生成: ${prefix + next}`); }
-  function loadSizeStock(p: AdminProduct) { const ss = (p as Record<string,unknown>).size_stock; if (ss && typeof ss === 'object' && !Array.isArray(ss)) { const rec: Record<string,number> = {}; for (const [k,v] of Object.entries(ss as Record<string,unknown>)) { if (typeof v === 'number') rec[k.toUpperCase()] = v; } setSizeStock(rec); } else { setSizeStock(sizeKindForCategory(p.category) === "one" ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(Number(p.stock) || 0)) } : {}); } }
-  function formFromProduct(p: AdminProduct): ProductFormData { return { sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, barcode:p.barcode, vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active, material: p.material || (p as Record<string,unknown>).material as string || "", fit_type: (p as Record<string,unknown>).fit_type as string || "regular", ai_keywords: Array.isArray((p as Record<string,unknown>).ai_keywords) ? ((p as Record<string,unknown>).ai_keywords as string[]).join(",") : String((p as Record<string,unknown>).ai_keywords || ""), style_tags: Array.isArray((p as Record<string,unknown>).style_tags) ? ((p as Record<string,unknown>).style_tags as string[]).join(",") : String((p as Record<string,unknown>).style_tags || ""), size_chart: typeof (p as Record<string,unknown>).size_chart === "object" ? JSON.stringify((p as Record<string,unknown>).size_chart) : String((p as Record<string,unknown>).size_chart || ""), material_verified: (p as Record<string,unknown>).material_verified === true }; }
-  function openProductForm(p: AdminProduct) { const nextForm = formFromProduct(p); setEditingId(p.id); setForm(nextForm); loadSizeStock(p); setShowSizeChart(!!nextForm.size_chart.trim()); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); return nextForm; }
+  function loadSizeStock(p: AdminProduct) { const ss = (p as Record<string,unknown>).size_stock; if (ss && typeof ss === 'object' && !Array.isArray(ss)) { const rec: Record<string,number> = {}; for (const [k,v] of Object.entries(ss as Record<string,unknown>)) { if (typeof v === 'number') rec[k.toUpperCase()] = v; } setSizeStock(rec); } else { setSizeStock((p.size_system || inferredSizeSystem(p.category)) === "one_size" ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(Number(p.stock) || 0)) } : {}); } }
+  function formFromProduct(p: AdminProduct): ProductFormData { return { sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, size_system:p.size_system || inferredSizeSystem(p.category), image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, supplier_id:p.supplier_id || "", supplier_style_code:p.supplier_style_code || "", barcode:p.barcode, ean:p.ean || "", mpn:p.mpn || "", vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active, material: p.material || "", fiber_composition_gr:p.fiber_composition_gr || "", fiber_composition_en:p.fiber_composition_en || "", care_instructions_gr:p.care_instructions_gr || "", care_instructions_en:p.care_instructions_en || "", country_of_origin:p.country_of_origin || "", manufacturer_name:p.manufacturer_name || "", manufacturer_contact:p.manufacturer_contact || "", eu_responsible_person:p.eu_responsible_person || "", product_safety_notes_gr:p.product_safety_notes_gr || "", product_safety_notes_en:p.product_safety_notes_en || "", fit_type: (p as Record<string,unknown>).fit_type as string || "regular", ai_keywords: Array.isArray((p as Record<string,unknown>).ai_keywords) ? ((p as Record<string,unknown>).ai_keywords as string[]).join(",") : String((p as Record<string,unknown>).ai_keywords || ""), style_tags: Array.isArray((p as Record<string,unknown>).style_tags) ? ((p as Record<string,unknown>).style_tags as string[]).join(",") : String((p as Record<string,unknown>).style_tags || ""), size_chart: typeof (p as Record<string,unknown>).size_chart === "object" ? JSON.stringify((p as Record<string,unknown>).size_chart) : String((p as Record<string,unknown>).size_chart || ""), material_verified: (p as Record<string,unknown>).material_verified === true }; }
+  function openProductForm(p: AdminProduct) { const nextForm = formFromProduct(p); setEditingId(p.id); setForm(nextForm); loadSizeStock(p); setVariantProcurement(p.variant_procurement || {}); setShowSizeChart(!!nextForm.size_chart.trim()); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); return nextForm; }
   function startEdit(p: AdminProduct) { openProductForm(p); }
   function focusAdminField(field: string) {
     window.setTimeout(() => {
@@ -1475,11 +1534,11 @@ export function AdminDashboard() {
     openProductForm(product);
     focusAdminField(fieldMap[issueCode] || "sku");
   }
-  function copyProduct(p: AdminProduct) { setEditingId(null); setForm({ ...p, sku: p.sku + "-COPY" }); loadSizeStock(p); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
-  function addSize(sz: string) { setSizeStock(prev => { if (sz in prev) return prev; return { ...prev, [sz]: 0 }; }); }
+  function copyProduct(p: AdminProduct) { setEditingId(null); setForm({ ...p, sku: p.sku + "-COPY" }); loadSizeStock(p); setVariantProcurement(p.variant_procurement || {}); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  function addSize(sz: string) { setSizeStock(prev => { if (sz in prev) return prev; return { ...prev, [sz]: 0 }; }); setVariantProcurement(prev => prev[sz] ? prev : { ...prev, [sz]: { supplier_sku: "", cost_price: null, reorder_level: null } }); }
   function toggleSizeSummary() { setShowSizeSummary(prev => !prev); }
   function addMissingSizes() { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); if (parts.length === 0) { toast("sizes 字段为空", "err"); return; } setSizeStock(prev => { let added = 0; const next = { ...prev }; for (const s of parts) { if (!(s in next)) { next[s] = 0; added++; } } if (added > 0) { toast(`已补充 ${added} 个缺失尺码，已有库存不变`); return next; } toast("所有 sizes 尺码已在库存表中"); return prev; }); }
-  function sortSizeKeys(keys: string[]) { return keys.sort((a,b) => { const ai = sizeSortOrder.indexOf(a); const bi = sizeSortOrder.indexOf(b); if (ai >= 0 && bi >= 0) return ai - bi; if (ai >= 0) return -1; if (bi >= 0) return 1; return a.localeCompare(b); }); }
+  function sortSizeKeys(keys: string[]) { return keys.sort((a,b) => { const ae = /^EU\s+(\d+(?:\.\d+)?)$/i.exec(a); const be = /^EU\s+(\d+(?:\.\d+)?)$/i.exec(b); if (ae && be) return Number(ae[1]) - Number(be[1]); const ai = sizeSortOrder.indexOf(a); const bi = sizeSortOrder.indexOf(b); if (ai >= 0 && bi >= 0) return ai - bi; if (ai >= 0) return -1; if (bi >= 0) return 1; return a.localeCompare(b); }); }
   function addCustomSize() { const raw = prompt("输入尺码名称，多个用逗号分隔", ""); if (!raw) return; const names = raw.split(/[\/,\s]+/).map((x: string) => x.trim().toUpperCase()).filter(Boolean); if (names.length === 0) return; setSizeStock(prev => { let added = 0; const next = { ...prev }; for (const k of names) { if (!(k in next)) { next[k] = 0; added++; } } if (added > 0) { toast(`已添加 ${added} 个尺码`); return next; } toast("所有尺码已存在"); return prev; }); }
 
   /* ── Translate ────────────────────────────────────────── */
@@ -1621,7 +1680,7 @@ export function AdminDashboard() {
   /* ── Submit / Delete ──────────────────────────────────── */
   async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!form.sku.trim()) { toast("请填写 SKU", "err"); return; } if (!form.name_cn.trim() && !form.name_en.trim() && !form.name_gr.trim()) { toast("请至少填写一个语言的商品名", "err"); return; } if (form.size_chart.trim()) { try { JSON.parse(form.size_chart.trim()); } catch { toast("尺码表 JSON 格式不正确，请检查", "err"); return; } }
 if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品没有图片", desc: "该商品没有主图，是否继续保存？", confirmText: "继续保存", variant: "default", action: () => { setConfirm(c => ({ ...c, open: false })); doSubmit(); } }); return; } doSubmit(); }
-  async function doSubmit() { setLoading(true); const p = normalizeProduct(form); const sizeKeys = Object.keys(sizeStock); if (sizeKeys.length === 0) { toast("请先在尺码库存里选择尺码并填写库存", "err"); setLoading(false); return; } const aiData: Record<string, unknown> = {}; if (p.ai_keywords.trim()) aiData.ai_keywords = p.ai_keywords.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.style_tags.trim()) aiData.style_tags = p.style_tags.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.size_chart.trim()) aiData.size_chart = JSON.parse(p.size_chart.trim()); if (p.fit_type) aiData.fit_type = p.fit_type; aiData.material_verified = p.material_verified === true; const totalStock = stockTotal(sizeStock); const payload = { ...(p as Record<string,unknown>), ...aiData, sizes: sortSizeKeys(sizeKeys).join(","), size_stock: sizeStock, stock: totalStock }; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { const saved = await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); if (!editingId && (newMainFile || newGalleryFiles.length > 0)) { const sku = saved?.product?.sku || form.sku; let imgOk = 0; let imgFail = 0; const imgErrors: string[] = []; try { if (newMainFile) { const fd = new FormData(); fd.append("images", newMainFile); fd.append("sku", sku); fd.append("mode", "main"); const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (newGalleryFiles.length > 0) { const fd = new FormData(); newGalleryFiles.forEach(f => fd.append("images", f)); fd.append("sku", sku); fd.append("mode", "gallery"); const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (imgFail > 0) { toast(`商品已保存。图片：成功 ${imgOk}，失败 ${imgFail}${imgErrors.length > 0 ? `（${imgErrors.join("；")}）` : ""}`, "err"); } else { toast("商品已保存，图片已上传"); } } catch { toast("商品已保存，图片上传失败", "err"); } setNewMainFile(null); setNewGalleryFiles([]); } setForm(emptyProduct); setEditingId(null); setSizeStock({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
+  async function doSubmit() { setLoading(true); const p = normalizeProduct(form); const sizeKeys = Object.keys(sizeStock); if (sizeKeys.length === 0) { toast("请先在尺码库存里选择尺码并填写库存", "err"); setLoading(false); return; } const aiData: Record<string, unknown> = {}; if (p.ai_keywords.trim()) aiData.ai_keywords = p.ai_keywords.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.style_tags.trim()) aiData.style_tags = p.style_tags.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.size_chart.trim()) aiData.size_chart = JSON.parse(p.size_chart.trim()); if (p.fit_type) aiData.fit_type = p.fit_type; aiData.material_verified = p.material_verified === true; const totalStock = stockTotal(sizeStock); const payload = { ...(p as Record<string,unknown>), ...aiData, sizes: sortSizeKeys(sizeKeys).join(","), size_stock: sizeStock, stock: totalStock, variant_procurement: variantProcurement }; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { const saved = await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); if (!editingId && (newMainFile || newGalleryFiles.length > 0)) { const sku = saved?.product?.sku || form.sku; let imgOk = 0; let imgFail = 0; const imgErrors: string[] = []; try { if (newMainFile) { const fd = new FormData(); fd.append("images", newMainFile); fd.append("sku", sku); fd.append("mode", "main"); const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (newGalleryFiles.length > 0) { const fd = new FormData(); newGalleryFiles.forEach(f => fd.append("images", f)); fd.append("sku", sku); fd.append("mode", "gallery"); const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (imgFail > 0) { toast(`商品已保存。图片：成功 ${imgOk}，失败 ${imgFail}${imgErrors.length > 0 ? `（${imgErrors.join("；")}）` : ""}`, "err"); } else { toast("商品已保存，图片已上传"); } } catch { toast("商品已保存，图片上传失败", "err"); } setNewMainFile(null); setNewGalleryFiles([]); } setForm(emptyProduct); setEditingId(null); setSizeStock({}); setVariantProcurement({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
   function confirmDeleteProduct(p: AdminProduct) { setConfirm({ open: true, title: "确认下架商品？", desc: `下架 ${p.sku} 后商品将不会在前台显示，但数据会保留，之后可以恢复上架。`, confirmText: "确认下架", variant: "danger", action: () => executeDelete(p) }); }
   async function executeDelete(p: AdminProduct) { setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "DELETE" }); toast("商品已下架"); setConfirm(c => ({ ...c, open: false })); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "下架失败", "err"); } finally { setLoading(false); } }
   function confirmRestoreProduct(p: AdminProduct) { setConfirm({ open: true, title: "确认恢复上架？", desc: `恢复上架 ${p.sku} 后商品会重新在前台显示。`, confirmText: "确认恢复", variant: "success", action: () => executeRestore(p) }); }
@@ -1945,7 +2004,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <label className="text-sm font-bold text-ink">尺码库存</label>
                   <div className="mt-2 rounded-2xl border border-stone-200 bg-stone-50/70 p-3">
                     <div className="mb-3 flex flex-wrap gap-2">
-                      {sizeOptionsForCategory(quickAdd.category).map(size => (
+                      {sizeOptionsForSystem("", quickAdd.category).map(size => (
                         <button className="min-h-10 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-ink shadow-sm shadow-stone-900/5 hover:bg-stone-100" key={size} onClick={() => addQuickSize(size)} type="button">+ {size}</button>
                       ))}
                     </div>
@@ -2761,7 +2820,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 ))}
               </div>
               <div className="mb-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_120px_150px_150px_150px_auto_auto_auto]">
-                <input className="input" placeholder="搜索商品名 / SKU / variant SKU / barcode" value={inventoryQ} onChange={e => setInventoryQ(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
+                <input className="input" placeholder="搜索商品 / SKU / barcode / 供货商 SKU / 供货商" value={inventoryQ} onChange={e => setInventoryQ(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
                 <input className="input" placeholder="尺码，如 S / 38" value={inventorySize} onChange={e => setInventorySize(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryData(); }} />
                 <select className="input" value={inventoryStatus} onChange={e => setInventoryStatus(e.target.value as InventoryStatusFilter)}><option value="all">全部状态</option><option value="normal">正常</option><option value="low_stock">低库存</option><option value="out_of_stock">缺货</option><option value="inactive">停用</option><option value="mismatch">对账异常</option></select>
                 <select className="input" value={inventorySort} onChange={e => setInventorySort(e.target.value as InventorySort)}><option value="stock_asc">库存从低到高</option><option value="stock_desc">库存从高到低</option><option value="sku">SKU</option></select>
@@ -2778,7 +2837,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
               {filteredInventoryItems.length === 0 && !inventoryLoading ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">暂无库存数据</p> : null}
               <div className="overflow-x-auto rounded-2xl border border-stone-200">
-                <table className="min-w-[1120px] w-full text-left text-sm">
+                <table className="min-w-[1420px] w-full text-left text-sm">
                   <thead className="bg-stone-50 text-stone-500">
                     <tr>
                       <th className="px-3 py-2 text-xs font-black">商品</th>
@@ -2787,6 +2846,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <th className="px-3 py-2 text-xs font-black">尺码</th>
                       <th className="px-3 py-2 text-xs font-black">颜色</th>
                       <th className="px-3 py-2 text-xs font-black">Barcode</th>
+                      <th className="px-3 py-2 text-xs font-black">供货商 / 款号</th>
+                      <th className="px-3 py-2 text-xs font-black">供货商 SKU</th>
+                      <th className="px-3 py-2 text-right text-xs font-black">成本 / 补货线</th>
                       <th className="px-3 py-2 text-right text-xs font-black">现有</th>
                       <th className="px-3 py-2 text-right text-xs font-black">预留</th>
                       <th className="px-3 py-2 text-right text-xs font-black">可用</th>
@@ -2807,9 +2869,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           <td className="px-3 py-3 text-xs font-bold">{item.size || "-"}</td>
                           <td className="px-3 py-3 text-xs">{item.color || "-"}</td>
                           <td className="px-3 py-3 font-mono text-xs">{item.barcode || "-"}</td>
+                          <td className="px-3 py-3 text-xs"><p className="font-bold">{item.supplier_name || "-"}</p><p className="font-mono text-stone-400">{item.supplier_style_code || ""}</p></td>
+                          <td className="px-3 py-3 font-mono text-xs">{item.supplier_sku || "-"}</td>
+                          <td className="px-3 py-3 text-right text-xs"><p>{item.cost_price === null ? "-" : formatEuro(item.cost_price)}</p><p className="text-stone-400">补货 ≤ {item.reorder_level ?? lowStockThreshold}</p></td>
                           <td className="px-3 py-3 text-right text-sm font-black text-ink">{item.quantity_on_hand}</td>
                           <td className="px-3 py-3 text-right text-sm font-bold text-stone-500">{item.quantity_reserved}</td>
-                          <td className={`px-3 py-3 text-right text-sm font-black ${item.quantity_available <= 0 ? "text-red-600" : item.quantity_available <= lowStockThreshold ? "text-amber-600" : "text-emerald-700"}`}>{item.quantity_available}</td>
+                          <td className={`px-3 py-3 text-right text-sm font-black ${item.quantity_available <= 0 ? "text-red-600" : item.quantity_available <= (item.reorder_level ?? lowStockThreshold) ? "text-amber-600" : "text-emerald-700"}`}>{item.quantity_available}</td>
                           <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${stockStatus.className}`}>{stockStatus.label}</span></td>
                           <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${reconciled ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{reconciled ? "正常" : "异常"}</span></td>
                           <td className="px-3 py-3 text-right">
@@ -3265,6 +3330,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-stone-500">
                 <span className="rounded-full bg-stone-100 px-3 py-1.5">当前列表 {filteredLabelItems.length} 个 variant</span>
                 <span className="rounded-full bg-stone-100 px-3 py-1.5">已选择 {selectedLabelVariantIds.size} 个</span>
+                <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-1.5 text-ink">
+                  <input checked={labelShowSupplierSku} onChange={e => setLabelShowSupplierSku(e.target.checked)} type="checkbox" />
+                  标签显示供货商 SKU
+                </label>
                 <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 font-black text-ink hover:bg-stone-50" onClick={() => setLabelSelection(filteredLabelItems)} type="button">选择当前列表</button>
                 <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 font-black text-ink hover:bg-stone-50" onClick={() => setLabelSelection(filteredLabelItems.filter(item => !item.barcode))} type="button">选择当前无 barcode</button>
               </div>
@@ -3344,6 +3413,17 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     <p className="mt-1 text-[10px] text-stone-400">由下方尺码库存自动同步</p>
                   </div>
                 </Field>
+                <Field label="尺码体系">
+                  <select className="input" value={form.size_system || inferredSizeSystem(form.category)} onChange={e => updateField("size_system", e.target.value as SizeSystem)}>
+                    <option value="letter">国际字母尺码 XS–XXXL</option>
+                    <option value="eu_women_numeric">欧洲女装 EU 32–54</option>
+                    <option value="eu_men_numeric">欧洲男装 EU 42–64</option>
+                    <option value="eu_shoes">欧洲鞋码 EU 35–48</option>
+                    <option value="one_size">ONE SIZE</option>
+                    <option value="custom">自定义尺码</option>
+                  </select>
+                  <p className="mt-1 text-[10px] text-stone-400">切换体系不会删除已经填写的尺码和库存。</p>
+                </Field>
                 <Field label="上架"><select className="input" data-admin-field="is_active" value={form.is_active ? "true" : "false"} onChange={e => updateField("is_active", e.target.value === "true")}><option value="true">是</option><option value="false">否</option></select></Field>
               </div>
             </section>
@@ -3354,9 +3434,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <p className="mb-3 text-xs text-stone-500">库存为 0 的尺码在前台显示为售罄。总库存由尺码库存自动计算。</p>
               {editingId && Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">该商品还没有尺码库存。旧总库存为 <b>{form.stock}</b>，sizes 为 "{form.sizes}"。请手动分配库存到各尺码后保存，保存后将自动计算总库存。</p> : null}
               <div className="mb-3 flex flex-wrap gap-2">
-                {sizeOptionsForCategory(form.category).map(s => <button key={s} className="min-h-10 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black shadow-sm shadow-stone-900/5 hover:bg-stone-100" onClick={() => addSize(s)} type="button">{s}</button>)}
+                {sizeOptionsForSystem(form.size_system, form.category).map(s => <button key={s} className="min-h-10 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black shadow-sm shadow-stone-900/5 hover:bg-stone-100" onClick={() => addSize(s)} type="button">{s}</button>)}
                 <button className="min-h-10 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-black text-stone-500 hover:border-stone-400" onClick={toggleSizeSummary} type="button">查看 sizes 尺码库存</button>
-                {sizeKindForCategory(form.category) !== "one" ? <button className="min-h-10 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-black text-stone-500 hover:border-stone-400" onClick={addCustomSize} type="button">+ 自定义</button> : null}
+                {form.size_system !== "one_size" ? <button className="min-h-10 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-black text-stone-500 hover:border-stone-400" onClick={addCustomSize} type="button">+ 自定义</button> : null}
               </div>
               {/* Size summary (lightweight, no duplicate table) */}
               {showSizeSummary ? (
@@ -3373,15 +3453,18 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               ) : null}
 
               {Object.keys(sizeStock).length > 0 ? (
-                <div className="rounded-lg border border-stone-200 overflow-hidden">
-                  <table className="w-full text-sm"><thead><tr className="bg-stone-50 text-stone-500"><th className="py-2 px-3 text-left text-xs font-bold">尺码</th><th className="py-2 px-3 text-left text-xs font-bold">库存</th><th className="py-2 px-3 text-center text-xs font-bold w-20">状态</th><th className="py-2 px-3 text-right text-xs font-bold w-12">操作</th></tr></thead>
+                <div className="overflow-x-auto rounded-lg border border-stone-200">
+                  <table className="w-full min-w-[840px] text-sm"><thead><tr className="bg-stone-50 text-stone-500"><th className="py-2 px-3 text-left text-xs font-bold">尺码</th><th className="py-2 px-3 text-left text-xs font-bold">库存</th><th className="py-2 px-3 text-left text-xs font-bold">供货商 SKU（选填）</th><th className="py-2 px-3 text-left text-xs font-bold">成本价 €（选填）</th><th className="py-2 px-3 text-left text-xs font-bold">补货线（选填）</th><th className="py-2 px-3 text-center text-xs font-bold w-20">状态</th><th className="py-2 px-3 text-right text-xs font-bold w-12">操作</th></tr></thead>
                     <tbody>
                       {sortSizeKeys(Object.keys(sizeStock)).map(sz => { const qty = sizeStock[sz]; return (
                         <tr className="border-t border-stone-100" key={sz}>
                           <td className="py-1.5 px-3 text-sm font-bold text-ink align-middle">{sz}</td>
                           <td className="py-1.5 px-3 align-middle"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm text-center" min="0" step="1" type="number" value={qty} onChange={e => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, parseInt(e.target.value) || 0) }))} /></td>
+                          <td className="py-1.5 px-3 align-middle"><input className="w-36 rounded border border-stone-200 px-2 py-1 font-mono text-xs" value={variantProcurement[sz]?.supplier_sku || ""} onChange={e => setVariantProcurement(prev => ({ ...prev, [sz]: { ...(prev[sz] || { cost_price: null, reorder_level: null }), supplier_sku: e.target.value } }))} /></td>
+                          <td className="py-1.5 px-3 align-middle"><input className="w-24 rounded border border-stone-200 px-2 py-1 text-sm" min="0" step="0.01" type="number" value={variantProcurement[sz]?.cost_price ?? ""} onChange={e => setVariantProcurement(prev => ({ ...prev, [sz]: { ...(prev[sz] || { supplier_sku: "", reorder_level: null }), cost_price: e.target.value === "" ? null : Math.max(0, Number(e.target.value)) } }))} /></td>
+                          <td className="py-1.5 px-3 align-middle"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm" min="0" step="1" type="number" value={variantProcurement[sz]?.reorder_level ?? ""} onChange={e => setVariantProcurement(prev => ({ ...prev, [sz]: { ...(prev[sz] || { supplier_sku: "", cost_price: null }), reorder_level: e.target.value === "" ? null : Math.max(0, Math.trunc(Number(e.target.value))) } }))} /></td>
                           <td className="py-1.5 px-3 text-center align-middle">{qty > 0 ? <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800 whitespace-nowrap">有货</span> : <span className="inline-block rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-400 whitespace-nowrap">售罄</span>}</td>
-                          <td className="py-1.5 px-3 text-right">{sizeKindForCategory(form.category) !== "one" ? <button className="text-[11px] font-bold text-red-500 hover:text-red-700" onClick={() => setSizeStock(prev => { const n = { ...prev }; delete n[sz]; return n; })} type="button">×</button> : null}</td>
+                          <td className="py-1.5 px-3 text-right">{form.size_system !== "one_size" ? <button className="text-[11px] font-bold text-red-500 hover:text-red-700" onClick={() => { setSizeStock(prev => { const n = { ...prev }; delete n[sz]; return n; }); setVariantProcurement(prev => { const n = { ...prev }; delete n[sz]; return n; }); }} type="button">×</button> : null}</td>
                         </tr>
                       )})}
                     </tbody>
@@ -3389,6 +3472,21 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
               ) : <p className="text-xs text-stone-400">请选择尺码并填写库存。库存为 0 的尺码前台显示为售罄。</p>}
               {Object.keys(sizeStock).length > 0 ? <p className="mt-2 text-xs text-stone-500">总库存（所有尺码合计）：{Object.values(sizeStock).reduce((a,b)=>a+b,0)}，保存时自动同步到基础信息的库存和 sizes 字段。</p> : null}
+            </section>
+
+            <section className="admin-panel">
+              <h2 className="mb-1 text-base font-black text-ink">供货与进货资料（全部选填）</h2>
+              <p className="mb-4 text-xs text-stone-500">没有供货商 SKU 或成本价可以留空；这些资料仅在后台使用，不会显示给顾客或发送到 Skroutz。</p>
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                <Field label="主要供货商">
+                  <select className="input" value={form.supplier_id} onChange={e => updateField("supplier_id", e.target.value)}>
+                    <option value="">未指定</option>
+                    {suppliers.filter(supplier => supplier.active || supplier.id === form.supplier_id).map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.code} · {supplier.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="供货商款号"><input className="input" value={form.supplier_style_code} onChange={e => updateField("supplier_style_code", e.target.value)} placeholder="例如 supplier style / model code" /></Field>
+                <div className="flex items-end"><button className="admin-button-secondary w-full" onClick={() => setTab("suppliers")} type="button">管理供货商</button></div>
+              </div>
             </section>
 
             {/* i18n card */}
@@ -3402,7 +3500,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mt-4 flex flex-wrap gap-2">
                 {adminFeatures.ai_tools ? <button className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiCopyLoading} onClick={() => void generateProductCopy()} type="button">{aiCopyLoading ? "生成中..." : "AI 生成商品文案"}</button> : null}
                 {adminFeatures.ai_tools ? <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" disabled={translating} onClick={() => void translateProduct()} type="button">{translating ? "翻译中..." : "自动翻译"}</button> : null}
-                {editingId ? <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={() => { setEditingId(null); setForm(emptyProduct); }} type="button">取消编辑</button> : null}
+                {editingId ? <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setVariantProcurement({}); }} type="button">取消编辑</button> : null}
               </div>
             </section>
 
@@ -3445,6 +3543,23 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     <p className="mt-1 text-[10px] text-stone-400">可不填。填写后 AI 尺码推荐更准确；不填写时 AI 会根据商品尺码、版型、顾客身高体重给参考建议。</p>
                   </Field>
                 )}
+              </div>
+            </section>
+
+            <section className="admin-panel">
+              <h2 className="mb-1 text-base font-black text-ink">欧盟服装与追溯资料（全部选填）</h2>
+              <p className="mb-4 text-xs text-stone-500">只填写吊牌、水洗标或供货商明确提供的资料。没有可靠信息时留空，不影响普通网站上架。</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="纤维成分（希腊语）"><textarea className="input min-h-20" value={form.fiber_composition_gr} onChange={e => updateField("fiber_composition_gr", e.target.value)} placeholder="例如：100% Βαμβάκι" /></Field>
+                <Field label="纤维成分（英语）"><textarea className="input min-h-20" value={form.fiber_composition_en} onChange={e => updateField("fiber_composition_en", e.target.value)} placeholder="例如：100% Cotton" /></Field>
+                <Field label="护理说明（希腊语）"><textarea className="input min-h-20" value={form.care_instructions_gr} onChange={e => updateField("care_instructions_gr", e.target.value)} /></Field>
+                <Field label="护理说明（英语）"><textarea className="input min-h-20" value={form.care_instructions_en} onChange={e => updateField("care_instructions_en", e.target.value)} /></Field>
+                <Field label="原产国"><input className="input" value={form.country_of_origin} onChange={e => updateField("country_of_origin", e.target.value)} placeholder="例如 Greece / Italy / China" /></Field>
+                <Field label="制造商名称"><input className="input" value={form.manufacturer_name} onChange={e => updateField("manufacturer_name", e.target.value)} /></Field>
+                <Field label="制造商联系方式"><input className="input" value={form.manufacturer_contact} onChange={e => updateField("manufacturer_contact", e.target.value)} /></Field>
+                <Field label="EU 责任方"><input className="input" value={form.eu_responsible_person} onChange={e => updateField("eu_responsible_person", e.target.value)} /></Field>
+                <Field label="安全说明（希腊语）"><textarea className="input min-h-20" value={form.product_safety_notes_gr} onChange={e => updateField("product_safety_notes_gr", e.target.value)} /></Field>
+                <Field label="安全说明（英语）"><textarea className="input min-h-20" value={form.product_safety_notes_en} onChange={e => updateField("product_safety_notes_en", e.target.value)} /></Field>
               </div>
             </section>
 
@@ -3508,7 +3623,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <Field label="主图 URL"><input className="input" data-admin-field="image_url" value={form.image_url} onChange={e => updateField("image_url", e.target.value)} /></Field>
                 <Field label="Skroutz URL"><input className="input" placeholder="https://www.skroutz.gr/..." value={form.skroutz_url} onChange={e => updateField("skroutz_url", e.target.value)} /></Field>
                 <Field label="品牌（可选）"><input className="input" value={form.brand} onChange={e => updateField("brand", e.target.value)} placeholder="如无可留空" /></Field>
-                <Field label="条码 / EAN（可选）"><input className="input" value={form.barcode} onChange={e => updateField("barcode", e.target.value)} placeholder="如无可留空" /></Field>
+                <Field label="内部条码（可选）"><input className="input" value={form.barcode} onChange={e => updateField("barcode", e.target.value)} placeholder="门店扫码使用，不自动当作 EAN" /></Field>
+                <Field label="真实 EAN（Skroutz 选填）"><input className="input" inputMode="numeric" value={form.ean} onChange={e => updateField("ean", e.target.value)} placeholder="商品真实 EAN，没有可留空" /></Field>
+                <Field label="制造商 MPN（Skroutz 选填）"><input className="input" value={form.mpn} onChange={e => updateField("mpn", e.target.value)} placeholder="没有可留空；缺失时不进入 Feed" /></Field>
                 <Field label="VAT"><input className="input" min="0" step="0.01" type="number" value={form.vat} onChange={e => updateField("vat", Number(e.target.value))} /></Field>
                 <Field label="颜色（选填）"><input className="input" value={form.color} onChange={e => updateField("color", e.target.value)} placeholder="black / red / blue，可留空" /></Field>
               </div>
@@ -3519,7 +3636,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <div className="admin-sticky-actions">
               <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:gap-3">
                 <button className="admin-button-primary w-full sm:w-auto" disabled={loading} type="submit">{editingId ? "保存修改" : "新增商品"}</button>
-                {editingId ? <button className="admin-button-secondary w-full sm:w-auto" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setTab("dashboard"); }} type="button">取消编辑</button> : null}
+                {editingId ? <button className="admin-button-secondary w-full sm:w-auto" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setVariantProcurement({}); setTab("dashboard"); }} type="button">取消编辑</button> : null}
               </div>
               <div className="flex flex-wrap gap-3">
                 {!form.sku.trim() ? <p className="text-xs text-amber-600">请填写 SKU</p> : null}
@@ -3585,6 +3702,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {/* ── TAB: Categories ─────────────────────────────── */}
         {tab === "categories" ? <CategoriesManager activePassword={activePassword} authHeaders={adminAuthHeaders} toast={toast} confirm={setConfirm} dismissConfirm={dismissConfirm} /> : null}
 
+        {tab === "suppliers" ? <SuppliersManager authHeaders={adminAuthHeaders} initialSuppliers={suppliers} onChanged={loadSuppliers} toast={toast} /> : null}
+
         {/* ── TAB: Skroutz Feed ───────────────────────────── */}
         {tab === "skroutz" ? (
           <section className="flex flex-col gap-5">
@@ -3593,22 +3712,23 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <h2 className="text-lg font-black text-ink">Skroutz Feed 状态</h2>
               <p className="mt-1 text-xs text-stone-400">将此 Feed 链接提交给 Skroutz，用于同步商品名称、价格、库存、图片和商品链接。</p>
               <div className="mt-4 flex items-center gap-2">
-                {feedStats.noImage === 0 && feedStats.noDesc === 0 && feedStats.noStock === 0 ? (
+                {feedStats.missingRequired === 0 && feedStats.noStock === 0 ? (
                   <span className="inline-block rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">Feed 状态良好，可以提交给 Skroutz</span>
                 ) : (
                   <span className="inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">
-                    Feed 有 {(() => { const issues: string[] = []; if (feedStats.noImage > 0) issues.push(`${feedStats.noImage} 个缺公网主图`); if (feedStats.noDesc > 0) issues.push(`${feedStats.noDesc} 个缺描述`); if (feedStats.noStock > 0) issues.push(`${feedStats.noStock} 个无库存`); return issues.length; })()} 个问题：{(() => { const issues: string[] = []; if (feedStats.noImage > 0) issues.push(`${feedStats.noImage} 个缺公网主图`); if (feedStats.noDesc > 0) issues.push(`${feedStats.noDesc} 个缺描述`); if (feedStats.noStock > 0) issues.push(`${feedStats.noStock} 个无库存`); return issues.join("，"); })()}
+                    {feedStats.missingRequired} 个有库存商品缺少 Skroutz 必填信息，{feedStats.noStock} 个商品无库存；这些商品不会进入 Feed。
                   </span>
                 )}
               </div>
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 xl:grid-cols-5">
-              {[{ label: "Feed 商品数", v: feedStats.total, color: "" }, { label: "缺公网主图", v: feedStats.noImage, color: feedStats.noImage > 0 ? "" : "" }, { label: "缺描述", v: feedStats.noDesc, color: "" }, { label: "无库存", v: feedStats.noStock, color: "" }, { label: "测试商品隐藏", v: feedStats.testHidden, color: "" }].map(s => (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 xl:grid-cols-6">
+              {[{ label: "Feed 商品数", v: feedStats.total, color: "" }, { label: "缺 Skroutz 必填", v: feedStats.missingRequired, color: "" }, { label: "缺公网主图", v: feedStats.noImage, color: feedStats.noImage > 0 ? "" : "" }, { label: "缺描述", v: feedStats.noDesc, color: "" }, { label: "无库存", v: feedStats.noStock, color: "" }, { label: "测试商品隐藏", v: feedStats.testHidden, color: "" }].map(s => (
                 <div key={s.label} className="rounded-2xl border border-stone-100 bg-white p-3 text-center shadow-sm shadow-stone-900/5 sm:p-5">
                   <p className={`text-2xl font-black ${(s.label === "缺公网主图"||s.label==="缺描述") && s.v > 0 ? "text-amber-600" : s.label === "无库存" && s.v > 0 ? "text-red-500" : "text-ink"}`}>{s.v}</p>
                   <p className="mt-1 text-xs font-bold text-stone-400">{s.label}</p>
+                  {s.label === "缺 Skroutz 必填" ? <p className="mt-1 text-[10px] text-stone-400">EAN、MPN、颜色、尺码等按品类检查</p> : null}
                   {s.label === "缺公网主图" ? <p className="mt-1 text-[10px] text-stone-400">缺公网主图不会进入 Feed</p> : null}
                   {s.label === "缺描述" ? <p className="mt-1 text-[10px] text-stone-400">缺描述影响信息完整度</p> : null}
                   {s.label === "无库存" ? <p className="mt-1 text-[10px] text-stone-400">无库存不会进入 Feed</p> : null}
@@ -3668,6 +3788,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         <LabelPrintPreview
           labels={labelPreviewItems}
           labelSize={labelSize}
+          showSupplierSku={labelShowSupplierSku}
           onClose={() => setLabelPreviewItems(null)}
         />
       ) : null}
@@ -3705,6 +3826,81 @@ function ImgThumb({ src }: { src: string }) {
   const [ok, setOk] = useState(true);
   if (!ok) return <span className="inline-block rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-bold text-stone-400">缺图</span>;
   return <img alt="" className="h-11 w-9 rounded object-cover bg-stone-100" src={src} onError={() => setOk(false)} />;
+}
+
+const emptySupplierForm = { id: "", code: "", name: "", vat_number: "", contact_name: "", phone: "", email: "", address: "", country: "Greece", notes: "", active: true };
+
+function SuppliersManager({ authHeaders, initialSuppliers, onChanged, toast }: { authHeaders: () => Record<string, string>; initialSuppliers: Supplier[]; onChanged: () => Promise<void>; toast: (m: string, t?: "ok" | "err") => void }) {
+  const [form, setForm] = useState(emptySupplierForm);
+  const [saving, setSaving] = useState(false);
+
+  function edit(supplier: Supplier) {
+    setForm({
+      id: supplier.id,
+      code: supplier.code,
+      name: supplier.name,
+      vat_number: supplier.vat_number || "",
+      contact_name: supplier.contact_name || "",
+      phone: supplier.phone || "",
+      email: supplier.email || "",
+      address: supplier.address || "",
+      country: supplier.country || "",
+      notes: supplier.notes || "",
+      active: supplier.active,
+    });
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!form.code.trim() || !form.name.trim()) { toast("请填写供货商编号和名称。", "err"); return; }
+    setSaving(true);
+    try {
+      const response = await fetch("/api/admin/suppliers", { method: form.id ? "PUT" : "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(form) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "供货商保存失败");
+      toast(form.id ? "供货商已更新" : "供货商已新增");
+      setForm(emptySupplierForm);
+      await onChanged();
+    } catch (error) { toast(error instanceof Error ? error.message : "供货商保存失败", "err"); }
+    finally { setSaving(false); }
+  }
+
+  async function deactivate(id: string) {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/admin/suppliers", { method: "DELETE", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ id }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "停用失败");
+      toast("供货商已停用");
+      if (form.id === id) setForm(emptySupplierForm);
+      await onChanged();
+    } catch (error) { toast(error instanceof Error ? error.message : "停用失败", "err"); }
+    finally { setSaving(false); }
+  }
+
+  return <section className="grid gap-5 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.4fr)]">
+    <form className="admin-panel" onSubmit={save}>
+      <h2 className="text-lg font-black text-ink">{form.id ? "编辑供货商" : "新增供货商"}</h2>
+      <p className="mt-1 text-xs text-stone-500">只有编号和名称必填，其余信息都可以留空。</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <Field label="供货商编号"><input className="input" required value={form.code} onChange={e => setForm(current => ({ ...current, code: e.target.value }))} /></Field>
+        <Field label="供货商名称"><input className="input" required value={form.name} onChange={e => setForm(current => ({ ...current, name: e.target.value }))} /></Field>
+        <Field label="VAT / AFM"><input className="input" value={form.vat_number} onChange={e => setForm(current => ({ ...current, vat_number: e.target.value }))} /></Field>
+        <Field label="联系人"><input className="input" value={form.contact_name} onChange={e => setForm(current => ({ ...current, contact_name: e.target.value }))} /></Field>
+        <Field label="电话"><input className="input" value={form.phone} onChange={e => setForm(current => ({ ...current, phone: e.target.value }))} /></Field>
+        <Field label="邮箱"><input className="input" type="email" value={form.email} onChange={e => setForm(current => ({ ...current, email: e.target.value }))} /></Field>
+        <Field label="国家"><input className="input" value={form.country} onChange={e => setForm(current => ({ ...current, country: e.target.value }))} /></Field>
+        <Field label="状态"><select className="input" value={form.active ? "active" : "inactive"} onChange={e => setForm(current => ({ ...current, active: e.target.value === "active" }))}><option value="active">启用</option><option value="inactive">停用</option></select></Field>
+        <div className="sm:col-span-2"><Field label="地址"><input className="input" value={form.address} onChange={e => setForm(current => ({ ...current, address: e.target.value }))} /></Field></div>
+        <div className="sm:col-span-2"><Field label="备注"><textarea className="input min-h-20" value={form.notes} onChange={e => setForm(current => ({ ...current, notes: e.target.value }))} /></Field></div>
+      </div>
+      <div className="mt-4 flex gap-2"><button className="admin-button-primary" disabled={saving} type="submit">{saving ? "保存中..." : "保存供货商"}</button>{form.id ? <button className="admin-button-secondary" onClick={() => setForm(emptySupplierForm)} type="button">取消编辑</button> : null}</div>
+    </form>
+    <div className="admin-panel overflow-hidden">
+      <h2 className="text-lg font-black text-ink">供货商列表</h2>
+      <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead><tr className="border-b border-stone-200 text-left text-xs text-stone-500"><th className="py-2 pr-3">编号</th><th className="py-2 pr-3">名称</th><th className="py-2 pr-3">联系方式</th><th className="py-2 pr-3">国家</th><th className="py-2 pr-3">状态</th><th className="py-2 text-right">操作</th></tr></thead><tbody>{initialSuppliers.map(supplier => <tr className="border-b border-stone-100" key={supplier.id}><td className="py-3 pr-3 font-mono text-xs">{supplier.code}</td><td className="py-3 pr-3 font-bold">{supplier.name}</td><td className="py-3 pr-3 text-xs text-stone-500">{supplier.phone || supplier.email || "-"}</td><td className="py-3 pr-3">{supplier.country || "-"}</td><td className="py-3 pr-3">{supplier.active ? "启用" : "停用"}</td><td className="py-3 text-right"><button className="mr-3 font-bold text-olive" onClick={() => edit(supplier)} type="button">编辑</button>{supplier.active ? <button className="font-bold text-red-600" disabled={saving} onClick={() => void deactivate(supplier.id)} type="button">停用</button> : null}</td></tr>)}</tbody></table>{initialSuppliers.length === 0 ? <p className="py-8 text-center text-sm text-stone-400">尚未添加供货商</p> : null}</div>
+    </div>
+  </section>;
 }
 
 function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismissConfirm }: { activePassword: string; authHeaders: () => Record<string, string>; toast: (m: string, t?: "ok" | "err") => void; confirm: (c: { open: boolean; title: string; desc: string; confirmText: string; variant: "danger"|"success"|"default"; action: () => void }) => void; dismissConfirm: () => void }) {

@@ -1,5 +1,35 @@
 export type ProductCategory = string; // dynamic: categories managed via DB
 
+export type SizeSystem =
+  | "letter"
+  | "eu_women_numeric"
+  | "eu_men_numeric"
+  | "eu_shoes"
+  | "one_size"
+  | "custom";
+
+export type VariantProcurement = {
+  supplier_sku: string;
+  cost_price: number | null;
+  reorder_level: number | null;
+};
+
+export type Supplier = {
+  id: string;
+  code: string;
+  name: string;
+  vat_number: string | null;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  country: string | null;
+  notes: string | null;
+  active: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type Category = {
   slug: ProductCategory;
 };
@@ -58,10 +88,13 @@ export type Product = {
   price: number;
   stock: number;
   sizes: string | null;
+  size_system?: SizeSystem | null;
   size_stock?: Record<string, number> | null;
   image_url: string;
   image_urls: string[] | null;
   brand?: string | null;
+  supplier_id?: string | null;
+  supplier_style_code?: string | null;
   barcode?: string | null;
   ean?: string | null;
   vat?: number | null;
@@ -69,6 +102,16 @@ export type Product = {
   additional_image_urls?: string | null;
   skroutz_url?: string | null;
   material?: string | null;
+  fiber_composition_gr?: string | null;
+  fiber_composition_en?: string | null;
+  care_instructions_gr?: string | null;
+  care_instructions_en?: string | null;
+  country_of_origin?: string | null;
+  manufacturer_name?: string | null;
+  manufacturer_contact?: string | null;
+  eu_responsible_person?: string | null;
+  product_safety_notes_gr?: string | null;
+  product_safety_notes_en?: string | null;
   fit?: string | null;
   season?: string | null;
   mpn?: string | null;
@@ -93,16 +136,31 @@ export type ProductFormData = {
   price: number;
   stock: number;
   sizes: string;
+  size_system: SizeSystem | "";
   image_url: string;
   image_urls: string;
   brand: string;
   barcode: string;
+  ean: string;
+  mpn: string;
   vat: number;
   color: string;
   skroutz_url: string;
   is_active: boolean;
   fit_type: string;
   material: string;
+  supplier_id: string;
+  supplier_style_code: string;
+  fiber_composition_gr: string;
+  fiber_composition_en: string;
+  care_instructions_gr: string;
+  care_instructions_en: string;
+  country_of_origin: string;
+  manufacturer_name: string;
+  manufacturer_contact: string;
+  eu_responsible_person: string;
+  product_safety_notes_gr: string;
+  product_safety_notes_en: string;
   ai_keywords: string;
   style_tags: string;
   size_chart: string;

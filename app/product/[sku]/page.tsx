@@ -134,7 +134,15 @@ export default async function ProductPage({
     return s !== "NO" && s !== "N/A" && s !== "-" && s !== "NONE" && s !== "NA";
   }
 
-  const ean = product.ean?.trim() || product.barcode?.trim() || "";
+  // Internal Code 128 barcodes are useful for POS/labels but are not necessarily GTIN/EAN.
+  const ean = product.ean?.trim() || "";
+  const localizedValue = (greek?: string | null, english?: string | null) =>
+    language === "en" ? english?.trim() || greek?.trim() : greek?.trim() || english?.trim();
+  const verifiedMaterial = getLocalizedMaterial(
+    product.material,
+    language,
+    (product as Record<string, unknown>).material_verified as boolean,
+  );
 
   const detailItems = [
     { label: t.stock, value: stockQty > 0 ? `${t.inStockLabel} (${stockQty})` : t.outOfStockLabel },
@@ -144,7 +152,28 @@ export default async function ProductPage({
       : null,
     isReal(product.brand) ? { label: t.brand, value: product.brand!.trim() } : null,
     isReal(ean) ? { label: t.ean, value: ean } : null,
-    isReal(product.material) ? { label: t.material, value: getLocalizedMaterial(product.material, language, (product as Record<string, unknown>).material_verified as boolean) || "—" } : null,
+    isReal(verifiedMaterial) ? { label: t.material, value: verifiedMaterial } : null,
+    isReal(localizedValue(product.fiber_composition_gr, product.fiber_composition_en))
+      ? { label: language === "en" ? "Fiber composition" : "Σύνθεση ινών", value: localizedValue(product.fiber_composition_gr, product.fiber_composition_en)! }
+      : null,
+    isReal(localizedValue(product.care_instructions_gr, product.care_instructions_en))
+      ? { label: language === "en" ? "Care instructions" : "Οδηγίες φροντίδας", value: localizedValue(product.care_instructions_gr, product.care_instructions_en)! }
+      : null,
+    isReal(product.country_of_origin)
+      ? { label: language === "en" ? "Country of origin" : "Χώρα προέλευσης", value: product.country_of_origin!.trim() }
+      : null,
+    isReal(product.manufacturer_name)
+      ? { label: language === "en" ? "Manufacturer" : "Κατασκευαστής", value: product.manufacturer_name!.trim() }
+      : null,
+    isReal(product.manufacturer_contact)
+      ? { label: language === "en" ? "Manufacturer contact" : "Επικοινωνία κατασκευαστή", value: product.manufacturer_contact!.trim() }
+      : null,
+    isReal(product.eu_responsible_person)
+      ? { label: language === "en" ? "EU responsible person" : "Υπεύθυνο πρόσωπο ΕΕ", value: product.eu_responsible_person!.trim() }
+      : null,
+    isReal(localizedValue(product.product_safety_notes_gr, product.product_safety_notes_en))
+      ? { label: language === "en" ? "Safety information" : "Πληροφορίες ασφάλειας", value: localizedValue(product.product_safety_notes_gr, product.product_safety_notes_en)! }
+      : null,
     isReal(product.fit) ? { label: t.fit, value: product.fit!.trim() } : null,
     isReal(product.season) ? { label: t.season, value: product.season!.trim() } : null,
   ].filter(Boolean) as { label: string; value: string }[];

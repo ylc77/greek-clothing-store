@@ -15,6 +15,7 @@ export type PrintableVariantLabel = {
   price: number;
   quantity_on_hand: number;
   active: boolean;
+  supplier_sku?: string | null;
 };
 
 const labelSizeClass: Record<LabelSize, string> = {
@@ -31,11 +32,13 @@ export function LabelPrintPreview({
   labels,
   labelSize,
   storeName = "clothing store",
+  showSupplierSku = false,
   onClose,
 }: {
   labels: PrintableVariantLabel[];
   labelSize: LabelSize;
   storeName?: string;
+  showSupplierSku?: boolean;
   onClose: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -155,6 +158,9 @@ export function LabelPrintPreview({
                   </div>
                   <p className="mt-1 line-clamp-2 min-h-[18px] text-[10px] font-black">{label.product_name}</p>
                   <p className="truncate text-[8px] font-bold text-stone-500">{label.variant_sku}</p>
+                  {showSupplierSku && label.supplier_sku ? (
+                    <p className="truncate text-[7px] font-bold text-stone-500">SUP: {label.supplier_sku}</p>
+                  ) : null}
                   <div className="mt-1 flex justify-center">
                     <svg className="max-w-full" data-barcode={barcode} />
                   </div>
