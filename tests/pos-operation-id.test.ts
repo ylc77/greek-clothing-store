@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
 import { PosOperationIdStore, type PosOperationStorage } from "../lib/pos-operation-id.ts";
 
 class MemoryStorage implements PosOperationStorage {

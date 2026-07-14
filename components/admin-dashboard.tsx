@@ -22,6 +22,7 @@ import type { AdminPermission, AdminRole } from "@/lib/admin-auth";
 import { featurePlanPresets, type FeatureFlags, type FeatureKey } from "@/lib/feature-catalog";
 import { getSupabaseBrowserAuthClient } from "@/lib/supabase";
 import { skroutzReadinessIssues } from "@/lib/skroutz-readiness";
+import { PosOperationIdStore } from "@/lib/pos-operation-id";
 
 /* ── Types ───────────────────────────────────────────────── */
 type AdminProduct = ProductFormData & { id: string; size_stock?: Record<string, number> | null; variant_procurement?: Record<string, VariantProcurement> };
@@ -799,6 +800,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const [labelPreviewItems, setLabelPreviewItems] = useState<PrintableVariantLabel[] | null>(null);
   const labelVariantPanelRef = useRef<HTMLDivElement | null>(null);
   const posSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const posOperationIdsRef = useRef<PosOperationIdStore | null>(null);
   const [posQuery, setPosQuery] = useState("");
   const [posResults, setPosResults] = useState<PosSearchItem[]>([]);
   const [posCart, setPosCart] = useState<PosCartItem[]>([]);
@@ -1308,6 +1310,21 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     return data;
   }
 
+  function posOperationIds() {
+    if (!posOperationIdsRef.current) {
+      posOperationIdsRef.current = new PosOperationIdStore(window.sessionStorage);
+    }
+    return posOperationIdsRef.current;
+  }
+
+  function posCheckoutFingerprint() {
+    return JSON.stringify({
+      paymentMethod: posPaymentMethod,
+      discountTotal: posDiscount,
+      items: posCart.map(item => ({ variantId: item.variant_id, quantity: item.cartQuantity })),
+    });
+  }
+
   function formatEuro(value: number) {
     return `€${Number(value || 0).toFixed(2)}`;
   }
@@ -1450,18 +1467,21 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   }
 
   async function executePosCheckout() {
+    const operationScope = "checkout";
+    const operationId = posOperationIds().getOrCreate(operationScope, posCheckoutFingerprint());
     setPosCheckoutLoading(true);
     try {
       const result = (await posApi("/api/admin/pos/checkout", {
         method: "POST",
         body: JSON.stringify({
-          clientRequestId: crypto.randomUUID(),
+          clientRequestId: operationId,
           paymentMethod: posPaymentMethod,
           discountTotal: posDiscount,
           items: posCart.map(item => ({ variantId: item.variant_id, quantity: item.cartQuantity })),
         }),
       })) as PosOrderResult;
 
+      posOperationIds().complete(operationScope, operationId);
       setPosLastOrder(result);
       setPosCart([]);
       setPosPreview(null);
@@ -1471,6 +1491,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       if (inventoryItems.length > 0) await loadInventoryData();
       window.setTimeout(() => posSearchInputRef.current?.focus(), 60);
     } catch (error) {
+      posOperationIds().markUncertain(operationScope, operationId);
       const message = error instanceof Error ? error.message : "POS 库存扣减失败";
       setPosMessage(message);
       toast(message, "err");
@@ -1570,17 +1591,25 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     setPosVoidDialog({ order, reason: "", submitting: false, message: "" });
   }
 
+  function cancelPosVoidDialog() {
+    if (posVoidDialog) posOperationIds().cancel(`void:${posVoidDialog.order.id}`);
+    setPosVoidDialog(null);
+  }
+
   async function submitPosVoid() {
     if (!posVoidDialog) return;
+    const order = posVoidDialog.order;
     const reason = posVoidDialog.reason.trim();
     if (reason.length < 3) {
       setPosVoidDialog(current => current ? { ...current, message: "请填写作废原因，至少 3 个字符。" } : current);
       return;
     }
 
+    const operationScope = `void:${order.id}`;
+    const operationId = posOperationIds().getOrCreate(operationScope, order.id);
     setPosVoidDialog(current => current ? { ...current, submitting: true, message: "" } : current);
     try {
-      const data = await posApi(`/api/admin/pos/orders/${posVoidDialog.order.id}/void`, {
+      const data = await posApi(`/api/admin/pos/orders/${order.id}/void`, {
         method: "POST",
         body: JSON.stringify({
           reason,
@@ -1588,15 +1617,17 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
         }),
       });
 
+      posOperationIds().complete(operationScope, operationId);
       toast(data.alreadyProcessed ? "该订单已作废。" : "订单已作废，库存已加回。", "ok");
       setPosVoidDialog(null);
       await loadPosOrders();
-      if (posOrderDetail?.order.id === posVoidDialog.order.id) {
-        await loadPosOrderDetail(posVoidDialog.order.id);
+      if (posOrderDetail?.order.id === order.id) {
+        await loadPosOrderDetail(order.id);
       }
       void loadInventoryData();
       void loadProducts();
     } catch (error) {
+      posOperationIds().markUncertain(operationScope, operationId);
       const message = error instanceof Error ? error.message : "POS 订单作废失败";
       setPosVoidDialog(current => current ? { ...current, submitting: false, message } : current);
       toast(message, "err");
@@ -3278,6 +3309,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50 disabled:opacity-40"
                   disabled={posCart.length === 0 || posCheckoutLoading}
                   onClick={() => {
+                    posOperationIds().cancel("checkout");
                     setPosCart([]);
                     setPosPreview(null);
                     setPosLastOrder(null);
@@ -3777,7 +3809,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     <button
                       className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50"
                       disabled={posVoidDialog.submitting}
-                      onClick={() => setPosVoidDialog(null)}
+                      onClick={cancelPosVoidDialog}
                       type="button"
                     >
                       取消
