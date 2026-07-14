@@ -1,170 +1,179 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
-import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
-import { productForForm } from "@/lib/admin-products";
-import { invalidateProductsCache } from "@/lib/cache";
 import {
-  hasStockMovementForIdempotencyKey,
-  syncProductInventoryFromLegacy,
-} from "@/lib/erp-inventory";
+  adminActorFromContext,
+  getAdminAuthContextFromRequest,
+} from "@/lib/admin-auth";
+import { invalidateProductsCache } from "@/lib/cache";
+import { featureDisabledResponse, isFeatureEnabledUncached } from "@/lib/features";
 import { getSupabaseAdminClient } from "@/lib/supabase";
-import type { Product } from "@/lib/types";
 
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const MAX_BODY_BYTES = 8 * 1024;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type QuickSellBody = {
+  sku?: unknown;
+  size?: unknown;
+  variantId?: unknown;
+  variantSku?: unknown;
+  barcode?: unknown;
+  quantity?: unknown;
+  autoDeactivate?: unknown;
+  clientRequestId?: unknown;
+};
+
+type VariantRow = {
+  id: string;
+  product_id: number | string;
+  variant_sku: string;
+  barcode: string | null;
+  size: string | null;
+  active: boolean;
+};
+
+function errorResponse(
+  error: string,
+  status: number,
+  code: string,
+  operationSafeToDiscard: boolean,
+) {
+  return NextResponse.json({ error, code, operationSafeToDiscard }, { status });
 }
 
-function unavailable() {
-  return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 500 });
+function clean(value: unknown, max = 128) {
+  if (typeof value !== "string") return "";
+  const result = value.trim();
+  return result.length <= max ? result : "";
 }
 
-function normalizeSize(value: unknown) {
-  return typeof value === "string" ? value.trim().toUpperCase() : "";
+function normalizedSize(value: unknown) {
+  return clean(value, 64).toUpperCase();
 }
 
-function sizeStockRecord(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const out: Record<string, number> = {};
-  for (const [key, qty] of Object.entries(value as Record<string, unknown>)) {
-    const parsed = Number(qty);
-    if (Number.isFinite(parsed)) out[key.toUpperCase()] = Math.max(0, Math.trunc(parsed));
+async function readBody(request: NextRequest) {
+  const declaredLength = Number(request.headers.get("content-length") || 0);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    return { response: errorResponse("Request body is too large.", 413, "REQUEST_TOO_LARGE", true) };
   }
-  return Object.keys(out).length > 0 ? out : null;
+  const raw = await request.text();
+  if (new TextEncoder().encode(raw).byteLength > MAX_BODY_BYTES) {
+    return { response: errorResponse("Request body is too large.", 413, "REQUEST_TOO_LARGE", true) };
+  }
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid object");
+    return { payload: value as QuickSellBody };
+  } catch {
+    return { response: errorResponse("Invalid JSON body.", 400, "INVALID_ARGUMENT", true) };
+  }
 }
 
-function totalSizeStock(stock: Record<string, number>) {
-  return Object.values(stock).reduce((sum, qty) => sum + Math.max(0, Math.trunc(qty)), 0);
+function rpcFailure(error: unknown) {
+  const message = String((error as { message?: unknown } | null)?.message || "");
+  const known: Array<[string, number, string, string, boolean]> = [
+    ["INVENTORY_INVALID_ARGUMENT", 400, "INVALID_ARGUMENT", "Quick Sell parameters are invalid.", true],
+    ["INVENTORY_OPERATION_CONFLICT", 409, "INVENTORY_OPERATION_CONFLICT", "This operation ID was already used with different parameters.", false],
+    ["INVENTORY_NOT_FOUND", 404, "INVENTORY_NOT_FOUND", "The requested product inventory was not found.", true],
+    ["INVENTORY_INACTIVE", 409, "INVENTORY_INACTIVE", "The product or variant is inactive.", true],
+    ["INVENTORY_INSUFFICIENT_AVAILABLE", 409, "INVENTORY_INSUFFICIENT_AVAILABLE", "Available inventory is insufficient.", true],
+    ["INVENTORY_RESERVED_CONFLICT", 409, "INVENTORY_RESERVED_CONFLICT", "Reserved inventory cannot be sold.", true],
+    ["INVENTORY_INVARIANT", 409, "INVENTORY_RECONCILIATION_REQUIRED", "Inventory data requires manual reconciliation.", false],
+  ];
+  for (const [marker, status, code, publicMessage, safe] of known) {
+    if (message.includes(marker)) return errorResponse(publicMessage, status, code, safe);
+  }
+  return errorResponse("Transactional inventory RPC is unavailable.", 503, "INVENTORY_RPC_UNAVAILABLE", false);
+}
+
+async function loadVariant(
+  supabase: NonNullable<ReturnType<typeof getSupabaseAdminClient>>,
+  payload: QuickSellBody,
+) {
+  const variantId = clean(payload.variantId, 64);
+  const variantSku = clean(payload.variantSku);
+  const barcode = clean(payload.barcode);
+  const sku = clean(payload.sku);
+  const size = normalizedSize(payload.size);
+  const select = "id, product_id, variant_sku, barcode, size, active";
+
+  if (variantId) {
+    if (!UUID_PATTERN.test(variantId)) return { response: errorResponse("variantId must be a UUID.", 400, "INVALID_ARGUMENT", true) };
+    const { data, error } = await (supabase as any).from("product_variants").select(select).eq("id", variantId).maybeSingle();
+    if (error) return { response: errorResponse("Inventory lookup is unavailable.", 503, "INVENTORY_RPC_UNAVAILABLE", false) };
+    return data ? { variant: data as VariantRow } : { response: errorResponse("Variant was not found.", 404, "INVENTORY_NOT_FOUND", true) };
+  }
+  if (variantSku || barcode) {
+    let query = (supabase as any).from("product_variants").select(select);
+    query = variantSku ? query.eq("variant_sku", variantSku) : query.eq("barcode", barcode);
+    const { data, error } = await query.maybeSingle();
+    if (error) return { response: errorResponse("Inventory lookup is unavailable.", 503, "INVENTORY_RPC_UNAVAILABLE", false) };
+    return data ? { variant: data as VariantRow } : { response: errorResponse("Variant was not found.", 404, "INVENTORY_NOT_FOUND", true) };
+  }
+  if (!sku) return { response: errorResponse("sku, variantId, variantSku, or barcode is required.", 400, "INVALID_ARGUMENT", true) };
+
+  const { data: product, error: productError } = await (supabase as any)
+    .from("products").select("id").eq("sku", sku).maybeSingle();
+  if (productError) return { response: errorResponse("Inventory lookup is unavailable.", 503, "INVENTORY_RPC_UNAVAILABLE", false) };
+  if (!product) return { response: errorResponse("Product was not found.", 404, "INVENTORY_NOT_FOUND", true) };
+  const { data: variants, error: variantsError } = await (supabase as any)
+    .from("product_variants").select(select).eq("product_id", product.id).order("sort_order");
+  if (variantsError) return { response: errorResponse("Inventory lookup is unavailable.", 503, "INVENTORY_RPC_UNAVAILABLE", false) };
+  const rows = (variants || []) as VariantRow[];
+  if (size) {
+    const matching = rows.filter((variant) => normalizedSize(variant.size || "ONE SIZE") === size);
+    if (matching.length !== 1) return { response: errorResponse("The selected size does not identify one Variant.", 400, "INVALID_ARGUMENT", true) };
+    return { variant: matching[0] };
+  }
+  if (rows.length !== 1) {
+    return { response: errorResponse("A size or Variant is required for multi-size products.", 400, "INVALID_ARGUMENT", true) };
+  }
+  return { variant: rows[0] };
 }
 
 export async function POST(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "pos:checkout"))) return unauthorized();
-  if (!(await isFeatureEnabled("inventory"))) return featureDisabledResponse("inventory");
+  const authContext = await getAdminAuthContextFromRequest(request);
+  if (!authContext) return errorResponse("Unauthorized", 401, "UNAUTHORIZED", true);
+  if (authContext.role !== "owner") return errorResponse("Forbidden", 403, "FORBIDDEN", true);
+  if (!(await isFeatureEnabledUncached("quick_sell"))) return featureDisabledResponse("quick_sell");
+
+  const parsed = await readBody(request);
+  if (parsed.response) return parsed.response;
+  const payload = parsed.payload!;
+  const quantity = Number(payload.quantity ?? 1);
+  const clientRequestId = clean(payload.clientRequestId);
+  const autoDeactivate = payload.autoDeactivate !== false;
+
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 1_000) {
+    return errorResponse("quantity must be an integer between 1 and 1000.", 400, "INVALID_ARGUMENT", true);
+  }
+  if (!clientRequestId) {
+    return errorResponse("clientRequestId must contain 1 to 128 characters.", 400, "INVALID_ARGUMENT", true);
+  }
 
   const supabase = getSupabaseAdminClient();
-  if (!supabase) return unavailable();
-
-  const payload = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  const sku = typeof payload.sku === "string" ? payload.sku.trim() : "";
-  const size = normalizeSize(payload.size);
-  const quantity = Math.max(1, Math.trunc(Number(payload.quantity) || 1));
-  const autoDeactivate = payload.autoDeactivate !== false;
-  const providedIdempotencyKey =
-    typeof payload.idempotencyKey === "string" && payload.idempotencyKey.trim()
-      ? payload.idempotencyKey.trim()
-      : typeof payload.clientRequestId === "string" && payload.clientRequestId.trim()
-        ? payload.clientRequestId.trim()
-        : "";
-  const operationKey =
-    providedIdempotencyKey ||
-    `quick_sell:${sku || "unknown"}:${size || "ONE_SIZE"}:${Date.now()}:${randomUUID()}`;
-
-  if (!sku) return NextResponse.json({ error: "SKU is required" }, { status: 400 });
+  if (!supabase) return errorResponse("Admin Supabase is not configured.", 503, "INVENTORY_RPC_UNAVAILABLE", false);
 
   try {
-    const alreadyProcessed = await hasStockMovementForIdempotencyKey(operationKey);
-    if (alreadyProcessed) {
-      const { data: currentProduct } = await supabase
-        .from("products")
-        .select("*")
-        .eq("sku", sku)
-        .maybeSingle();
-
-      return NextResponse.json({
-        ok: true,
-        alreadyProcessed: true,
-        sold: 0,
-        size: size || null,
-        idempotencyKey: operationKey,
-        product: currentProduct ? productForForm(currentProduct as Product) : null,
-      });
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to check sale idempotency";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-
-  const { data: product, error: productError } = await supabase
-    .from("products")
-    .select("*")
-    .eq("sku", sku)
-    .maybeSingle();
-
-  if (productError) return NextResponse.json({ error: productError.message }, { status: 500 });
-  if (!product) return NextResponse.json({ error: "Product not found" }, { status: 404 });
-
-  const rawProduct = product as Product & { size_stock?: Record<string, number> | null };
-  const currentSizeStock = sizeStockRecord(rawProduct.size_stock);
-  const update: Record<string, unknown> = {};
-  let soldSize = size;
-
-  if (currentSizeStock) {
-    const keys = Object.keys(currentSizeStock);
-    if (!soldSize && keys.length === 1) soldSize = keys[0];
-    if (!soldSize || !(soldSize in currentSizeStock)) {
-      return NextResponse.json({ error: "请选择有效尺码后再扣库存" }, { status: 400 });
-    }
-
-    const current = currentSizeStock[soldSize];
-    if (current < quantity) {
-      return NextResponse.json({ error: `${soldSize} 库存不足，当前只有 ${current} 件` }, { status: 400 });
-    }
-
-    currentSizeStock[soldSize] = current - quantity;
-    const total = totalSizeStock(currentSizeStock);
-    update.size_stock = currentSizeStock;
-    update.stock = total;
-    update.sizes = Object.keys(currentSizeStock).join(",");
-    if (autoDeactivate && total <= 0) update.is_active = false;
-  } else {
-    const current = Math.max(0, Math.trunc(Number(rawProduct.stock) || 0));
-    if (current < quantity) {
-      return NextResponse.json({ error: `库存不足，当前只有 ${current} 件` }, { status: 400 });
-    }
-    const total = current - quantity;
-    update.stock = total;
-    if (autoDeactivate && total <= 0) update.is_active = false;
-  }
-
-  const { data, error } = await supabase
-    .from("products")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .update(update as any)
-    .eq("id", rawProduct.id)
-    .select("*")
-    .single();
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  let erpSyncWarning: string | undefined;
-  try {
-    const productId = Number((data as Product).id);
-    if (!Number.isFinite(productId)) {
-      throw new Error("Invalid product ID for ERP inventory sync.");
-    }
-
-    await syncProductInventoryFromLegacy({
-      productId,
-      reason: "快速售出",
-      sourceType: "quick_sell",
-      sourceId: rawProduct.sku,
-      movementType: "sale",
-      idempotencyKey: operationKey,
-      createdBy: "admin",
+    const resolved = await loadVariant(supabase, payload);
+    if (resolved.response) return resolved.response;
+    const variant = resolved.variant!;
+    const { data, error } = await (supabase as any).rpc("inventory_apply_rpc", {
+      p_client_request_id: clientRequestId,
+      p_variant_id: variant.id,
+      p_mode: "adjust_by",
+      p_quantity: 0 - quantity,
+      p_operation_type: "quick_sell",
+      p_reason: "Quick sell inventory deduction",
+      p_created_by: adminActorFromContext(authContext),
+      p_auto_deactivate: autoDeactivate,
     });
-  } catch (syncError) {
-    erpSyncWarning =
-      syncError instanceof Error ? syncError.message : "ERP inventory sync failed.";
+    if (error) return rpcFailure(error);
+    invalidateProductsCache(typeof data?.productSku === "string" ? data.productSku : null);
+    return NextResponse.json({
+      ...data,
+      sold: quantity,
+      idempotencyKey: data?.operationId,
+    });
+  } catch (error) {
+    return rpcFailure(error);
   }
-
-  invalidateProductsCache(rawProduct.sku);
-
-  return NextResponse.json({
-    ok: true,
-    sold: quantity,
-    size: soldSize || null,
-    idempotencyKey: operationKey,
-    erpSyncWarning,
-    product: productForForm(data as Product),
-  });
 }

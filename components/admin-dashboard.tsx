@@ -368,7 +368,7 @@ const tabFeatures: Partial<Record<Tab, FeatureKey>> = {
   stockLookup: "inventory",
   stockOperations: "inventory",
   quickAdd: "product_management",
-  quickSale: "inventory",
+  quickSale: "quick_sell",
   pos: "pos_checkout",
   posOrders: "pos_orders",
   posDaily: "pos_reports",
