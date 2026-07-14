@@ -19,6 +19,7 @@ RULES:
 - Never invent product names, prices, stock, discounts, sizes, or product details.
 - If no matching products exist, say so politely and suggest browsing categories.
 - For size recommendations, use the MEASUREMENTS and SIZE_CHART data.
+- Treat SIZE_SYSTEM, AVAILABLE_SIZES, SOLD_OUT_SIZES, and SIZE_CHART as structured store data, not suggestions.
 - If measurements are incomplete, ask for the missing fields: height, weight, bust, waist, hip.
 - Size advice should sound like a helpful human store assistant, not an absolute guarantee.
 - For size advice, give the most likely size first, then one relaxed/slim alternative only if useful.
@@ -60,18 +61,35 @@ RESPONSE FORMAT (JSON):
 
 SIZE RECOMMENDATION RULES BY DATA AVAILABILITY:
 
+SIZE SYSTEM DEFINITIONS:
+- letter: letter sizing such as XS, S, M, L, XL. Do not convert it to an EU number unless this product's SIZE_CHART explicitly provides that mapping.
+- eu_women_numeric: European women's numeric labels, currently supported as EU 32-54. Treat each value as the exact label stored for this product; the same EU number can fit differently by brand and cut.
+- eu_men_numeric: European men's numeric labels, currently supported as EU 42-64. Treat each value as the exact label stored for this product; do not map it to S/M/L without an explicit product SIZE_CHART.
+- eu_shoes: European shoe labels, currently supported as EU 35-48. Ask for foot length in centimetres and use only an explicit product SIZE_CHART for a recommendation. Do not guess a conversion from UK, US, or letter sizing.
+- one_size: the product has one selectable size. Explain that One Size is not a universal fit and use product measurements or SIZE_CHART when available.
+- custom: use the stored size labels exactly as written and do not infer a standard conversion.
+
+STOCK AND LABEL RULES:
+- AVAILABLE_SIZES contains the only sizes that may be described as currently available.
+- SOLD_OUT_SIZES may be mentioned as sold out, but never recommended as available.
+- ALL_SIZES is the complete known label list. Do not invent a label outside it.
+- A size with quantity 0 is sold out even if it appears in the old sizes text.
+- Never silently convert between EU numeric, letter, shoe, One Size, or custom systems.
+- If the customer asks for a conversion and this product has no explicit mapping in SIZE_CHART, say that sizing varies by brand and ask for measurements or recommend trying it in store.
+
 PRIORITY 1: size_chart exists on CURRENT_PRODUCT
 - Compare customer measurements against the size_chart and recommend the closest size.
-- Always mention available sizes from size_stock keys or the sizes field.
+- Always mention AVAILABLE_SIZES, not sold-out size labels.
 - Say: "Based on the size chart for this [product name], size [X] looks like the best starting point."
 - If the customer seems between sizes, mention the nearest alternative for a looser or slimmer fit.
 
 PRIORITY 2: no size_chart, but available_sizes exist
-- Always mention available sizes first.
-- Estimate from height, weight, fit_type, and category.
+- Always mention AVAILABLE_SIZES first.
+- For letter-sized clothing only, you may make a cautious approximate recommendation from height, weight, measurements, fit_type, and category.
+- For EU numeric clothing, use an exact product SIZE_CHART when possible. Without one, do not claim that height/weight alone maps reliably to an EU number; ask for bust/waist/hip measurements and make clear that the store should confirm the fit.
 - Add one sentence saying this is approximate because this product does not have a detailed size chart yet.
-- For shoes, if no foot_length is provided, ask for foot length in cm.
-- For bags, hats, jewelry, luggage, and accessories, say the product is One Size.
+- For shoes, if no foot_length is provided, ask for foot length in cm; without an explicit chart, do not claim an exact EU shoe size.
+- If SIZE_SYSTEM is one_size, say the product is One Size. Do not assume every bag, hat, jewelry item, luggage item, or accessory is One Size unless its stored SIZE_SYSTEM or ALL_SIZES says so.
 
 PRIORITY 3: no sizes at all
 - Say size information is not available yet and suggest contacting the store on WhatsApp or visiting in store.
@@ -84,26 +102,79 @@ WHATSAPP MENTION:
 - The chat panel already has a WhatsApp contact footer. Do NOT repeat WhatsApp in your reply unless the user explicitly asks how to contact the store.
 - Keep the size disclaimer short and WhatsApp-free: "This is only a size recommendation. For the most accurate fit, try it in store."`;
 
+const PRODUCT_SELECT = "sku, name_en, name_gr, category, subcategory, price, stock, sizes, size_system, size_stock, size_chart, fit_type, material, material_verified, ai_keywords, image_url, color, brand";
+
+const sizeSystemLabels: Record<string, string> = {
+  letter: "Letter sizing (XS-XXXL as stored)",
+  eu_women_numeric: "European women's numeric sizing (EU 32-54)",
+  eu_men_numeric: "European men's numeric sizing (EU 42-64)",
+  eu_shoes: "European shoe sizing (EU 35-48)",
+  one_size: "One Size",
+  custom: "Custom store labels",
+};
+
+function cleanSizeSystem(value: unknown) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized in sizeSystemLabels ? normalized : "unspecified";
+}
+
+function cleanSizeStock(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([label, quantity]) => [label.trim(), Math.max(0, Math.trunc(Number(quantity) || 0))] as const)
+      .filter(([label]) => Boolean(label)),
+  );
+}
+
+function legacySizeLabels(value: unknown) {
+  return Array.from(new Set(
+    String(value || "")
+      .split(/[,;|\n]+/)
+      .map((label) => label.trim())
+      .filter(Boolean),
+  ));
+}
+
 function buildProductSummary(products: Record<string, unknown>[]) {
-  return products.map((p) => ({
-    sku: p.sku,
-    name_en: p.name_en || "",
-    name_gr: p.name_gr || "",
-    category: p.category || "",
-    subcategory: p.subcategory || "",
-    price: Number(p.price),
-    stock: Number(p.stock),
-    sizes: p.sizes || "",
-    size_stock: p.size_stock || {},
-    size_chart: p.size_chart || {},
-    fit_type: p.fit_type || "regular",
-    material: p.material || "",
-    material_verified: Boolean(p.material_verified),
-    brand: p.brand || "",
-    color: p.color || "",
-    style_tags: p.ai_keywords || [],
-    image_url: p.image_url || "",
-  }));
+  return products.map((p) => {
+    const sizeSystem = cleanSizeSystem(p.size_system);
+    const sizeStock = cleanSizeStock(p.size_stock);
+    const stockEntries = Object.entries(sizeStock);
+    const fallbackSizes = legacySizeLabels(p.sizes);
+    const allSizes = stockEntries.length > 0 ? stockEntries.map(([label]) => label) : fallbackSizes;
+    const availableSizes = stockEntries.length > 0
+      ? stockEntries.filter(([, quantity]) => quantity > 0).map(([label]) => label)
+      : Number(p.stock) > 0 ? fallbackSizes : [];
+    const soldOutSizes = stockEntries.length > 0
+      ? stockEntries.filter(([, quantity]) => quantity <= 0).map(([label]) => label)
+      : Number(p.stock) <= 0 ? fallbackSizes : [];
+
+    return {
+      sku: p.sku,
+      name_en: p.name_en || "",
+      name_gr: p.name_gr || "",
+      category: p.category || "",
+      subcategory: p.subcategory || "",
+      price: Number(p.price),
+      stock: Number(p.stock),
+      sizes: p.sizes || "",
+      size_system: sizeSystem,
+      size_system_description: sizeSystemLabels[sizeSystem] || "Unspecified; use stored labels exactly",
+      all_sizes: allSizes,
+      available_sizes: availableSizes,
+      sold_out_sizes: soldOutSizes,
+      size_stock: sizeStock,
+      size_chart: p.size_chart || {},
+      fit_type: p.fit_type || "regular",
+      material: p.material || "",
+      material_verified: Boolean(p.material_verified),
+      brand: p.brand || "",
+      color: p.color || "",
+      style_tags: p.ai_keywords || [],
+      image_url: p.image_url || "",
+    };
+  });
 }
 
 const rateLimitMap = new Map<string, number[]>();
@@ -163,7 +234,7 @@ export async function POST(request: NextRequest) {
   const message = String(body.message || "").trim();
   const language = body.language === "en" ? "en" : "el";
   const measurements = body.measurements || {};
-  const productContext = body.productContext || null;
+  const requestedProductSku = String(body.productContext?.sku || "").trim();
 
   if (!message) {
     return NextResponse.json({ error: "Message is required" }, { status: 400 });
@@ -196,15 +267,33 @@ export async function POST(request: NextRequest) {
   const { data } = supabase
     ? await (supabase as any)
         .from("products")
-        .select("sku, name_en, name_gr, category, subcategory, price, stock, sizes, size_stock, size_chart, fit_type, material, material_verified, ai_keywords, image_url, color, brand")
+        .select(PRODUCT_SELECT)
         .neq("is_active", false)
         .gte("stock", 0)
         .order("created_at", { ascending: false })
         .limit(20)
     : { data: null };
 
-  const allProducts = (data || []) as Record<string, unknown>[];
+  let allProducts = (data || []) as Record<string, unknown>[];
+  let currentProduct = requestedProductSku
+    ? allProducts.find((product) => String(product.sku || "") === requestedProductSku) || null
+    : null;
+
+  // Product context from the browser is only a SKU hint. Reload the authoritative
+  // product record so customer-edited request data cannot invent sizes or stock.
+  if (supabase && requestedProductSku && !currentProduct) {
+    const { data: requestedProduct } = await (supabase as any)
+      .from("products")
+      .select(PRODUCT_SELECT)
+      .eq("sku", requestedProductSku)
+      .neq("is_active", false)
+      .maybeSingle();
+    currentProduct = requestedProduct as Record<string, unknown> | null;
+    if (currentProduct) allProducts = [currentProduct, ...allProducts];
+  }
+
   const productSummary = buildProductSummary(allProducts);
+  const currentProductSummary = currentProduct ? buildProductSummary([currentProduct])[0] : undefined;
 
   const settings = await getBusinessSettings();
   const storeName = settings.business_name || "Online Store";
@@ -238,7 +327,7 @@ export async function POST(request: NextRequest) {
               message,
               language,
               measurements: Object.keys(measurements).length > 0 ? measurements : undefined,
-              CURRENT_PRODUCT: productContext || undefined,
+              CURRENT_PRODUCT: currentProductSummary,
               ACTUAL_PRODUCTS: productSummary,
             }),
           },

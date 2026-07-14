@@ -102,6 +102,9 @@ export type Product = {
   additional_image_urls?: string | null;
   skroutz_url?: string | null;
   material?: string | null;
+  material_verified?: boolean | null;
+  size_chart?: Record<string, unknown> | null;
+  fit_type?: string | null;
   fiber_composition_gr?: string | null;
   fiber_composition_en?: string | null;
   care_instructions_gr?: string | null;

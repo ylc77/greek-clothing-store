@@ -2498,7 +2498,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           return { ...c, image_urls: Array.from(new Set([...existing, d.imageUrl])).join("\n") };
         });
       }
-      toast("AI 模特图已生成，并加入多图。");
+      const generatedImage = d.image && typeof d.image === "object" ? d.image as Record<string, unknown> : null;
+      const generatedSize = generatedImage?.width && generatedImage?.height ? `（${generatedImage.width}×${generatedImage.height} ${String(generatedImage.format || "").toUpperCase()}）` : "";
+      toast(`AI 模特图已生成${generatedSize}，并加入多图。`);
       await loadProducts();
     } catch (er) {
       toast(er instanceof Error ? er.message : "AI 模特图生成失败", "err");
@@ -4857,7 +4859,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   </div>
                   {adminFeatures.ai_tools ? <div className="mt-4 hidden rounded-lg border border-amber-100 bg-amber-50/60 p-3 xl:block">
                     <p className="text-xs font-black text-ink">AI 模特穿搭图（选填）</p>
-                    <p className="mt-1 text-[11px] text-stone-500">先上传真实正面/背面图，再生成参考穿搭图。生成图会加入多图，不会替换主图。</p>
+                    <p className="mt-1 text-[11px] text-stone-500">先上传清晰的真实正面/背面图；系统最多取两张参考图，生成 1024×1536、medium 品质的 WebP 穿搭图，并校验尺寸后加入多图，不会替换主图。</p>
                     <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
                       <input className="input bg-white" value={styleImageStyle} onChange={e => setStyleImageStyle(e.target.value)} placeholder="Mediterranean boutique look" />
                       <input className="input bg-white" value={styleImageModelType} onChange={e => setStyleImageModelType(e.target.value)} placeholder="adult fashion model" />

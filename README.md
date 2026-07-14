@@ -82,8 +82,10 @@ USE_POS_RPC=false
 DEEPSEEK_API_KEY=
 DEEPSEEK_TRANSLATION_MODEL=deepseek-chat
 OPENAI_API_KEY=
-OPENAI_IMAGE_MODEL=gpt-image-1
+OPENAI_IMAGE_MODEL=gpt-image-2
 ```
+
+AI 模特图默认使用最多两张真实商品参考图，通过 GPT Image 2 生成 `1024×1536` 竖版、`medium` 品质、WebP 85% 压缩的图片。服务端会在上传 Storage 前校验格式和尺寸，不符合标准的结果不会写入商品多图。
 
 6. 点击 **Deploy**。
 7. 部署完成后打开正式网址。

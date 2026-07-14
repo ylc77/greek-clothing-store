@@ -12,7 +12,8 @@ type AiProduct = {
   name_gr: string;
   price: number;
   stock: number;
-  sizes: string;
+  sizes?: string;
+  available_sizes?: string[];
   image_url: string;
   reason: string;
   url: string;
@@ -100,8 +101,13 @@ export function ChatAssistant({
       const visibleProducts = shouldShowProductRecommendations(text)
         ? products.filter((product: AiProduct) => product.sku !== currentSku)
         : [];
+      const reply = typeof data.reply === "string" ? data.reply.trim() : "";
+      const sizeAdvice = typeof data.sizeAdvice === "string" ? data.sizeAdvice.trim() : "";
+      const assistantText = sizeAdvice && !reply.toLowerCase().includes(sizeAdvice.toLowerCase())
+        ? [reply, sizeAdvice].filter(Boolean).join("\n\n")
+        : reply;
 
-      setMessages((prev) => [...prev, { role: "assistant", text: data.reply || "", products: visibleProducts }]);
+      setMessages((prev) => [...prev, { role: "assistant", text: assistantText, products: visibleProducts }]);
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -149,7 +155,17 @@ export function ChatAssistant({
   const winH = isWide ? "sm:h-[760px]" : "sm:h-[620px]";
 
   const productPrice = Number(productContext?.price || 0).toFixed(2);
-  const productSizes = String(productContext?.sizes || "—");
+  const productSizeStock = productContext?.sizeStock && typeof productContext.sizeStock === "object" && !Array.isArray(productContext.sizeStock)
+    ? productContext.sizeStock as Record<string, unknown>
+    : null;
+  const availableProductSizes = productSizeStock
+    ? Object.entries(productSizeStock)
+        .filter(([, quantity]) => Number(quantity) > 0)
+        .map(([size]) => size)
+    : [];
+  const productSizes = availableProductSizes.length > 0
+    ? availableProductSizes.join(", ")
+    : String(productContext?.sizes || "—");
   const productStockLabel = Number(productContext?.stock || 0) > 0
     ? language === "el" ? "Σε απόθεμα" : "In stock"
     : language === "el" ? "Εκτός αποθέματος" : "Out of stock";
@@ -219,7 +235,7 @@ export function ChatAssistant({
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3 sm:px-4">
         {messages.map((message, index) => (
           <div key={index}>
-            <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm leading-relaxed ${message.role === "user" ? "ml-auto bg-violet-100 text-violet-900" : "bg-stone-100 text-ink"}`}>
+            <div className={`max-w-[85%] whitespace-pre-line rounded-xl px-3 py-2 text-sm leading-relaxed ${message.role === "user" ? "ml-auto bg-violet-100 text-violet-900" : "bg-stone-100 text-ink"}`}>
               {message.text}
             </div>
             {message.products?.map((product) => (
@@ -238,7 +254,7 @@ export function ChatAssistant({
                 ) : null}
                 <div className="min-w-0 flex-1">
                   <p className={`line-clamp-1 font-bold text-ink ${isWide ? "text-sm" : "text-xs"}`}>{productName(product)}</p>
-                  <p className="text-xs text-stone-500">€{product.price.toFixed(2)} · {product.sizes || "—"}</p>
+                  <p className="text-xs text-stone-500">€{product.price.toFixed(2)} · {product.available_sizes?.join(", ") || product.sizes || "—"}</p>
                   {product.reason ? <p className={`mt-1 line-clamp-2 text-stone-400 ${isWide ? "text-[11px]" : "text-[10px]"}`}>{product.reason}</p> : null}
                 </div>
               </Link>

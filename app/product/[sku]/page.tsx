@@ -123,6 +123,11 @@ export default async function ProductPage({
     ssRaw && typeof ssRaw === "object" && !Array.isArray(ssRaw)
       ? JSON.parse(JSON.stringify(ssRaw))
       : null;
+  const sizeChartRaw = product.size_chart;
+  const safeSizeChart: Record<string, unknown> | null =
+    sizeChartRaw && typeof sizeChartRaw === "object" && !Array.isArray(sizeChartRaw)
+      ? JSON.parse(JSON.stringify(sizeChartRaw))
+      : null;
   const backHref = categoryBackHref(product, language);
   const backLabel =
     product.subcategory && subcategoryLabels[product.subcategory]
@@ -250,6 +255,7 @@ export default async function ProductPage({
                 productNameGr={product.name_gr || product.name_en || product.sku}
                 sku={product.sku}
                 sizes={product.sizes}
+                sizeSystem={product.size_system}
                 sizeStock={safeSizeStock}
                 stock={Number(product.stock)}
                 skroutzUrl={product.skroutz_url}
@@ -260,8 +266,8 @@ export default async function ProductPage({
                 subcategory={product.subcategory || undefined}
                 price={Number(product.price)}
                 imageUrl={product.image_url || undefined}
-                sizeChart={safeSizeStock}
-                fitType={(product as Record<string, unknown>).fit_type as string || "regular"}
+                sizeChart={safeSizeChart}
+                fitType={product.fit_type || "regular"}
                 whatsappUrl={settings.whatsapp || undefined}
               />
             </div>

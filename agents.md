@@ -127,3 +127,15 @@ The settings image-upload route is also reused by category management. Keep `cat
 
 Feature disabling must cover all four layers where applicable: public storefront copy/actions, admin navigation and controls, direct API calls, and employee authentication. The previous implementation left the public AI launcher, product AI button, Skroutz storefront copy, and employee account authorization active after their feature flags were disabled. Keep these surfaces gated and use the safe Basic preset while feature configuration is loading or unavailable so premium modules do not flash open.
 
+
+\---
+
+
+\## 11. AI shopping assistant sizing data boundaries
+
+
+The product page was previously observed passing `size_stock` to the AI assistant as `size_chart`. These fields are not interchangeable: `size_stock` is availability by label, while `size_chart` is the product's measurement or fit reference. Keep both values separate through product loading, client context, and server prompt construction.
+
+
+AI size and stock answers must use an authoritative server-side product record selected by SKU. Do not trust browser-supplied product fields as the source of truth. Include `size_system`, distinguish available sizes from sold-out sizes, and never infer conversions between letter, EU women's numeric, EU men's numeric, EU shoe, One Size, or custom sizing without an explicit product `size_chart` mapping.
+

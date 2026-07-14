@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { text, type Language } from "@/lib/i18n";
 import { getSizeOptions } from "@/lib/product-stock";
+import type { SizeSystem } from "@/lib/types";
 
 type ProductActionsProps = {
   productName: string;
@@ -10,6 +11,7 @@ type ProductActionsProps = {
   productNameGr?: string;
   sku: string;
   sizes: string | null;
+  sizeSystem?: SizeSystem | null;
   sizeStock?: Record<string, number> | null;
   stock: number;
   skroutzUrl?: string | null;
@@ -40,7 +42,7 @@ function buildSkroutzUrl(skroutzUrl: string | null | undefined, productNameEn: s
   return url.toString();
 }
 
-export function ProductActions({ productName, productNameEn, productNameGr, sku, sizes, sizeStock, stock, skroutzUrl, skroutzEnabled = true, aiEnabled = true, language, whatsappUrl, category, subcategory, price, imageUrl, sizeChart, fitType }: ProductActionsProps) {
+export function ProductActions({ productName, productNameEn, productNameGr, sku, sizes, sizeSystem, sizeStock, stock, skroutzUrl, skroutzEnabled = true, aiEnabled = true, language, whatsappUrl, category, subcategory, price, imageUrl, sizeChart, fitType }: ProductActionsProps) {
   const waUrl = whatsappUrl || "#";
   const t = text[language || "el"];
   const sizeOptions = useMemo(() => getSizeOptions({ sizes, stock, size_stock: sizeStock }), [sizes, stock, sizeStock]);
@@ -133,7 +135,7 @@ export function ProductActions({ productName, productNameEn, productNameGr, sku,
       ) : null}
 
       {/* AI Assistant button */}
-      {aiEnabled ? <button className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-6 py-3 text-sm font-bold text-violet-700 transition hover:bg-violet-100 hover:border-violet-300" onClick={() => { window.dispatchEvent(new CustomEvent("openAiChat", { detail: { product: { sku, productName, productNameEn, productNameGr, sizes, sizeStock, stock, category, subcategory, price, imageUrl, sizeChart, fitType } } })); }} type="button">{t.askAi}</button> : null}
+      {aiEnabled ? <button className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-6 py-3 text-sm font-bold text-violet-700 transition hover:bg-violet-100 hover:border-violet-300" onClick={() => { window.dispatchEvent(new CustomEvent("openAiChat", { detail: { product: { sku, productName, productNameEn, productNameGr, sizes, sizeSystem, sizeStock, stock, category, subcategory, price, imageUrl, sizeChart, fitType } } })); }} type="button">{t.askAi}</button> : null}
 
       {hasWhatsApp ? (
         <a

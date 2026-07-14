@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import sharp from "sharp";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { invalidateProductsCache } from "@/lib/cache";
@@ -6,6 +7,16 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 import { productImagesBucket, storageSkuSegment } from "@/lib/storage-images";
 
 export const runtime = "nodejs";
+
+const imageModelFallback = "gpt-image-2";
+const imageWidth = 1024;
+const imageHeight = 1536;
+const imageSize = `${imageWidth}x${imageHeight}`;
+const imageQuality = "medium";
+const imageOutputFormat = "webp";
+const imageOutputCompression = 85;
+const maxSourceImages = 2;
+const maxSourceImageBytes = 15 * 1024 * 1024;
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -27,6 +38,71 @@ function isHttpUrl(value: unknown): value is string {
     return url.protocol === "http:" || url.protocol === "https:";
   } catch {
     return false;
+  }
+}
+
+function optionalText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function buildStyleImagePrompt(product: Record<string, unknown>, modelType: string, style: string) {
+  const productName = optionalText(product.name_en) || optionalText(product.name_cn) || optionalText(product.name_gr);
+  const facts = [
+    productName ? `Catalog product name: ${productName}.` : "",
+    optionalText(product.category) ? `Category: ${optionalText(product.category)}.` : "",
+    optionalText(product.subcategory) ? `Subcategory: ${optionalText(product.subcategory)}.` : "",
+    optionalText(product.color) ? `Catalog color: ${optionalText(product.color)}.` : "",
+    product.material_verified === true && optionalText(product.material) ? `Verified material: ${optionalText(product.material)}.` : "",
+  ].filter(Boolean);
+
+  return [
+    "Create exactly one photorealistic ecommerce fashion image for a small clothing boutique.",
+    "The uploaded images are authoritative references for the same garment. Garment identity is more important than artistic styling.",
+    "Preserve the garment's exact visible color, pattern, print placement, silhouette, length, cut, neckline, sleeves, seams, buttons, zippers, pockets, texture, and other construction details.",
+    "Do not redesign the garment. Do not add or remove logos, prints, decorations, fasteners, pockets, sleeves, or fabric details. If a detail is unclear in the references, keep it visually neutral instead of inventing it.",
+    ...facts,
+    `Use one ${modelType}. Show the referenced garment being worn and fully visible.`,
+    "Use a natural standing or subtle three-quarter pose. Keep the model centered with comfortable margins; do not crop the garment, head, hands, or feet when a full-body composition is appropriate.",
+    "Any supporting garments or accessories must be simple, neutral, unbranded, and must not cover the referenced garment.",
+    `Visual direction: ${style}.`,
+    "Scene: clean Mediterranean boutique or understated Athens street setting, natural light, realistic skin and fabric texture, commercial fashion photography.",
+    "Composition: vertical 2:3 portrait, single adult model, no extra people, no collage, no duplicated body parts.",
+    "Do not include text, prices, discount labels, borders, logos, watermarks, or invented branding.",
+    "The result is a styling reference image for the product gallery, not a replacement for the original product photo.",
+  ].join("\n");
+}
+
+async function loadSourceImage(url: string, index: number) {
+  const response = await fetch(url, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Reference image ${index + 1} could not be downloaded (${response.status}).`);
+  }
+
+  const declaredBytes = Number(response.headers.get("content-length")) || 0;
+  if (declaredBytes > maxSourceImageBytes) {
+    throw new Error(`Reference image ${index + 1} is larger than 15 MB.`);
+  }
+
+  const source = Buffer.from(await response.arrayBuffer());
+  if (source.length === 0 || source.length > maxSourceImageBytes) {
+    throw new Error(`Reference image ${index + 1} is empty or larger than 15 MB.`);
+  }
+
+  try {
+    const normalized = await sharp(source, { limitInputPixels: 40_000_000 })
+      .rotate()
+      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 90 })
+      .toBuffer();
+    return {
+      blob: new Blob([new Uint8Array(normalized)], { type: "image/webp" }),
+      filename: `reference-${index + 1}.webp`,
+    };
+  } catch {
+    throw new Error(`Reference image ${index + 1} is not a supported or valid image.`);
   }
 }
 
@@ -78,7 +154,7 @@ export async function POST(request: NextRequest) {
   const galleryUrls = Array.isArray(productRecord.image_urls)
     ? productRecord.image_urls.filter(isHttpUrl)
     : [];
-  const sourceImages = [productRecord.image_url, ...galleryUrls].filter(isHttpUrl).slice(0, 4);
+  const sourceImages = [productRecord.image_url, ...galleryUrls].filter(isHttpUrl).slice(0, maxSourceImages);
 
   if (sourceImages.length === 0) {
     return NextResponse.json(
@@ -87,31 +163,37 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const prompt = [
-    "Create a realistic ecommerce styling reference image for a small clothing boutique.",
-    "Use the uploaded garment photos as the clothing reference. Preserve the garment color, silhouette, and visible details as much as possible.",
-    `Model: ${modelType}.`,
-    `Style: ${style}.`,
-    "Scene: clean Mediterranean boutique or Athens street style, natural light, tasteful commercial fashion photography.",
-    "Show the garment worn by the model. Do not add logos, text, watermarks, or misleading discount labels.",
-    "This image is a styling reference, not the official product photo.",
-  ].join("\n");
+  const prompt = buildStyleImagePrompt(productRecord, modelType, style);
+  const imageModel = (process.env.OPENAI_IMAGE_MODEL || imageModelFallback).trim() || imageModelFallback;
+
+  let sourceFiles: Awaited<ReturnType<typeof loadSourceImage>>[];
+  try {
+    sourceFiles = await Promise.all(sourceImages.map(loadSourceImage));
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Reference images could not be prepared." },
+      { status: 400 },
+    );
+  }
+
+  const form = new FormData();
+  form.append("model", imageModel);
+  form.append("prompt", prompt);
+  form.append("n", "1");
+  form.append("size", imageSize);
+  form.append("quality", imageQuality);
+  form.append("output_format", imageOutputFormat);
+  form.append("output_compression", String(imageOutputCompression));
+  for (const sourceFile of sourceFiles) {
+    form.append("image[]", sourceFile.blob, sourceFile.filename);
+  }
 
   const response = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
-      images: sourceImages.map((image_url) => ({ image_url })),
-      prompt,
-      n: 1,
-      size: "1024x1536",
-      output_format: "webp",
-      output_compression: 85,
-    }),
+    body: form,
   });
 
   const result = await response.json().catch(() => ({}));
@@ -125,6 +207,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "AI image response did not include image data." }, { status: 500 });
   }
 
+  const imageBuffer = Buffer.from(b64, "base64");
+  let outputMetadata: Awaited<ReturnType<ReturnType<typeof sharp>["metadata"]>>;
+  try {
+    outputMetadata = await sharp(imageBuffer).metadata();
+  } catch {
+    return NextResponse.json({ error: "AI image response was not a valid image." }, { status: 502 });
+  }
+  if (outputMetadata.format !== imageOutputFormat || outputMetadata.width !== imageWidth || outputMetadata.height !== imageHeight) {
+    return NextResponse.json(
+      {
+        error: `AI image output did not match the required ${imageSize} ${imageOutputFormat.toUpperCase()} standard.`,
+        received: {
+          width: outputMetadata.width || null,
+          height: outputMetadata.height || null,
+          format: outputMetadata.format || null,
+        },
+      },
+      { status: 502 },
+    );
+  }
+
   const bucketError = await ensurePublicBucket(supabase);
   if (bucketError) return NextResponse.json({ error: bucketError.message }, { status: 500 });
 
@@ -132,7 +235,7 @@ export async function POST(request: NextRequest) {
   const path = `products/${safeSku}/ai/styling-${Date.now()}.webp`;
   const { error: uploadError } = await supabase.storage
     .from(productImagesBucket)
-    .upload(path, Buffer.from(b64, "base64"), { contentType: "image/webp", cacheControl: "31536000", upsert: true });
+    .upload(path, imageBuffer, { contentType: "image/webp", cacheControl: "31536000", upsert: true });
 
   if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
 
@@ -155,6 +258,13 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     imageUrl,
+    image: {
+      model: imageModel,
+      quality: imageQuality,
+      width: outputMetadata.width,
+      height: outputMetadata.height,
+      format: outputMetadata.format,
+    },
     note: "AI styling image generated as a reference image and appended to the product gallery.",
   });
 }
