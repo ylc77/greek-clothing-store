@@ -14,10 +14,6 @@ const ADMIN_PASSWORD = "audit-pos-owner";
 const AUDIT_PREFIX = "AUDIT-POS-";
 const results = [];
 
-function executable(name) {
-  return process.platform === "win32" ? `${name}.cmd` : name;
-}
-
 function command(name, args, options = {}) {
   const result = spawnSync(name, args, {
     cwd: ROOT,
@@ -41,7 +37,9 @@ function sql(statement) {
 }
 
 function readLocalEnvironment() {
-  const output = command(executable("npx"), ["supabase", "status", "-o", "env"], { shell: process.platform === "win32" });
+  const output = process.platform === "win32"
+    ? command("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "npx supabase status -o env"])
+    : command("npx", ["supabase", "status", "-o", "env"]);
   const values = {};
   for (const line of output.split(/\r?\n/)) {
     const match = line.match(/^([A-Z0-9_]+)="(.*)"$/);

@@ -126,6 +126,7 @@ try {
   if ($upgradeMigrations.Count -ne 2) { throw "Expected both POS upgrade migrations" }
 
   foreach ($migration in $legacyMigrations) { Invoke-SqlFile $legacyContainer $migration.FullName }
+  Invoke-SqlText $legacyContainer "drop function if exists public.set_updated_at() cascade;" "legacy missing trigger helper fixture"
   foreach ($migration in $upgradeMigrations) { Invoke-SqlFile $legacyContainer $migration.FullName }
   Assert-PosSchema $legacyContainer "legacy database upgrade"
   Write-Host "PASS legacy migration-chain upgrade"
