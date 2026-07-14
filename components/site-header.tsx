@@ -87,8 +87,8 @@ export function SiteHeader({
       <div className="relative xl:hidden">
         <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-paper to-transparent" />
         <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-gradient-to-l from-paper to-transparent" />
-        <div className="pointer-events-none absolute right-3 top-1/2 z-20 hidden -translate-y-1/2 rounded-full border border-stone-200 bg-white/95 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-stone-500 shadow-sm min-[420px]:block">
-          Swipe →
+        <div className="pointer-events-none absolute right-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-stone-200 bg-white/95 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-stone-500 shadow-sm">
+          {language === "en" ? "Swipe" : "Σύρετε"} →
         </div>
         <nav className="ui-container scrollbar-none flex snap-x gap-2 overflow-x-auto pb-3 pr-20 sm:pr-24 lg:justify-center lg:gap-1.5 xl:hidden">
           {categories.map((cat) => (

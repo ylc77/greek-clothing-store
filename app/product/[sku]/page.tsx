@@ -244,8 +244,8 @@ export default async function ProductPage({
             <div className="mt-6">
               <ProductActions
                 productName={productName(product, language)}
-                productNameEn={product.name_en || product.name_cn || product.sku}
-                productNameGr={product.name_gr || product.name_en || product.name_cn || product.sku}
+                productNameEn={product.name_en || product.name_gr || product.sku}
+                productNameGr={product.name_gr || product.name_en || product.sku}
                 sku={product.sku}
                 sizes={product.sizes}
                 sizeStock={safeSizeStock}

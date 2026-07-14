@@ -91,3 +91,15 @@ The production Supabase project was observed without the shared `public.set_upda
 
 Upgrade migrations that create an `updated_at` trigger must create or replace their required trigger helper in the same migration. Do not assume an older customer database has executed the current baseline migration. Keep these upgrade migrations idempotent and verify both an empty local reset and the legacy-database upgrade path.
 
+
+\---
+
+
+\## 8. Next.js development and production build collision
+
+
+This repository was observed returning temporary local 500 errors when `next build` ran while `next dev` was still using the same `.next` directory. The development and production build processes can overwrite each other's manifests and generated chunks.
+
+
+Before running `npm run build`, stop this repository's development server. After the build finishes, restart `npm run dev -- -p 3010` before continuing Playwright or browser verification. Do not treat errors caused by concurrent `next dev` and `next build` as application regressions until the development server has been restarted cleanly.
+

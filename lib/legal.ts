@@ -5,7 +5,7 @@ export const providerNames: Record<LegalProviderKey, string> = {
   vercel: "Vercel",
   stripe: "Stripe",
   viva: "Viva",
-  cash: "Cash / 现金",
+  cash: "Cash",
   pos: "Card terminal / POS",
   posthog: "PostHog",
   sentry: "Sentry",

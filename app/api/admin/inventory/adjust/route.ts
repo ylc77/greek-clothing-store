@@ -21,6 +21,14 @@ export async function POST(request: NextRequest) {
   const quantity = Number(payload.quantity);
   const reason = typeof payload.reason === "string" ? payload.reason : "";
   const clientRequestId = typeof payload.clientRequestId === "string" ? payload.clientRequestId : "";
+  const operationType = payload.operationType === undefined
+    ? "manual"
+    : payload.operationType === "stocktake"
+    || payload.operationType === "receiving"
+    || payload.operationType === "return"
+    || payload.operationType === "manual"
+    ? payload.operationType
+    : null;
 
   if (!variantId.trim()) {
     return NextResponse.json({ error: "variantId is required." }, { status: 400 });
@@ -28,8 +36,17 @@ export async function POST(request: NextRequest) {
   if (!mode) {
     return NextResponse.json({ error: "mode must be set_to or adjust_by." }, { status: 400 });
   }
+  if (!operationType) {
+    return NextResponse.json({ error: "invalid operationType." }, { status: 400 });
+  }
   if (!Number.isInteger(quantity)) {
     return NextResponse.json({ error: "quantity must be an integer." }, { status: 400 });
+  }
+  if (operationType === "stocktake" && (mode !== "set_to" || quantity < 0)) {
+    return NextResponse.json({ error: "stocktake must set a non-negative counted quantity." }, { status: 400 });
+  }
+  if ((operationType === "receiving" || operationType === "return") && (mode !== "adjust_by" || quantity <= 0)) {
+    return NextResponse.json({ error: "receiving and return must add a positive quantity." }, { status: 400 });
   }
   if (!reason.trim()) {
     return NextResponse.json({ error: "reason is required." }, { status: 400 });
@@ -45,6 +62,7 @@ export async function POST(request: NextRequest) {
       quantity,
       reason,
       clientRequestId,
+      operationType,
       createdBy: "admin",
     });
 

@@ -8,6 +8,7 @@
 
 import { unstable_cache } from "next/cache";
 import { cacheTags } from "@/lib/cache-tags";
+import { storefrontText } from "@/lib/i18n";
 import { getSupabaseClient } from "@/lib/supabase";
 
 export type BusinessSettings = {
@@ -90,21 +91,21 @@ async function loadBusinessSettings(): Promise<BusinessSettings> {
 
   const settings: BusinessSettings = {
     id: String(data.id ?? ""),
-    business_name: String(data.business_name || defaults.business_name),
+    business_name: storefrontText(data.business_name, defaults.business_name),
     logo_url: String(data.logo_url || ""),
     hero_image_url: String(data.hero_image_url || ""),
     description_cn: String(data.description_cn || ""),
-    description_en: String(data.description_en || defaults.description_en),
-    description_gr: String(data.description_gr || defaults.description_gr),
+    description_en: storefrontText(data.description_en, defaults.description_en),
+    description_gr: storefrontText(data.description_gr, defaults.description_gr),
     phone: String(data.phone || ""),
     whatsapp: String(data.whatsapp || ""),
     instagram: String(data.instagram || ""),
     facebook: String(data.facebook || ""),
     tiktok: String(data.tiktok || ""),
-    address: String(data.address || ""),
+    address: storefrontText(data.address),
     google_maps_url: String(data.google_maps_url || ""),
-    opening_hours: String(data.opening_hours || ""),
-    footer_text: String(data.footer_text || ""),
+    opening_hours: storefrontText(data.opening_hours),
+    footer_text: storefrontText(data.footer_text),
     enable_skroutz: data.enable_skroutz === true,
     feed_min_stock: Math.max(1, Number(data.feed_min_stock || defaults.feed_min_stock)),
   };

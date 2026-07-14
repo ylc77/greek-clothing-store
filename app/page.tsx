@@ -330,6 +330,14 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 </div>
                 <p className="mt-4 text-sm font-black text-ink">{t.contact}</p>
                 <div className="mt-2 space-y-1">
+                  {settings.phone ? (
+                    <a
+                      className="block text-sm font-bold text-ink hover:text-olive"
+                      href={`tel:${settings.phone.replace(/[^\d+]/g, "")}`}
+                    >
+                      {settings.phone}
+                    </a>
+                  ) : null}
                   {settings.whatsapp ? (
                     <a
                       className="block text-sm font-bold text-ink hover:text-olive"

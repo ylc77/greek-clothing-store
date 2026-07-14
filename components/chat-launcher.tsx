@@ -44,7 +44,7 @@ export function ChatLauncher() {
     <ChatAssistant language={lang} productContext={productCtx} onClose={handleClose} />
   ) : (
     <button
-      className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-ink text-white shadow-xl hover:bg-stone-800 transition animate-[fadeIn_0.3s_ease-out]"
+      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-ink text-white shadow-xl transition hover:bg-stone-800 sm:bottom-5 sm:right-5 sm:h-14 sm:w-14 animate-[fadeIn_0.3s_ease-out]"
       onClick={() => setOpen(true)}
       aria-label="AI Assistant"
       type="button"

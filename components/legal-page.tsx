@@ -1,6 +1,6 @@
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import type { Language } from "@/lib/i18n";
+import { storefrontText, type Language } from "@/lib/i18n";
 import { providerNames } from "@/lib/legal";
 import { getPublishedLegalSettings, type LegalSettingsData } from "@/lib/legal-settings";
 import type { BusinessSettings } from "@/lib/settings";
@@ -13,7 +13,7 @@ const pending = (language: Language) => language === "en"
   : "Το κατάστημα δεν έχει ακόμη συμπληρώσει αυτές τις πληροφορίες. Επικοινωνήστε μαζί μας πριν από την παραγγελία.";
 
 function text(value: string, language: Language) {
-  return value.trim() || pending(language);
+  return storefrontText(value) || pending(language);
 }
 
 function businessDetails(settings: LegalSettingsData, language: Language) {
@@ -39,7 +39,8 @@ function businessDetails(settings: LegalSettingsData, language: Language) {
 
 function enabledServices(settings: LegalSettingsData) {
   const services = settings.enabledProviders.map((key) => providerNames[key]);
-  if (settings.otherProviders) services.push(settings.otherProviders);
+  const otherProviders = storefrontText(settings.otherProviders);
+  if (otherProviders) services.push(otherProviders);
   return services;
 }
 

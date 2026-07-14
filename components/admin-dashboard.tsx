@@ -30,7 +30,7 @@ type CsvRow = Record<string, string | number>;
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "pos" | "posOrders" | "posDaily" | "inventory" | "labels" | "add" | "csv" | "images" | "skroutz" | "categories" | "suppliers";
+type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "stockLookup" | "stockOperations" | "pos" | "posOrders" | "posDaily" | "inventory" | "labels" | "add" | "csv" | "images" | "skroutz" | "categories" | "suppliers";
 type AdminSession = { role: AdminRole; permissions: AdminPermission[]; authType?: "password" | "account"; email?: string | null; displayName?: string | null };
 type InventoryItem = {
   product_id: number;
@@ -55,6 +55,14 @@ type InventoryItem = {
   erp_product_stock: number;
   stock_matches_legacy: boolean;
   size_stock_matches_legacy: boolean;
+};
+type StockLookupGroup = {
+  productId: number;
+  productName: string;
+  productSku: string;
+  imageUrl: string;
+  totalAvailable: number;
+  items: InventoryItem[];
 };
 type InventoryMovement = {
   id: string;
@@ -90,6 +98,7 @@ type InventoryAdjustState = {
   submitting: boolean;
   message: string;
 };
+type StockOperationMode = "stocktake" | "receiving" | "return";
 type InventoryStatusFilter = "all" | "normal" | "low_stock" | "out_of_stock" | "inactive" | "mismatch";
 type InventorySort = "stock_asc" | "stock_desc" | "sku" | "updated";
 type PosPaymentMethod = "cash" | "card" | "other";
@@ -304,14 +313,16 @@ const csvFieldLabels: Record<string, string> = {
 };
 const csvHeaderAliases = new Map(Object.entries(csvFieldLabels).flatMap(([field, label]) => [[field, field], [label, field]]));
 const tabs: { key: Tab; label: string }[] = [
-  { key: "pos", label: "POS 收银" },
+  { key: "stockLookup", label: "库存快查" },
+  { key: "stockOperations", label: "库存作业" },
+  { key: "pos", label: "POS 扣库存" },
   { key: "posOrders", label: "POS 订单" },
   { key: "posDaily", label: "POS 日报" },
   { key: "inventory", label: "库存管理" },
   { key: "labels", label: "标签打印" },
   { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "suppliers", label: "供货商" }, { key: "skroutz", label: "Skroutz Feed" },
 ];
-const primaryTabKeys: Tab[] = ["quickAdd", "pos", "posOrders", "posDaily", "quickSale", "dashboard", "check"];
+const primaryTabKeys: Tab[] = ["stockLookup", "stockOperations", "pos", "quickAdd", "posOrders", "posDaily", "quickSale", "dashboard", "check"];
 const managementTabKeys: Tab[] = ["inventory", "labels", "add", "images", "csv", "categories", "suppliers", "skroutz"];
 const mobileHiddenTabKeys = new Set<Tab>(["check", "labels", "add", "images", "csv", "categories", "suppliers", "skroutz"]);
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
@@ -319,6 +330,8 @@ const ownerOnlyTabs = new Set<Tab>(["quickAdd", "quickSale", "add", "csv", "imag
 const tabPermissions: Partial<Record<Tab, AdminPermission>> = {
   dashboard: "products:read",
   check: "products:read",
+  stockLookup: "inventory:read",
+  stockOperations: "inventory:write",
   pos: "pos:checkout",
   posOrders: "pos:read",
   posDaily: "pos:read",
@@ -329,6 +342,8 @@ const tabPermissions: Partial<Record<Tab, AdminPermission>> = {
 const tabFeatures: Partial<Record<Tab, FeatureKey>> = {
   dashboard: "product_management",
   check: "product_management",
+  stockLookup: "inventory",
+  stockOperations: "inventory",
   quickAdd: "product_management",
   quickSale: "inventory",
   pos: "pos_checkout",
@@ -399,6 +414,20 @@ function formatAdminDate(value: string) {
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("zh-CN", { hour12: false });
 }
+function posStatusLabel(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    completed: "已完成",
+    paid: "已支付",
+    voided: "已作废",
+    refunded: "已退款",
+    failed: "失败",
+  };
+  return labels[value || ""] || value || "-";
+}
+function paymentMethodLabel(value: string | null | undefined) {
+  const labels: Record<string, string> = { cash: "现金", card: "刷卡", other: "其他" };
+  return labels[value || ""] || value || "-";
+}
 function signedQuantity(value: number) {
   return value > 0 ? `+${value}` : String(value);
 }
@@ -424,6 +453,9 @@ function sourceTypeLabel(value: string | null) {
     admin_edit: "后台编辑",
     csv_import: "CSV 导入",
     admin_inventory_adjustment: "库存调整",
+    admin_stocktake: "扫码盘点",
+    admin_receiving: "到货入库",
+    admin_customer_return: "退换货加回",
   };
   return labels[value] || value;
 }
@@ -461,6 +493,43 @@ const emptyQuickAdd: QuickAddState = {
   notes: "",
   is_active: true,
 };
+const stockOperationOptions: Array<{
+  key: StockOperationMode;
+  label: string;
+  shortDescription: string;
+  guidance: string;
+  quantityLabel: string;
+  quantityPlaceholder: string;
+  reason: string;
+}> = [
+  {
+    key: "stocktake",
+    label: "扫码盘点",
+    shortDescription: "把系统库存修正为现场实数",
+    guidance: "扫描商品后，填写这个尺码实际清点到的总件数。适合月末盘点或发现账实不符时修正。",
+    quantityLabel: "实际清点数量",
+    quantityPlaceholder: "填写现场实际总数",
+    reason: "扫码盘点修正",
+  },
+  {
+    key: "receiving",
+    label: "到货入库",
+    shortDescription: "按到货数量增加库存",
+    guidance: "扫描到货商品并填写本次收到的件数。这里只增加库存，不记录或处理真实付款。",
+    quantityLabel: "本次到货数量",
+    quantityPlaceholder: "填写本次增加件数",
+    reason: "扫码到货入库",
+  },
+  {
+    key: "return",
+    label: "退换货加回",
+    shortDescription: "把可再次销售的退货加回库存",
+    guidance: "请先在真实收银机处理退款或换货，并确认商品可以再次销售，再在这里加回库存。",
+    quantityLabel: "加回库存数量",
+    quantityPlaceholder: "填写可重新销售件数",
+    reason: "退换货库存加回",
+  },
+];
 
 /* ── Utilities ───────────────────────────────────────────── */
 function parseCsv(text: string) {
@@ -603,7 +672,7 @@ export function AdminDashboard() {
   const editingIdRef = useRef<string | null>(null); editingIdRef.current = editingId;
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]); const [csvResults, setCsvResults] = useState<ApiResult[]>([]);
   const [imageResults, setImageResults] = useState<ApiResult[]>([]); const [selectedImageSku, setSelectedImageSku] = useState("");
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const [tab, setTab] = useState<Tab>("stockLookup");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [autoCompletingId, setAutoCompletingId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ open: boolean; title: string; desc: string; confirmText: string; variant: "danger"|"success"|"default"; action: () => void; prompt?: boolean; promptValue?: string }>({ open: false, title: "", desc: "", confirmText: "确认", variant: "default", action: () => {} });
@@ -633,6 +702,26 @@ export function AdminDashboard() {
   const [inventoryStatus, setInventoryStatus] = useState<InventoryStatusFilter>("all");
   const [inventorySort, setInventorySort] = useState<InventorySort>("stock_asc");
   const [lowStockThreshold, setLowStockThreshold] = useState(3);
+  const stockLookupInputRef = useRef<HTMLInputElement | null>(null);
+  const [stockLookupQuery, setStockLookupQuery] = useState("");
+  const [stockLookupSize, setStockLookupSize] = useState("");
+  const [stockLookupItems, setStockLookupItems] = useState<InventoryItem[]>([]);
+  const [stockLookupLoading, setStockLookupLoading] = useState(false);
+  const [stockLookupError, setStockLookupError] = useState("");
+  const [stockLookupMessage, setStockLookupMessage] = useState("");
+  const [stockLookupHasSearched, setStockLookupHasSearched] = useState(false);
+  const stockOperationInputRef = useRef<HTMLInputElement | null>(null);
+  const stockOperationQuantityRef = useRef<HTMLInputElement | null>(null);
+  const [stockOperationMode, setStockOperationMode] = useState<StockOperationMode>("stocktake");
+  const [stockOperationQuery, setStockOperationQuery] = useState("");
+  const [stockOperationResults, setStockOperationResults] = useState<InventoryItem[]>([]);
+  const [stockOperationItem, setStockOperationItem] = useState<InventoryItem | null>(null);
+  const [stockOperationQuantity, setStockOperationQuantity] = useState("");
+  const [stockOperationReference, setStockOperationReference] = useState("");
+  const [stockOperationLoading, setStockOperationLoading] = useState(false);
+  const [stockOperationSubmitting, setStockOperationSubmitting] = useState(false);
+  const [stockOperationError, setStockOperationError] = useState("");
+  const [stockOperationMessage, setStockOperationMessage] = useState("");
   const [movementVariantId, setMovementVariantId] = useState("");
   const [movementQ, setMovementQ] = useState("");
   const [movementType, setMovementType] = useState("");
@@ -686,6 +775,7 @@ export function AdminDashboard() {
   // Search / filter state
   const [search, setSearch] = useState(""); const [filterCat, setFilterCat] = useState(""); const [filterSub, setFilterSub] = useState("");
   const [filterStatus, setFilterStatus] = useState("all"); // all | active | inactive | noimg | badimage | nostock | nosizestock | demo
+  const [mobileProductLimit, setMobileProductLimit] = useState(12);
   const hasPermission = (permission: AdminPermission) => Boolean(adminSession?.permissions.includes(permission));
   const isOwner = adminSession?.role === "owner";
   const canUseTab = (key: Tab) => {
@@ -698,6 +788,7 @@ export function AdminDashboard() {
   };
   const visiblePrimaryTabKeys = primaryTabKeys.filter(canUseTab);
   const visibleManagementTabKeys = managementTabKeys.filter(canUseTab);
+  const activeStockOperation = stockOperationOptions.find(option => option.key === stockOperationMode)!;
   useEffect(() => {
     if (!adminSession) return;
     if (canUseTab(tab)) return;
@@ -738,6 +829,10 @@ export function AdminDashboard() {
     return list;
   }, [products, search, filterCat, filterSub, filterStatus]);
 
+  useEffect(() => {
+    setMobileProductLimit(12);
+  }, [search, filterCat, filterSub, filterStatus]);
+
   // Feed stats
   const feedStats = useMemo(() => {
     const activeRealProducts = products.filter(p => p.is_active && !isTestProductSku(p.sku));
@@ -777,6 +872,35 @@ export function AdminDashboard() {
       return summary;
     }, { totalVariants: 0, totalOnHand: 0, totalAvailable: 0, outOfStock: 0, lowStock: 0, inactive: 0, mismatch: 0 });
   }, [inventoryItems, lowStockThreshold]);
+
+  const stockLookupGroups = useMemo(() => {
+    const groups = new Map<number, StockLookupGroup>();
+    for (const item of stockLookupItems) {
+      const existing = groups.get(item.product_id);
+      if (existing) {
+        existing.items.push(item);
+        existing.totalAvailable += item.quantity_available;
+        continue;
+      }
+      const product = products.find(candidate => Number(candidate.id) === item.product_id);
+      groups.set(item.product_id, {
+        productId: item.product_id,
+        productName: item.product_name || item.product_sku,
+        productSku: item.product_sku,
+        imageUrl: product?.image_url || "",
+        totalAvailable: item.quantity_available,
+        items: [item],
+      });
+    }
+    return Array.from(groups.values()).map(group => {
+      const sizeOrder = sortSizeKeys(Array.from(new Set(group.items.map(item => item.size || "ONE SIZE"))));
+      group.items.sort((left, right) => {
+        const sizeDifference = sizeOrder.indexOf(left.size || "ONE SIZE") - sizeOrder.indexOf(right.size || "ONE SIZE");
+        return sizeDifference || (left.color || "").localeCompare(right.color || "");
+      });
+      return group;
+    });
+  }, [stockLookupItems, products]);
 
   const filteredLabelItems = useMemo(() => {
     return filteredInventoryItems.filter(item => !labelOnlyMissingBarcode || !item.barcode);
@@ -943,14 +1067,39 @@ export function AdminDashboard() {
       const existing = current.find(cartItem => cartItem.variant_id === item.variant_id);
       if (existing) {
         const nextQty = Math.min(existing.cartQuantity + 1, item.quantity_available);
-        if (nextQty === existing.cartQuantity) toast("购物车数量不能超过当前可用库存", "err");
+        if (nextQty === existing.cartQuantity) toast("待扣数量不能超过当前可用库存", "err");
         return current.map(cartItem => cartItem.variant_id === item.variant_id ? { ...cartItem, ...item, cartQuantity: nextQty } : cartItem);
       }
       return [...current, { ...item, cartQuantity: 1 }];
     });
     setPosPreview(null);
-    setPosMessage(`${item.variant_sku || item.product_sku} 已加入购物车`);
+    setPosMessage(`${item.variant_sku || item.product_sku} 已加入待扣库存清单`);
     window.setTimeout(() => posSearchInputRef.current?.focus(), 30);
+  }
+
+  function moveStockLookupItemToPos(item: InventoryItem) {
+    const product = products.find(candidate => Number(candidate.id) === item.product_id);
+    addPosItem({
+      product_id: item.product_id,
+      variant_id: item.variant_id,
+      product_sku: item.product_sku,
+      variant_sku: item.variant_sku,
+      barcode: item.barcode,
+      name: item.product_name,
+      size: item.size,
+      color: item.color,
+      price: item.price,
+      quantity_on_hand: item.quantity_on_hand,
+      quantity_reserved: item.quantity_reserved,
+      quantity_available: item.quantity_available,
+      product_active: item.active,
+      variant_active: item.active,
+      image_url: product?.image_url || "",
+      outOfStock: item.quantity_available <= 0,
+    });
+    setPosQuery("");
+    setTab("pos");
+    window.setTimeout(() => posSearchInputRef.current?.focus(), 80);
   }
 
   function setPosCartQuantity(variantId: string, quantity: number) {
@@ -1005,7 +1154,7 @@ export function AdminDashboard() {
 
   async function runPosDryRun(silent = false) {
     if (posCart.length === 0) {
-      const message = "请先加入商品到购物车。";
+      const message = "请先把商品加入待扣库存清单。";
       setPosMessage(message);
       if (!silent) toast(message, "err");
       return false;
@@ -1060,13 +1209,13 @@ export function AdminDashboard() {
       setPosLastOrder(result);
       setPosCart([]);
       setPosPreview(null);
-      setPosMessage(result.alreadyProcessed ? "该订单已处理，没有重复扣库存。" : "收银完成，库存已扣减。");
-      toast(result.alreadyProcessed ? "该订单已处理" : "收银完成");
+      setPosMessage(result.alreadyProcessed ? "该记录已处理，没有重复扣库存。" : "库存已扣减，并保存了本次线下收款参考记录。");
+      toast(result.alreadyProcessed ? "该记录已处理" : "库存已扣减");
       await loadProducts();
       if (inventoryItems.length > 0) await loadInventoryData();
       window.setTimeout(() => posSearchInputRef.current?.focus(), 60);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "POS 收银失败";
+      const message = error instanceof Error ? error.message : "POS 库存扣减失败";
       setPosMessage(message);
       toast(message, "err");
     } finally {
@@ -1079,9 +1228,9 @@ export function AdminDashboard() {
     if (!ok) return;
     setConfirm({
       open: true,
-      title: "确认完成收银",
-      desc: `确认完成收银？这会创建订单并扣减库存。金额：${formatEuro(posTotal)}，付款方式：${posPaymentMethod}。`,
-      confirmText: "确认收银并扣库存",
+      title: "确认线下已经收款",
+      desc: `本系统不会发起真实支付。请确认已在实体收银机完成收款，再创建参考记录并扣减库存。金额：${formatEuro(posTotal)}，记录方式：${paymentMethodLabel(posPaymentMethod)}。`,
+      confirmText: "已收款，确认扣库存",
       variant: "danger",
       action: () => {
         setConfirm(c => ({ ...c, open: false }));
@@ -1210,6 +1359,194 @@ export function AdminDashboard() {
     const d = await api(`/api/admin/inventory?${params.toString()}`);
     setInventoryItems(d.items || []);
   }
+  async function loadStockLookup() {
+    const query = stockLookupQuery.trim();
+    const size = stockLookupSize.trim();
+    if (!query && !size) {
+      setStockLookupError("请输入商品名、SKU、条码或尺码。");
+      setStockLookupMessage("");
+      setStockLookupHasSearched(false);
+      stockLookupInputRef.current?.focus();
+      return;
+    }
+
+    setStockLookupLoading(true);
+    setStockLookupError("");
+    setStockLookupMessage("");
+    setStockLookupHasSearched(true);
+    try {
+      const requestItems = async (nextQuery: string, nextSize: string) => {
+        const params = new URLSearchParams({ limit: "200" });
+        if (nextQuery) params.set("q", nextQuery);
+        if (nextSize) params.set("size", nextSize);
+        const data = await api(`/api/admin/inventory?${params.toString()}`);
+        return (Array.isArray(data.items) ? data.items : []) as InventoryItem[];
+      };
+
+      let items = await requestItems(query, size);
+      const normalizedQuery = query.toLowerCase();
+      const exact = query ? items.find(item => [item.barcode, item.variant_sku, item.supplier_sku]
+        .some(value => value?.trim().toLowerCase() === normalizedQuery)) : undefined;
+
+      if (exact && !size && exact.product_sku.toLowerCase() !== normalizedQuery) {
+        const sameProductItems = (await requestItems(exact.product_sku, ""))
+          .filter(item => item.product_id === exact.product_id);
+        if (sameProductItems.length > 0) {
+          items = sameProductItems;
+          setStockLookupMessage(`已识别 ${exact.size || "ONE SIZE"}，并展开同款全部尺码。`);
+        }
+      }
+
+      setStockLookupItems(items);
+      if (items.length === 0) {
+        setStockLookupMessage("没有找到匹配商品，请检查条码、SKU、商品名或尺码。");
+      } else if (!exact || size) {
+        const productCount = new Set(items.map(item => item.product_id)).size;
+        setStockLookupMessage(`找到 ${productCount} 款商品、${items.length} 个尺码 / Variant。`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "库存查询失败";
+      setStockLookupItems([]);
+      setStockLookupError(message);
+    } finally {
+      setStockLookupLoading(false);
+    }
+  }
+  function selectStockOperationItem(item: InventoryItem) {
+    setStockOperationItem(item);
+    setStockOperationQuantity(stockOperationMode === "stocktake" ? "" : "1");
+    setStockOperationError("");
+    setStockOperationMessage(`已选择 ${item.variant_sku}，请填写数量后确认。`);
+    window.setTimeout(() => stockOperationQuantityRef.current?.focus(), 40);
+  }
+  async function searchStockOperationItem() {
+    const query = stockOperationQuery.trim();
+    if (!query) {
+      setStockOperationError("请扫描条码或输入商品 SKU、供货商 SKU、商品名。");
+      stockOperationInputRef.current?.focus();
+      return;
+    }
+
+    setStockOperationLoading(true);
+    setStockOperationError("");
+    setStockOperationMessage("");
+    setStockOperationItem(null);
+    setStockOperationQuantity("");
+    try {
+      const params = new URLSearchParams({ q: query, limit: "100" });
+      const data = await api(`/api/admin/inventory?${params.toString()}`);
+      const items = (Array.isArray(data.items) ? data.items : []) as InventoryItem[];
+      setStockOperationResults(items);
+      const normalizedQuery = query.toLowerCase();
+      const exact = items.find(item => [item.barcode, item.variant_sku, item.supplier_sku]
+        .some(value => value?.trim().toLowerCase() === normalizedQuery));
+      const selected = exact || (items.length === 1 ? items[0] : null);
+
+      if (selected) {
+        selectStockOperationItem(selected);
+      } else if (items.length === 0) {
+        setStockOperationError("未找到匹配的库存记录，请检查条码或 SKU。");
+      } else {
+        setStockOperationMessage(`找到 ${items.length} 个 Variant，请选择正确尺码。`);
+      }
+    } catch (error) {
+      setStockOperationResults([]);
+      setStockOperationError(error instanceof Error ? error.message : "库存商品查询失败");
+    } finally {
+      setStockOperationLoading(false);
+    }
+  }
+  async function executeStockOperation() {
+    const item = stockOperationItem;
+    if (!item) return;
+    const quantity = Number(stockOperationQuantity);
+    const option = stockOperationOptions.find(candidate => candidate.key === stockOperationMode)!;
+    const reference = stockOperationReference.trim();
+    const reason = reference ? `${option.reason}；备注/单据号：${reference}` : option.reason;
+
+    setStockOperationSubmitting(true);
+    setStockOperationError("");
+    try {
+      const result = await api("/api/admin/inventory/adjust", {
+        method: "POST",
+        body: JSON.stringify({
+          variantId: item.variant_id,
+          mode: stockOperationMode === "stocktake" ? "set_to" : "adjust_by",
+          quantity,
+          reason,
+          operationType: stockOperationMode,
+          clientRequestId: crypto.randomUUID(),
+        }),
+      });
+      const before = Number(result.quantityBefore ?? item.quantity_on_hand);
+      const after = Number(result.quantityAfter ?? before);
+      const actionMessage = result.noChange
+        ? `${option.label}完成：库存没有变化（${before} → ${after}）。`
+        : `${option.label}完成：${item.variant_sku} 库存 ${before} → ${after}。`;
+      const warning = result.legacySyncWarning ? ` 旧库存同步需要检查：${result.legacySyncWarning}` : "";
+      setStockOperationMessage(`${actionMessage}${warning}`);
+      toast(`${actionMessage}${warning}`, result.legacySyncWarning ? "err" : "ok");
+
+      const updateQuantity = (candidate: InventoryItem) => {
+        if (candidate.variant_id !== item.variant_id) return candidate;
+        const nextReserved = Math.min(candidate.quantity_reserved, after);
+        return {
+          ...candidate,
+          quantity_on_hand: after,
+          quantity_reserved: nextReserved,
+          quantity_available: after - nextReserved,
+        };
+      };
+      setStockLookupItems(current => current.map(updateQuantity));
+      setInventoryItems(current => current.map(updateQuantity));
+      setStockOperationQuery("");
+      setStockOperationResults([]);
+      setStockOperationItem(null);
+      setStockOperationQuantity("");
+      setStockOperationReference("");
+      await loadProducts();
+      window.setTimeout(() => stockOperationInputRef.current?.focus(), 60);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `${option.label}失败`;
+      setStockOperationError(message);
+      toast(message, "err");
+    } finally {
+      setStockOperationSubmitting(false);
+    }
+  }
+  function submitStockOperation() {
+    const item = stockOperationItem;
+    if (!item) {
+      setStockOperationError("请先扫描并选择一个具体尺码 / Variant。");
+      stockOperationInputRef.current?.focus();
+      return;
+    }
+    const quantity = Number(stockOperationQuantity);
+    const option = stockOperationOptions.find(candidate => candidate.key === stockOperationMode)!;
+    if (!Number.isInteger(quantity)) {
+      setStockOperationError("数量必须是整数。");
+      stockOperationQuantityRef.current?.focus();
+      return;
+    }
+    if (stockOperationMode === "stocktake" ? quantity < 0 : quantity <= 0) {
+      setStockOperationError(stockOperationMode === "stocktake" ? "实际清点数量不能小于 0。" : "增加数量必须大于 0。");
+      stockOperationQuantityRef.current?.focus();
+      return;
+    }
+    const nextQuantity = stockOperationMode === "stocktake" ? quantity : item.quantity_on_hand + quantity;
+    const reference = stockOperationReference.trim();
+    setConfirm({
+      open: true,
+      title: `确认${option.label}`,
+      desc: `${item.product_name || item.product_sku} / ${item.variant_sku}，库存将从 ${item.quantity_on_hand} 变为 ${nextQuantity}${reference ? `。备注/单据号：${reference}` : ""}。`,
+      confirmText: `确认${option.label}`,
+      variant: "default",
+      action: () => {
+        setConfirm(current => ({ ...current, open: false }));
+        void executeStockOperation();
+      },
+    });
+  }
   async function loadInventoryMovements(nextVariantId = movementVariantId) {
     const params = new URLSearchParams();
     params.set("limit", String(movementLimit));
@@ -1238,6 +1575,14 @@ export function AdminDashboard() {
     }
   }
   useEffect(() => { if (adminSession && (tab === "inventory" || tab === "labels")) void loadInventoryData(); }, [adminSession, adminAuthToken, activePassword, tab]);
+  useEffect(() => {
+    if (!adminSession || tab !== "stockLookup") return;
+    window.setTimeout(() => stockLookupInputRef.current?.focus(), 50);
+  }, [adminSession, tab]);
+  useEffect(() => {
+    if (!adminSession || tab !== "stockOperations") return;
+    window.setTimeout(() => stockOperationInputRef.current?.focus(), 50);
+  }, [adminSession, tab]);
   function toggleLabelVariant(variantId: string) {
     setSelectedLabelVariantIds(prev => {
       const next = new Set(prev);
@@ -1911,10 +2256,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     <main className="min-h-screen bg-gradient-to-b from-[#fbfaf6] via-white to-[#f6f1ea]">
       <div className="mx-auto max-w-[96rem] px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
         {/* ── Top bar ────────────────────────────────────── */}
-        <header className="mb-6 flex flex-col gap-4 rounded-3xl border border-stone-200/80 bg-white/95 p-4 shadow-sm shadow-stone-900/5 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <header className="mb-4 flex flex-col gap-3 rounded-2xl border border-stone-200/80 bg-white/95 p-4 shadow-sm shadow-stone-900/5 backdrop-blur sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:rounded-3xl sm:p-5">
           <div>
-            <h1 className="text-2xl font-black text-ink">商品管理后台</h1>
-            <p className="text-xs text-stone-400">管理商品、图片、库存、CSV 导入和 Skroutz Feed</p>
+            <h1 className="text-xl font-black text-ink sm:text-2xl">商品管理后台</h1>
+            <p className="hidden text-xs text-stone-400 sm:block">管理商品、图片、库存、CSV 导入和 Skroutz Feed</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">{adminSession.displayName || adminSession.email || adminSession.role} · {adminSession.authType === "account" ? "员工账号" : "应急密码"}</span>
@@ -1925,9 +2270,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         </header>
 
         {/* ── Stats cards ────────────────────────────────── */}
-        <div className="mb-6 grid grid-cols-3 gap-3 sm:grid-cols-6">
+        <div className={`${tab === "dashboard" ? "flex" : "hidden"} scrollbar-none mb-4 gap-2 overflow-x-auto pb-1 sm:mb-6 sm:grid sm:grid-cols-6 sm:gap-3 sm:overflow-visible sm:pb-0`}>
           {[{ label: "商品总数", v: stats.total, color: "bg-stone-500" }, { label: "已上架", v: stats.active, color: "bg-emerald-500" }, { label: "缺图片", v: stats.noImage, color: "bg-amber-400" }, { label: "库存为0", v: stats.noStock, color: "bg-rose-400" }, { label: "未分尺码", v: stats.noSizeStock, color: "bg-violet-400" }, { label: "分类数", v: stats.categories, color: "bg-sky-400" }].map(s => (
-            <div key={s.label} className="relative overflow-hidden rounded-2xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5">
+            <div key={s.label} className="relative min-w-[108px] shrink-0 overflow-hidden rounded-2xl border border-stone-200/70 bg-white p-3 shadow-sm shadow-stone-900/5 sm:min-w-0 sm:p-4">
               <div className={`absolute top-0 left-0 w-1 h-full ${s.color} rounded-l-full`} />
               <p className="text-2xl font-black text-ink">{s.v}</p>
               <p className="mt-0.5 text-[11px] font-bold text-stone-400">{s.label}</p>
@@ -1936,9 +2281,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         </div>
 
         {/* ── Tab bar ─────────────────────────────────────── */}
-        <nav className="mb-6 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.72fr)]">
+        <nav className="mb-4 grid gap-3 sm:mb-6 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.72fr)]">
           <div className="overflow-hidden rounded-2xl border border-stone-200/70 bg-white/95 shadow-sm shadow-stone-900/5">
-            <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-4 py-3">
+            <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-3 py-2.5 sm:px-4 sm:py-3">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Daily workflow</p>
                 <p className="mt-0.5 text-sm font-black text-ink">常用操作</p>
@@ -1947,20 +2292,29 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 当前：{tabLabelByKey.get(tab) || tab}
               </span>
             </div>
-            <div className="flex gap-2 overflow-x-auto p-2 sm:grid sm:grid-cols-3 lg:grid-cols-6">
+            <div className="scrollbar-none flex gap-2 overflow-x-auto p-2 sm:grid sm:grid-cols-3 lg:grid-cols-6">
               {visiblePrimaryTabKeys.map(key => (
                 <button
                   key={key}
-                  className={`min-h-14 min-w-[132px] shrink-0 items-center justify-center rounded-xl px-4 py-3 text-center text-sm font-black transition sm:min-w-0 ${mobileHiddenTabKeys.has(key) ? "hidden sm:flex" : "flex"} ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
+                  className={`min-h-12 min-w-[116px] shrink-0 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-black transition sm:min-h-14 sm:min-w-0 sm:px-4 sm:py-3 ${mobileHiddenTabKeys.has(key) ? "hidden sm:flex" : "flex"} ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
                   onClick={() => setTab(key)}
                   type="button"
                 >
                   {tabLabelByKey.get(key) || key}
                 </button>
               ))}
+              {canUseTab("inventory") ? (
+                <button
+                  className={`flex min-h-12 min-w-[116px] shrink-0 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-black transition sm:hidden ${tab === "inventory" ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
+                  onClick={() => setTab("inventory")}
+                  type="button"
+                >
+                  库存管理
+                </button>
+              ) : null}
             </div>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-stone-200/70 bg-white/95 shadow-sm shadow-stone-900/5">
+          <div className="hidden overflow-hidden rounded-2xl border border-stone-200/70 bg-white/95 shadow-sm shadow-stone-900/5 sm:block">
             <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-4 py-3">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Management</p>
@@ -1984,7 +2338,295 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           </div>
         </nav>
 
-        {/* ── TAB: Launch check ─────────────────────────────── */}
+        {/* ── TAB: Stock lookup ─────────────────────────────── */}
+        {tab === "stockLookup" ? (
+          <section className="admin-panel">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Fast Stock Lookup</p>
+                <h2 className="mt-1 text-xl font-black text-ink">库存快速查询</h2>
+                <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">输入商品名、SKU、条码、供货商 SKU 或尺码。扫码枪扫中某个 Variant 后，会自动显示这款商品的全部尺码库存。</p>
+              </div>
+              <span className="w-fit rounded-full bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700">只读查询，不会修改库存</span>
+            </div>
+
+            <form
+              className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_auto_auto]"
+              onSubmit={event => {
+                event.preventDefault();
+                void loadStockLookup();
+              }}
+            >
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-black text-stone-500">商品 / 条码</span>
+                <input
+                  autoComplete="off"
+                  className="input min-h-12 text-base"
+                  onChange={event => {
+                    setStockLookupQuery(event.target.value);
+                    setStockLookupError("");
+                  }}
+                  placeholder="扫码或输入商品名、SKU、供货商 SKU"
+                  ref={stockLookupInputRef}
+                  value={stockLookupQuery}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-black text-stone-500">尺码（选填）</span>
+                <input
+                  autoComplete="off"
+                  className="input min-h-12 text-base"
+                  onChange={event => {
+                    setStockLookupSize(event.target.value);
+                    setStockLookupError("");
+                  }}
+                  placeholder="如 M / EU 38"
+                  value={stockLookupSize}
+                />
+              </label>
+              <button className="min-h-12 self-end rounded-xl bg-ink px-6 py-3 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={stockLookupLoading} type="submit">
+                {stockLookupLoading ? "查询中..." : "查询库存"}
+              </button>
+              <button
+                className="min-h-12 self-end rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-black text-ink hover:bg-stone-50"
+                onClick={() => {
+                  setStockLookupQuery("");
+                  setStockLookupSize("");
+                  setStockLookupItems([]);
+                  setStockLookupError("");
+                  setStockLookupMessage("");
+                  setStockLookupHasSearched(false);
+                  window.setTimeout(() => stockLookupInputRef.current?.focus(), 30);
+                }}
+                type="button"
+              >
+                清空
+              </button>
+            </form>
+
+            <p className="mt-3 rounded-xl bg-stone-50 px-4 py-3 text-xs font-bold leading-5 text-stone-500">推荐操作：扫描衣服吊牌 → 查看同款所有尺码 → 确认有货后可带入 POS；最终扣库存前仍会再次校验实时库存。</p>
+            {stockLookupError ? <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700" role="alert">{stockLookupError}</p> : null}
+            {stockLookupMessage ? <p aria-live="polite" className={`mt-3 rounded-xl border px-4 py-3 text-sm font-bold ${stockLookupItems.length > 0 ? "border-emerald-100 bg-emerald-50 text-emerald-800" : "border-stone-200 bg-stone-50 text-stone-600"}`} role="status">{stockLookupMessage}</p> : null}
+
+            {!stockLookupHasSearched ? (
+              <div className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50/70 px-5 py-10 text-center">
+                <p className="text-base font-black text-ink">等待扫码或搜索</p>
+                <p className="mt-2 text-sm text-stone-500">蓝牙或 USB 扫码枪通常会像键盘一样输入条码并自动按 Enter。</p>
+              </div>
+            ) : stockLookupItems.length === 0 && !stockLookupLoading ? (
+              <div className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50/70 px-5 py-10 text-center text-sm font-bold text-stone-500">未找到库存记录。</div>
+            ) : (
+              <div className={`mt-5 grid gap-4 ${stockLookupGroups.length > 1 ? "xl:grid-cols-2" : ""}`}>
+                {stockLookupGroups.map(group => (
+                  <article className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm shadow-stone-900/5" key={group.productId}>
+                    <div className="flex gap-3 border-b border-stone-100 p-4">
+                      {group.imageUrl ? <img alt="" className="h-24 w-20 shrink-0 rounded-xl object-cover" src={group.imageUrl} /> : <div className="flex h-24 w-20 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-[10px] font-bold text-stone-400">暂无图片</div>}
+                      <div className="min-w-0 flex-1">
+                        <p className="line-clamp-2 text-base font-black text-ink">{group.productName}</p>
+                        <p className="mt-1 truncate font-mono text-xs font-bold text-stone-400">{group.productSku}</p>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-3 py-1 text-xs font-black ${group.totalAvailable > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>同款可用 {group.totalAvailable} 件</span>
+                          <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-black text-stone-600">{group.items.length} 个尺码 / Variant</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className={`grid gap-2 p-3 sm:grid-cols-2 ${stockLookupGroups.length === 1 ? "lg:grid-cols-3 xl:grid-cols-4" : ""}`}>
+                      {group.items.map(item => {
+                        const threshold = item.reorder_level ?? lowStockThreshold;
+                        const unavailable = !item.active || item.quantity_available <= 0;
+                        const low = !unavailable && item.quantity_available <= threshold;
+                        return (
+                          <div className={`rounded-xl border p-3 ${unavailable ? "border-red-100 bg-red-50/50" : low ? "border-amber-100 bg-amber-50/50" : "border-emerald-100 bg-emerald-50/40"}`} key={item.variant_id}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-lg font-black text-ink">{item.size || "ONE SIZE"}</p>
+                                <p className="mt-0.5 text-xs font-bold text-stone-500">{item.color || "未设置颜色"}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className={`text-2xl font-black ${unavailable ? "text-red-600" : low ? "text-amber-600" : "text-emerald-700"}`}>{item.quantity_available}</p>
+                                <p className="text-[10px] font-black uppercase tracking-[0.1em] text-stone-400">可用库存</p>
+                              </div>
+                            </div>
+                            <div className="mt-2 space-y-0.5 text-[11px] font-bold text-stone-500">
+                              <p className="truncate">Variant：{item.variant_sku}</p>
+                              {item.barcode ? <p className="truncate">Barcode：{item.barcode}</p> : null}
+                              {item.supplier_sku ? <p className="truncate">供货商 SKU：{item.supplier_sku}</p> : null}
+                            </div>
+                            <div className="mt-3 flex items-center justify-between gap-2">
+                              <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${unavailable ? "bg-red-100 text-red-700" : low ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{!item.active ? "已停用" : item.quantity_available <= 0 ? "无货" : low ? "低库存" : "有货"}</span>
+                              {canUseTab("pos") ? <button className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-black text-ink hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={unavailable} onClick={() => moveStockLookupItemToPos(item)} type="button">带入 POS</button> : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {/* ── TAB: Stock operations ─────────────────────────── */}
+        {tab === "stockOperations" ? (
+          <section className="admin-panel">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Stock Operations</p>
+                <h2 className="mt-1 text-xl font-black text-ink">扫码库存作业</h2>
+                <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">独立处理盘点、到货和可销售退货。不会创建 POS 订单，也不会改动商品资料或真实收银机记录。</p>
+              </div>
+              <span className="w-fit rounded-full bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700">写入 MAIN_STORE 库存，提交前二次确认</span>
+            </div>
+
+            <div className="mt-5 grid gap-2 md:grid-cols-3">
+              {stockOperationOptions.map(option => (
+                <button
+                  className={`rounded-2xl border p-4 text-left transition ${stockOperationMode === option.key ? "border-ink bg-ink text-white shadow-sm shadow-stone-900/10" : "border-stone-200 bg-white text-ink hover:bg-stone-50"}`}
+                  key={option.key}
+                  onClick={() => {
+                    setStockOperationMode(option.key);
+                    setStockOperationQuantity(stockOperationItem ? (option.key === "stocktake" ? "" : "1") : "");
+                    setStockOperationReference("");
+                    setStockOperationError("");
+                    setStockOperationMessage("");
+                    window.setTimeout(() => (stockOperationItem ? stockOperationQuantityRef : stockOperationInputRef).current?.focus(), 30);
+                  }}
+                  type="button"
+                >
+                  <span className="block text-sm font-black">{option.label}</span>
+                  <span className={`mt-1 block text-xs leading-5 ${stockOperationMode === option.key ? "text-stone-300" : "text-stone-500"}`}>{option.shortDescription}</span>
+                </button>
+              ))}
+            </div>
+
+            <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-bold leading-5 text-blue-800">{activeStockOperation.guidance}</p>
+
+            <form
+              className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]"
+              onSubmit={event => {
+                event.preventDefault();
+                void searchStockOperationItem();
+              }}
+            >
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-black text-stone-500">扫描或搜索商品</span>
+                <input
+                  autoComplete="off"
+                  className="input min-h-12 text-base"
+                  onChange={event => {
+                    setStockOperationQuery(event.target.value);
+                    setStockOperationError("");
+                  }}
+                  placeholder="扫描条码，或输入 Variant SKU / 供货商 SKU / 商品名"
+                  ref={stockOperationInputRef}
+                  value={stockOperationQuery}
+                />
+              </label>
+              <button className="min-h-12 self-end rounded-xl bg-ink px-6 py-3 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={stockOperationLoading || stockOperationSubmitting} type="submit">
+                {stockOperationLoading ? "查找中..." : "查找商品"}
+              </button>
+              <button
+                className="min-h-12 self-end rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-black text-ink hover:bg-stone-50"
+                onClick={() => {
+                  setStockOperationQuery("");
+                  setStockOperationResults([]);
+                  setStockOperationItem(null);
+                  setStockOperationQuantity("");
+                  setStockOperationReference("");
+                  setStockOperationError("");
+                  setStockOperationMessage("");
+                  window.setTimeout(() => stockOperationInputRef.current?.focus(), 30);
+                }}
+                type="button"
+              >
+                清空
+              </button>
+            </form>
+
+            {stockOperationError ? <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700" role="alert">{stockOperationError}</p> : null}
+            {stockOperationMessage ? <p className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800" role="status">{stockOperationMessage}</p> : null}
+
+            {stockOperationItem ? (
+              <div className="mt-5 grid gap-4 rounded-2xl border border-stone-200 bg-stone-50/70 p-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:p-5">
+                <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="line-clamp-2 text-base font-black text-ink">{stockOperationItem.product_name || stockOperationItem.product_sku}</p>
+                      <p className="mt-1 truncate font-mono text-xs font-bold text-stone-400">{stockOperationItem.variant_sku}</p>
+                    </div>
+                    <button className="shrink-0 rounded-lg border border-stone-200 px-3 py-2 text-xs font-black text-stone-600 hover:bg-stone-50" onClick={() => { setStockOperationItem(null); setStockOperationQuantity(""); window.setTimeout(() => stockOperationInputRef.current?.focus(), 30); }} type="button">重选</button>
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-stone-50 p-3 text-center">
+                    <div><p className="text-xl font-black text-ink">{stockOperationItem.quantity_on_hand}</p><p className="text-[10px] font-black text-stone-400">当前库存</p></div>
+                    <div><p className="text-xl font-black text-stone-500">{stockOperationItem.quantity_reserved}</p><p className="text-[10px] font-black text-stone-400">预留</p></div>
+                    <div><p className="text-xl font-black text-emerald-700">{stockOperationItem.quantity_available}</p><p className="text-[10px] font-black text-stone-400">可用</p></div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-stone-500">
+                    <p>尺码：<span className="text-ink">{stockOperationItem.size || "ONE SIZE"}</span></p>
+                    <p>颜色：<span className="text-ink">{stockOperationItem.color || "未设置"}</span></p>
+                    {stockOperationItem.barcode ? <p className="col-span-2 truncate">条码：<span className="font-mono text-ink">{stockOperationItem.barcode}</span></p> : null}
+                    {stockOperationItem.supplier_sku ? <p className="col-span-2 truncate">供货商 SKU：<span className="font-mono text-ink">{stockOperationItem.supplier_sku}</span></p> : null}
+                  </div>
+                </div>
+
+                <form className="rounded-2xl border border-stone-200 bg-white p-4" onSubmit={event => { event.preventDefault(); submitStockOperation(); }}>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label={activeStockOperation.quantityLabel}>
+                      <input
+                        className="input min-h-12 text-lg font-black"
+                        inputMode="numeric"
+                        min={stockOperationMode === "stocktake" ? 0 : 1}
+                        onChange={event => { setStockOperationQuantity(event.target.value); setStockOperationError(""); }}
+                        placeholder={activeStockOperation.quantityPlaceholder}
+                        ref={stockOperationQuantityRef}
+                        step="1"
+                        type="number"
+                        value={stockOperationQuantity}
+                      />
+                    </Field>
+                    <Field label="备注 / 单据号（选填）">
+                      <input className="input min-h-12" maxLength={160} onChange={event => setStockOperationReference(event.target.value)} placeholder="例如送货单号、退货单号" value={stockOperationReference} />
+                    </Field>
+                  </div>
+                  <div className="mt-4 rounded-xl bg-stone-50 px-4 py-3 text-xs font-bold leading-5 text-stone-500">
+                    {stockOperationMode === "stocktake"
+                      ? `提交后系统库存会直接改为你填写的实际数量；当前是 ${stockOperationItem.quantity_on_hand}。`
+                      : `提交后会在当前库存 ${stockOperationItem.quantity_on_hand} 的基础上增加填写数量。`}
+                  </div>
+                  <button className="mt-4 min-h-12 w-full rounded-xl bg-ink px-5 py-3 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={stockOperationSubmitting} type="submit">
+                    {stockOperationSubmitting ? "处理中..." : `检查并${activeStockOperation.label}`}
+                  </button>
+                </form>
+              </div>
+            ) : stockOperationResults.length > 0 ? (
+              <div className="mt-5">
+                <p className="mb-2 text-xs font-black text-stone-500">请选择正确尺码 / Variant</p>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {stockOperationResults.map(item => (
+                    <button className="rounded-xl border border-stone-200 bg-white p-3 text-left transition hover:border-stone-400 hover:bg-stone-50" key={item.variant_id} onClick={() => selectStockOperationItem(item)} type="button">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="line-clamp-1 text-sm font-black text-ink">{item.product_name || item.product_sku}</p>
+                          <p className="mt-1 truncate font-mono text-[11px] font-bold text-stone-400">{item.variant_sku}</p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-stone-100 px-2.5 py-1 text-xs font-black text-stone-700">{item.size || "ONE SIZE"}</span>
+                      </div>
+                      <p className="mt-3 text-xs font-bold text-stone-500">当前 <span className="text-base font-black text-ink">{item.quantity_on_hand}</span> · 可用 <span className="text-emerald-700">{item.quantity_available}</span></p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50/70 px-5 py-9 text-center">
+                <p className="text-base font-black text-ink">等待扫码</p>
+                <p className="mt-2 text-sm text-stone-500">扫码枪输入条码并按 Enter 后，系统会选中对应尺码。</p>
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {/* ── TAB: Quick add ────────────────────────────────── */}
         {tab === "quickAdd" ? (
           <section className="admin-panel">
             <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -2110,8 +2752,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">POS Checkout</p>
-                  <h2 className="mt-1 text-xl font-black text-ink">POS 收银</h2>
-                  <p className="mt-1 text-xs text-stone-500">扫码枪输入条码后按 Enter，可快速搜索并加入购物车；完成收银前会先预检库存。</p>
+                  <h2 className="mt-1 text-xl font-black text-ink">POS 扫码扣库存</h2>
+                  <p className="mt-1 text-xs text-stone-500">扫码枪输入条码后按 Enter，可快速加入待扣库存清单；本系统不连接真实支付，提交前会再次校验库存。</p>
                 </div>
                 <button
                   className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50"
@@ -2159,7 +2801,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </form>
 
               {posMessage ? (
-                <p className="mt-4 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-bold text-stone-700">{posMessage}</p>
+                <p aria-live="polite" className="mt-4 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-bold text-stone-700" role="status">{posMessage}</p>
               ) : null}
 
               <div className="mt-5">
@@ -2197,7 +2839,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                             onClick={() => addPosItem(item)}
                             type="button"
                           >
-                            {disabled ? "库存不足 / 已停用" : "加入购物车"}
+                            {disabled ? "库存不足 / 已停用" : "加入待扣清单"}
                           </button>
                         </article>
                       );
@@ -2214,8 +2856,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <aside className="admin-panel xl:sticky xl:top-4 xl:self-start">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Cart</p>
-                  <h3 className="mt-1 text-lg font-black text-ink">购物车</h3>
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Pending Items</p>
+                    <h3 className="mt-1 text-lg font-black text-ink">待扣库存清单</h3>
                 </div>
                 <button
                   className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50 disabled:opacity-40"
@@ -2261,16 +2903,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   </div>
                 )) : (
                   <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50/70 px-4 py-8 text-center text-sm font-bold text-stone-400">
-                    购物车为空。
+                    尚未扫描商品。
                   </div>
                 )}
               </div>
 
               <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
                 <div className="space-y-2 text-sm font-bold text-stone-600">
-                  <div className="flex justify-between"><span>Subtotal</span><span>{formatEuro(posSubtotal)}</span></div>
+                  <div className="flex justify-between"><span>商品小计</span><span>{formatEuro(posSubtotal)}</span></div>
                   <div className="flex items-center justify-between gap-3">
-                    <span>Discount</span>
+                    <span>线下折扣</span>
                     <input
                       className="h-10 w-28 rounded-xl border border-stone-300 bg-white px-3 text-right text-base font-black sm:text-sm"
                       min="0"
@@ -2283,11 +2925,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       }}
                     />
                   </div>
-                  <div className="flex justify-between border-t border-stone-200 pt-3 text-lg font-black text-ink"><span>Total</span><span>{formatEuro(posTotal)}</span></div>
+                  <div className="flex justify-between border-t border-stone-200 pt-3 text-lg font-black text-ink"><span>参考合计</span><span>{formatEuro(posTotal)}</span></div>
                 </div>
 
                 <div className="mt-4">
-                  <p className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-stone-400">付款方式</p>
+                  <p className="mb-1 text-xs font-black uppercase tracking-[0.12em] text-stone-400">收银机付款方式（仅记录）</p>
+                  <p className="mb-2 text-[11px] font-bold text-stone-400">不会向银行卡、Viva、Stripe 或其他支付系统发起扣款。</p>
                   <div className="grid grid-cols-3 gap-2">
                     {(["cash", "card", "other"] as PosPaymentMethod[]).map(method => (
                       <button
@@ -2322,10 +2965,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       {posReceiptLoading ? "读取小票..." : "查看 / 打印小票"}
                     </button>
                   ) : null}
-                  <p className="font-black">{posLastOrder.alreadyProcessed ? "订单已处理" : "收银完成"}</p>
+                  <p className="font-black">{posLastOrder.alreadyProcessed ? "记录已处理" : "库存扣减完成"}</p>
                   <p className="mt-1 font-bold">订单号：{posLastOrder.order.order_number}</p>
                   <p className="font-bold">金额：{formatEuro(Number(posLastOrder.order.total || 0))}</p>
-                  <p className="font-bold">付款：{posLastOrder.payments?.[0]?.method || posPaymentMethod}</p>
+                  <p className="font-bold">付款：{paymentMethodLabel(posLastOrder.payments?.[0]?.method || posPaymentMethod)}</p>
                   {posLastOrder.legacySyncWarning?.length ? <p className="mt-2 text-xs font-bold text-amber-700">库存兼容字段同步警告：{posLastOrder.legacySyncWarning.join("；")}</p> : null}
                 </div>
               ) : null}
@@ -2337,7 +2980,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   onClick={() => void runPosDryRun(false)}
                   type="button"
                 >
-                  {posCheckoutLoading ? "处理中..." : "预检订单"}
+                  {posCheckoutLoading ? "处理中..." : "预检实时库存"}
                 </button>
                 <button
                   className="min-h-12 rounded-xl bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50"
@@ -2345,12 +2988,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   onClick={() => void confirmPosCheckout()}
                   type="button"
                 >
-                  完成收银并扣库存
+                  已在收银机收款，确认扣库存
                 </button>
               </div>
 
               <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs font-bold leading-relaxed text-amber-700">
-                提醒：真实收银会创建订单并扣减 ERP 库存。首次验证请使用测试商品。
+                提醒：本系统只保存销售参考记录并扣减 ERP 库存，不处理真实付款，也不能替代实体收银机的正式财务记录。
               </p>
             </aside>
           </section>
@@ -2363,7 +3006,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">POS Daily Report</p>
                   <h2 className="mt-1 text-xl font-black text-ink">POS 日报</h2>
-                  <p className="mt-1 text-xs text-stone-500">按门店本地日期统计 POS 销售、付款方式、热销商品和运行异常。这里只读，不会改订单或库存。</p>
+                  <p className="mt-1 text-xs text-stone-500">按门店本地日期汇总本系统的扫码扣库存记录、付款方式参考和热销商品。这里只用于库存核对，不替代实体收银机财务报表。</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <input className="input min-h-11 w-44" type="date" value={posDailyDate} onChange={e => setPosDailyDate(e.target.value)} />
@@ -2452,7 +3095,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                             </div>
                             <div className="mt-1 flex justify-between text-xs font-bold text-stone-500">
                               <span>{formatAdminDate(order.created_at)}</span>
-                              <span>{order.status} · {order.items_count} 件</span>
+                              <span>{posStatusLabel(order.status)} · {order.items_count} 件</span>
                             </div>
                           </div>
                         )) : <p className="text-sm font-bold text-stone-400">暂无订单。</p>}
@@ -2474,7 +3117,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">POS Orders</p>
                   <h2 className="mt-1 text-xl font-black text-ink">POS 订单历史</h2>
-                  <p className="mt-1 text-xs text-stone-500">只读查看 POS 订单、付款、商品明细和库存流水。本页不会作废、退款或修改库存。</p>
+                  <p className="mt-1 text-xs text-stone-500">查看 POS 订单、付款、商品明细和库存流水；有权限的管理员可以作废整单，退款与换货流程暂未开放。</p>
                 </div>
                 <button
                   className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50"
@@ -2507,15 +3150,15 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </select>
                 <select className="input" value={posOrderStatus} onChange={e => setPosOrderStatus(e.target.value as PosOrderStatusFilter)}>
                   <option value="all">全部状态</option>
-                  <option value="completed">completed</option>
-                  <option value="voided">voided</option>
-                  <option value="refunded">refunded</option>
+                  <option value="completed">已完成</option>
+                  <option value="voided">已作废</option>
+                  <option value="refunded">已退款</option>
                 </select>
                 <select className="input" value={posOrderPaymentMethod} onChange={e => setPosOrderPaymentMethod(e.target.value as PosPaymentFilter)}>
                   <option value="all">全部付款</option>
-                  <option value="cash">cash</option>
-                  <option value="card">card</option>
-                  <option value="other">other</option>
+                  <option value="cash">现金</option>
+                  <option value="card">刷卡</option>
+                  <option value="other">其他</option>
                 </select>
                 <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50 md:col-span-5" disabled={posOrdersLoading} type="submit">
                   查询 POS 订单
@@ -2545,9 +3188,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                         <td className="px-4 py-3 font-black text-ink">{order.order_number}</td>
                         <td className="px-4 py-3 text-xs font-bold text-stone-500">{formatAdminDate(order.created_at)}</td>
                         <td className="px-4 py-3 font-black text-copper">{formatEuro(order.total)}</td>
-                        <td className="px-4 py-3 font-bold text-stone-700">{order.payment_method || "-"}</td>
-                        <td className="px-4 py-3"><span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-black text-stone-700">{order.payment_status}</span></td>
-                        <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-black ${order.status === "completed" ? "bg-emerald-50 text-emerald-700" : order.status === "voided" ? "bg-stone-100 text-stone-600" : "bg-amber-50 text-amber-700"}`}>{order.status}</span></td>
+                        <td className="px-4 py-3 font-bold text-stone-700">{paymentMethodLabel(order.payment_method)}</td>
+                        <td className="px-4 py-3"><span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-black text-stone-700">{posStatusLabel(order.payment_status)}</span></td>
+                        <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-black ${order.status === "completed" ? "bg-emerald-50 text-emerald-700" : order.status === "voided" ? "bg-stone-100 text-stone-600" : "bg-amber-50 text-amber-700"}`}>{posStatusLabel(order.status)}</span></td>
                         <td className="px-4 py-3 font-bold text-stone-700">{order.items_count}</td>
                         <td className="px-4 py-3 text-xs font-bold text-stone-500">{order.created_by || "-"}</td>
                         <td className="px-4 py-3 text-right">
@@ -2604,15 +3247,15 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <div className="mt-5 grid gap-3 md:grid-cols-4">
                     <div className="rounded-2xl border border-stone-200 bg-white p-4">
                       <p className="text-xs font-bold text-stone-400">订单状态</p>
-                      <p className="mt-1 text-lg font-black text-ink">{posOrderDetail.order.status}</p>
+                      <p className="mt-1 text-lg font-black text-ink">{posStatusLabel(posOrderDetail.order.status)}</p>
                     </div>
                     <div className="rounded-2xl border border-stone-200 bg-white p-4">
                       <p className="text-xs font-bold text-stone-400">支付状态</p>
-                      <p className="mt-1 text-lg font-black text-ink">{posOrderDetail.order.payment_status}</p>
+                      <p className="mt-1 text-lg font-black text-ink">{posStatusLabel(posOrderDetail.order.payment_status)}</p>
                     </div>
                     <div className="rounded-2xl border border-stone-200 bg-white p-4">
                       <p className="text-xs font-bold text-stone-400">付款方式</p>
-                      <p className="mt-1 text-lg font-black text-ink">{posOrderDetail.payments[0]?.method || "-"}</p>
+                      <p className="mt-1 text-lg font-black text-ink">{paymentMethodLabel(posOrderDetail.payments[0]?.method)}</p>
                     </div>
                     <div className="rounded-2xl border border-stone-200 bg-white p-4">
                       <p className="text-xs font-bold text-stone-400">总金额</p>
@@ -2911,6 +3554,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <option value="manual_adjustment">manual_adjustment</option>
                   <option value="correction">correction</option>
                   <option value="return">return</option>
+                  <option value="transfer_in">transfer_in</option>
                 </select>
                 <select className="input" value={movementSourceType} onChange={e => setMovementSourceType(e.target.value)}>
                   <option value="">全部来源</option>
@@ -2919,6 +3563,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <option value="admin_edit">admin_edit</option>
                   <option value="csv_import">csv_import</option>
                   <option value="admin_inventory_adjustment">admin_inventory_adjustment</option>
+                  <option value="admin_stocktake">admin_stocktake</option>
+                  <option value="admin_receiving">admin_receiving</option>
+                  <option value="admin_customer_return">admin_customer_return</option>
                 </select>
                 <select className="input" value={movementLimit} onChange={e => setMovementLimit(Number(e.target.value) || 50)}>
                   <option value={50}>50 条</option>
@@ -3206,7 +3853,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
             {/* Mobile product cards */}
             <div className="grid gap-3 lg:hidden">
-              {filteredProducts.slice(0, 100).map(p => (
+              {filteredProducts.slice(0, Math.min(mobileProductLimit, 100)).map(p => (
                 <article className="rounded-2xl border border-stone-200/80 bg-white p-3 shadow-sm shadow-stone-900/5" key={p.id}>
                   <div className="flex gap-3">
                     <label className="pt-1">
@@ -3247,7 +3894,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </article>
               ))}
               {filteredProducts.length === 0 ? <p className="py-10 text-center text-sm text-stone-400">没有匹配的商品</p> : null}
-              {filteredProducts.length > 100 ? <p className="py-3 text-center text-xs text-stone-400">显示前 100 条，使用搜索筛选查看更多</p> : null}
+              {filteredProducts.length > mobileProductLimit && mobileProductLimit < 100 ? (
+                <button
+                  className="min-h-11 rounded-xl border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm font-black text-ink transition hover:bg-stone-100"
+                  onClick={() => setMobileProductLimit(current => Math.min(current + 12, 100))}
+                  type="button"
+                >
+                  显示更多商品（剩余 {Math.min(filteredProducts.length, 100) - mobileProductLimit}）
+                </button>
+              ) : null}
+              {filteredProducts.length > 100 && mobileProductLimit >= 100 ? <p className="py-3 text-center text-xs text-stone-400">显示前 100 条，使用搜索筛选查看更多</p> : null}
             </div>
 
             {/* Desktop table */}

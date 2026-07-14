@@ -170,6 +170,7 @@ export type AdjustInventoryVariantInput = {
   quantity: number;
   reason: string;
   clientRequestId: string;
+  operationType?: "manual" | "stocktake" | "receiving" | "return";
   createdBy?: string | null;
 };
 
@@ -1315,6 +1316,16 @@ export async function adjustInventoryVariant(
   const variantId = typeof input.variantId === "string" ? input.variantId.trim() : "";
   const reason = typeof input.reason === "string" ? input.reason.trim() : "";
   const clientRequestId = typeof input.clientRequestId === "string" ? input.clientRequestId.trim() : "";
+  const operationType = input.operationType || "manual";
+  const operationConfig: Record<
+    NonNullable<AdjustInventoryVariantInput["operationType"]>,
+    { movementType: InventoryMovementType; sourceType: string }
+  > = {
+    manual: { movementType: "manual_adjustment", sourceType: "admin_inventory_adjustment" },
+    stocktake: { movementType: "correction", sourceType: "admin_stocktake" },
+    receiving: { movementType: "transfer_in", sourceType: "admin_receiving" },
+    return: { movementType: "return", sourceType: "admin_customer_return" },
+  };
 
   if (!variantId) {
     throw new Error("Variant ID is required.");
@@ -1322,8 +1333,20 @@ export async function adjustInventoryVariant(
   if (input.mode !== "set_to" && input.mode !== "adjust_by") {
     throw new Error("Invalid adjustment mode.");
   }
+  if (!operationConfig[operationType]) {
+    throw new Error("Invalid inventory operation type.");
+  }
   if (!Number.isInteger(input.quantity)) {
     throw new Error("Quantity must be an integer.");
+  }
+  if (operationType === "stocktake" && input.mode !== "set_to") {
+    throw new Error("Stocktake must set the counted inventory quantity.");
+  }
+  if (operationType === "stocktake" && input.quantity < 0) {
+    throw new Error("Stocktake quantity cannot be negative.");
+  }
+  if ((operationType === "receiving" || operationType === "return") && (input.mode !== "adjust_by" || input.quantity <= 0)) {
+    throw new Error("Receiving and return quantities must add a positive integer.");
   }
   if (!reason) {
     throw new Error("Adjustment reason is required.");
@@ -1334,7 +1357,8 @@ export async function adjustInventoryVariant(
 
   const supabase = adminClient() as any;
   const location = await getMainInventoryLocation();
-  const idempotencyKey = `admin_inventory_adjustment:${clientRequestId}:${variantId}`;
+  const operation = operationConfig[operationType];
+  const idempotencyKey = `${operation.sourceType}:${clientRequestId}:${variantId}`;
 
   const { data: existingMovement, error: movementReadError } = await supabase
     .from("stock_movements")
@@ -1433,12 +1457,12 @@ export async function adjustInventoryVariant(
   const { error: movementError } = await supabase.from("stock_movements").insert({
     variant_id: variantId,
     location_id: location.id,
-    movement_type: "manual_adjustment",
+    movement_type: operation.movementType,
     quantity_delta: delta,
     quantity_before: before,
     quantity_after: after,
     reason,
-    source_type: "admin_inventory_adjustment",
+    source_type: operation.sourceType,
     source_id: variantId,
     idempotency_key: idempotencyKey,
     created_by: input.createdBy || "admin",

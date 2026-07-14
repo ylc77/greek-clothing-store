@@ -2,6 +2,14 @@ import type { Product, ProductCategory, ProductSubcategory } from "./types";
 
 export type Language = "el" | "en";
 
+export function storefrontText(value: unknown, fallback = "") {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return fallback;
+  if (!/[一-鿿]/.test(raw)) return raw;
+  const cleaned = raw.replace(/[一-鿿]+/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned || fallback;
+}
+
 export function getLanguage(value: string | string[] | undefined): Language {
   return value === "en" ? "en" : "el";
 }
@@ -17,14 +25,14 @@ export function withLanguage(path: string, language: Language) {
 
 export function productName(product: Product, language: Language) {
   return language === "en"
-    ? product.name_en || product.name_cn || product.sku
-    : product.name_gr || product.name_en || product.name_cn || product.sku;
+    ? product.name_en || product.name_gr || product.sku
+    : product.name_gr || product.name_en || product.sku;
 }
 
 export function productDescription(product: Product, language: Language) {
   return language === "en"
-    ? product.description_en || product.description_cn || ""
-    : product.description_gr || product.description_en || product.description_cn || "";
+    ? product.description_en || product.description_gr || ""
+    : product.description_gr || product.description_en || "";
 }
 
 /** Convert Chinese/English material text to the target language */
