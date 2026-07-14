@@ -11,6 +11,10 @@
     "test:pos-integration": "node scripts/pos-integration-test.mjs",
     "test:pos": "npm run test:pos-operation-ids && npm run test:pos-integration",
     "test:pos-install-paths": "powershell -ExecutionPolicy Bypass -File scripts/verify-pos-install-paths.ps1",
+    "test:inventory-operation-ids": "node --experimental-strip-types --test tests/inventory-operation-id.test.ts",
+    "test:inventory-integration": "node scripts/inventory-integration-test.mjs",
+    "test:inventory": "npm run test:inventory-operation-ids && npm run test:inventory-integration",
+    "test:inventory-install-paths": "powershell -ExecutionPolicy Bypass -File scripts/verify-inventory-install-paths.ps1",
     "check:site": "node scripts/site-smoke-check.js",
     "check:skroutz": "node scripts/site-smoke-check.js --strict-feed"
   },
