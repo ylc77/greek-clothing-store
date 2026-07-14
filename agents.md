@@ -139,3 +139,15 @@ The product page was previously observed passing `size_stock` to the AI assistan
 
 AI size and stock answers must use an authoritative server-side product record selected by SKU. Do not trust browser-supplied product fields as the source of truth. Include `size_system`, distinguish available sizes from sold-out sizes, and never infer conversions between letter, EU women's numeric, EU men's numeric, EU shoe, One Size, or custom sizing without an explicit product `size_chart` mapping.
 
+
+\---
+
+
+\## 12. POS transaction safety boundary
+
+
+Formal POS checkout and void writes are RPC-only. `USE_POS_RPC=true` is required when POS is enabled; false, missing RPC migrations, missing execute privilege, or an unavailable RPC must fail closed with HTTP 503. Never restore the historical Supabase JS multi-step fallback.
+
+
+Checkout legal versions and actor identity are written inside the checkout transaction. Void completion must reconcile every order Variant against `pos_void` movement quantities; an inconsistent or indeterminate ledger must return `POS_VOID_RECONCILIATION_REQUIRED` instead of reporting success. Preserve the browser business operation ID across timeouts and response loss so retries reuse the same database idempotency key.
+

@@ -67,8 +67,16 @@ NEXT_PUBLIC_SUPABASE_URL=https://你的项目.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=你的-publishable-或-anon-key
 SUPABASE_SERVICE_ROLE_KEY=你的-service-role-key
 ADMIN_PASSWORD=设置一个强密码
-USE_POS_RPC=false
+USE_POS_RPC=true
 ```
+
+POS 使用前必须确认数据库已包含以下事务 RPC migrations（新客户的 `client-init.sql` 已自动包含）：
+
+- `20260705000100_add_pos_rpc_functions.sql`
+- `20260715100000_harden_pos_checkout_rpc.sql`
+- `20260715100001_reconcile_pos_void_rpc.sql`
+
+`USE_POS_RPC=true` 是正式运行的必需配置。若配置不是 `true`、migration 未部署、函数缺失或 `service_role` 无执行权限，后台会显示红色阻断提示，checkout / void API 返回 503，并且不会创建订单、付款、库存变化或库存流水。系统不会自动回退到非事务 JavaScript 多步写入。
 
 `ADMIN_PASSWORD` 是仅供维护者使用的服务器端紧急 owner 密码，每个客户建议设置不同值，不要告诉购买系统的商家。商家日常使用通过 Supabase Auth 创建的员工账号，不使用这个环境变量密码。
 
@@ -163,6 +171,7 @@ Supabase Storage：
 
 - `supabase/migrations` 是数据库开发和升级的权威来源。
 - `supabase/client-init.sql` 是根据 migrations 生成的新客户空库部署快照。
+- POS checkout / void 正式写入只允许调用事务 RPC；`USE_POS_RPC=false` 仅作为阻断 POS 写入的紧急开关，不是非事务 fallback。
 - `public.developer_access` 只保存开发者密码的加盐哈希；`anon` 和 `authenticated` 无权读取或修改，应用只通过服务器端 `service_role` 校验。
 - 店铺设置和法律设置不能改回普通 owner/员工权限；相关 API 必须继续要求开发者会话。
 - 新增或修改 migration 后，运行：
@@ -183,6 +192,7 @@ npm install
 npm run dev -- --port 3010
 npm run typecheck
 npm run build
+npm run test:pos
 npm run check:site
 npm run check:skroutz
 ```

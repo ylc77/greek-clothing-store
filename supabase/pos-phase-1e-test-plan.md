@@ -1,8 +1,8 @@
 # POS Phase 1-E-A2 RPC Transaction Test Plan
 
-This plan verifies the PostgreSQL RPC draft for POS checkout and POS void after moving the external RPC entry points to the public schema.
+This historical plan originally verified the first PostgreSQL RPC draft. The current executable source of truth is `npm run test:pos`; formal checkout and void writes are RPC-only.
 
-Do not run this plan directly on production first. Do not switch `USE_POS_RPC` during this phase.
+Do not run destructive cases on production. Local/test verification must use `USE_POS_RPC=true`; false is tested only to prove fail-closed behavior.
 
 ## Scope
 
@@ -301,15 +301,15 @@ Open and verify:
 Expected:
 
 - All pages load normally.
-- Existing JS checkout and void paths still work because `USE_POS_RPC` remains false.
+- Checkout and void work only through the transaction RPC path with `USE_POS_RPC=true`.
 - Feed remains unchanged.
 
 ## Rollback
 
 Short-term rollback:
 
-- Keep `USE_POS_RPC=false`.
-- API routes continue to use existing Supabase JS paths.
+- Pause POS and use `USE_POS_RPC=false` only to force an explicit 503 block.
+- API routes must not continue through the historical Supabase JS write path.
 
 Database rollback, if needed in a later migration:
 
@@ -339,14 +339,14 @@ Do not drop POS or ERP tables.
 
 This phase does not change API routes. Later:
 
-1. Add `USE_POS_RPC=false`.
+1. Set the required default `USE_POS_RPC=true`.
 2. In checkout route:
    - Keep dryRun on current JS preview path.
    - If `USE_POS_RPC=true`, call `supabase.rpc("pos_checkout_rpc", ...)` with the service-role client.
-   - If false, keep current JS multi-step logic.
+   - If false, return 503 without business writes.
 3. In void route:
    - If `USE_POS_RPC=true`, call `supabase.rpc("pos_void_rpc", ...)` with the service-role client.
-   - If false, keep current JS multi-step logic.
+   - If false, return 503 without business writes.
 4. RPC returns `affected_skus` and `affected_product_ids`.
 5. API route refreshes product cache after successful RPC.
-6. Keep old JS logic as fallback until production is stable.
+6. Keep old JS logic unreachable or remove it; never use it as a runtime fallback.
