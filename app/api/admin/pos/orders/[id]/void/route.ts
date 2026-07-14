@@ -471,6 +471,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
   } catch (error) {
     logVoidError("unexpected void failure", error, { orderId });
-    return NextResponse.json({ error: "Failed to void POS order." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "POS transactional void RPC is unavailable.",
+        code: "POS_RPC_UNAVAILABLE",
+        requiresConfiguration: true,
+      },
+      { status: 503 },
+    );
   }
 }

@@ -710,6 +710,16 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     logCheckoutError("unexpected checkout failure", error);
-    return NextResponse.json({ error: "Failed to complete POS checkout." }, { status: 500 });
+    if (posRpcEnabled && !dryRun) {
+      return NextResponse.json(
+        {
+          error: "POS transactional RPC is unavailable.",
+          code: "POS_RPC_UNAVAILABLE",
+          requiresConfiguration: true,
+        },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json({ error: "Failed to validate POS checkout." }, { status: 500 });
   }
 }
