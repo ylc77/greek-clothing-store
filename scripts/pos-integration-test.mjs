@@ -365,7 +365,7 @@ function setCheckoutExecute(granted) {
         select p.oid::regprocedure
         from pg_proc p
         join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname = 'public' and p.proname = 'pos_checkout_rpc'
+        where n.nspname = 'public' and p.proname = 'pos_checkout_rpc' and p.pronargs = 9
       loop
         execute format('${action} on function %s ${connector} service_role', fn);
       end loop;

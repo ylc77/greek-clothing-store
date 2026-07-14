@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { adminActorFromContext, adminHasPermission, getAdminAuthContextFromRequest } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import { getMainInventoryLocation, syncLegacyStockFromErp } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -140,12 +140,23 @@ function usePosRpc() {
   return process.env.USE_POS_RPC === "true";
 }
 
+function posRpcRequiredResponse() {
+  return NextResponse.json(
+    {
+      error: "POS transactional RPC is required. Set USE_POS_RPC=true and deploy the POS RPC migrations before checkout.",
+      code: "POS_RPC_REQUIRED",
+      requiresConfiguration: true,
+    },
+    { status: 503 },
+  );
+}
+
 function checkoutErrorStatus(message: string) {
   const normalized = message.toLowerCase();
   if (normalized.includes("insufficient stock")) return 409;
   if (normalized.includes("inactive")) return 400;
   if (normalized.includes("required") || normalized.includes("must be")) return 400;
-  return 500;
+  return 503;
 }
 
 function normalizeItems(items: unknown) {
@@ -211,7 +222,8 @@ async function loadExistingOrder(supabase: any, idempotencyKey: string) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "pos:checkout"))) return unauthorized();
+  const authContext = await getAdminAuthContextFromRequest(request);
+  if (!adminHasPermission(authContext, "pos:checkout")) return unauthorized();
   if (!(await isFeatureEnabled("pos_checkout"))) return featureDisabledResponse("pos_checkout");
 
   const supabase = getSupabaseAdminClient();
@@ -225,6 +237,8 @@ export async function POST(request: NextRequest) {
   const clientRequestId = text(payload.clientRequestId);
   const notes = text(payload.notes);
   const dryRun = payload.dryRun === true;
+  const posRpcEnabled = usePosRpc();
+  if (!dryRun && !posRpcEnabled) return posRpcRequiredResponse();
   if (!clientRequestId) {
     return NextResponse.json({ error: "clientRequestId is required." }, { status: 400 });
   }
@@ -245,6 +259,7 @@ export async function POST(request: NextRequest) {
 
   const discountTotal = money(payload.discountTotal || 0);
   const idempotencyKey = `pos_sale:${clientRequestId}`;
+  const actor = adminActorFromContext(authContext!);
 
   try {
     const legalRecord = dryRun ? null : await getPublishedLegalSettings();
@@ -253,7 +268,7 @@ export async function POST(request: NextRequest) {
       privacy_policy_version: legalRecord.currentVersion,
       legal_accepted_at: new Date().toISOString(),
     } : {};
-    if (usePosRpc() && !dryRun) {
+    if (posRpcEnabled && !dryRun) {
       const { data, error } = await (supabase as any).rpc("pos_checkout_rpc", {
         p_client_request_id: clientRequestId,
         p_payment_method: payload.paymentMethod,
@@ -263,24 +278,30 @@ export async function POST(request: NextRequest) {
         })),
         p_discount_total: discountTotal,
         p_notes: notes || null,
-        p_created_by: "admin",
+        p_created_by: actor,
+        p_legal_terms_version: legalRecord?.currentVersion || null,
+        p_privacy_policy_version: legalRecord?.currentVersion || null,
+        p_legal_accepted_at: legalRecord?.currentVersion ? new Date().toISOString() : null,
       });
 
       if (error) {
         logCheckoutError("RPC checkout failed", error, { clientRequestId });
         const message = String(error.message || "Failed to complete POS checkout.");
-        return NextResponse.json({ error: message }, { status: checkoutErrorStatus(message) });
+        const status = checkoutErrorStatus(message);
+        return NextResponse.json(
+          {
+            error: message,
+            code: status === 503 ? "POS_RPC_UNAVAILABLE" : undefined,
+            requiresConfiguration: status === 503,
+          },
+          { status },
+        );
       }
 
       const result = data || {};
       const affectedSkus = Array.isArray(result.affected_skus) ? result.affected_skus : [];
       for (const sku of affectedSkus) {
         invalidateProductsCache(typeof sku === "string" ? sku : null);
-      }
-
-      if (result.order?.id && legalRecord?.currentVersion) {
-        const { error: legalError } = await (supabase as any).from("sales_orders").update(legalAcceptance).eq("id", result.order.id);
-        if (legalError) logCheckoutError("attach legal version failed", legalError, { orderId: result.order.id });
       }
 
       return NextResponse.json({
@@ -487,6 +508,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Historical audit reference only: every possible runtime branch has
+    // already returned above. Formal writes can only reach the RPC branch.
     const existingOrder = await loadExistingOrder(supabase as any, idempotencyKey);
     if (existingOrder) {
       return NextResponse.json({

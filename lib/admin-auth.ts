@@ -140,6 +140,13 @@ export function adminHasPermission(context: AdminAuthContext | null, permission:
   return Boolean(context?.permissions.includes(permission));
 }
 
+export function adminActorFromContext(context: AdminAuthContext) {
+  if (context.authType === "account" && context.userId) {
+    return `account:${context.role}:${context.userId}`;
+  }
+  return `${context.authType || "admin"}:${context.role}`;
+}
+
 export function adminRequestHasPermission(request: Request, permission: AdminPermission) {
   return adminHasPermission(getAdminContextFromRequest(request), permission);
 }

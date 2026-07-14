@@ -807,6 +807,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const [posLoading, setPosLoading] = useState(false);
   const [posCheckoutLoading, setPosCheckoutLoading] = useState(false);
   const [posMessage, setPosMessage] = useState("");
+  const [posRuntimeIssue, setPosRuntimeIssue] = useState("");
   const [posPreview, setPosPreview] = useState<Record<string, unknown> | null>(null);
   const [posLastOrder, setPosLastOrder] = useState<PosOrderResult | null>(null);
   const [posView, setPosView] = useState<PosOrdersView>("checkout");
@@ -852,6 +853,21 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       .then((data) => setAdminFeatures(data.settings?.features || defaultAdminFeatures))
       .catch(() => setAdminFeatures(initialFeatures));
   }, [adminSession, adminAuthToken, activePassword, initialFeatures]);
+  useEffect(() => {
+    if (!adminSession || !adminFeatures.pos_checkout || !adminSession.permissions.includes("pos:read")) {
+      setPosRuntimeIssue("");
+      return;
+    }
+    fetch("/api/admin/pos/health", { headers: adminAuthHeaders() })
+      .then(async response => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.ready !== true) {
+          throw new Error(data.error || "POS 事务 RPC 未就绪，销售写入已阻断。");
+        }
+        setPosRuntimeIssue("");
+      })
+      .catch(error => setPosRuntimeIssue(error instanceof Error ? error.message : "POS 事务 RPC 未就绪，销售写入已阻断。"));
+  }, [adminSession, adminAuthToken, activePassword, adminFeatures.pos_checkout]);
 
   // Search / filter state
   const [search, setSearch] = useState(""); const [filterCat, setFilterCat] = useState(""); const [filterSub, setFilterSub] = useState("");
@@ -2608,6 +2624,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           </div>
         </header>
 
+        {posRuntimeIssue ? (
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700 sm:mb-6" role="alert">
+            POS 安全配置未完成：{posRuntimeIssue}
+          </div>
+        ) : null}
+
         {/* ── Stats cards ────────────────────────────────── */}
         <div className={`${tab === "dashboard" ? "grid" : "hidden"} mb-4 grid-cols-2 gap-2 sm:mb-6 sm:grid-cols-4 sm:gap-3 xl:grid-cols-6`}>
           {[{ label: "商品总数", v: stats.total, color: "bg-stone-500" }, { label: "已上架", v: stats.active, color: "bg-emerald-500" }, { label: "缺图片", v: stats.noImage, color: "bg-amber-400" }, { label: "库存为0", v: stats.noStock, color: "bg-rose-400" }, { label: "未分尺码", v: stats.noSizeStock, color: "bg-violet-400", desktopOnly: true }, { label: "分类数", v: stats.categories, color: "bg-sky-400", desktopOnly: true }].map(s => (
@@ -3377,7 +3399,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </button>
                 <button
                   className="min-h-12 rounded-xl bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50"
-                  disabled={posCheckoutLoading || posCart.length === 0}
+                  disabled={posCheckoutLoading || posCart.length === 0 || Boolean(posRuntimeIssue)}
                   onClick={() => void confirmPosCheckout()}
                   type="button"
                 >
