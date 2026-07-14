@@ -79,3 +79,15 @@ Another workspace may already run local Supabase on the default 5432x ports. If 
 
 If database, Studio, or API ports conflict, change only this repository's `supabase/config.toml` and record the new convention here. Do not stop or modify another project's Supabase containers to verify this repository.
 
+
+\---
+
+
+\## 7. Legacy customer database migration dependencies
+
+
+The production Supabase project was observed without the shared `public.set_updated_at()` trigger function even though newer empty-database initialization creates it in the baseline migration.
+
+
+Upgrade migrations that create an `updated_at` trigger must create or replace their required trigger helper in the same migration. Do not assume an older customer database has executed the current baseline migration. Keep these upgrade migrations idempotent and verify both an empty local reset and the legacy-database upgrade path.
+

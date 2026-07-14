@@ -1,5 +1,19 @@
 begin;
 
+-- Some legacy customer databases predate the baseline migration and therefore
+-- do not have this shared trigger helper. Keep this upgrade self-contained.
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
 create table if not exists public.suppliers (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,
