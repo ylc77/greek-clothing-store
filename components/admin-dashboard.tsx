@@ -2563,10 +2563,11 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       expectedMetadataVersion: Number(product.metadata_version),
       expectedStructureVersion: Number(product.structure_version),
     };
-    const fingerprint = createProductOperationFingerprint(requestPayload);
-    const operationId = productOperationIds().getOrCreate(scope, fingerprint);
-    productOperationIds().markAttempt(scope, operationId);
+    let operationId = "";
     try {
+      const fingerprint = createProductOperationFingerprint(requestPayload);
+      operationId = productOperationIds().getOrCreate(scope, fingerprint);
+      productOperationIds().markAttempt(scope, operationId);
       const result = await api(`/api/admin/products/${product.id}`, {
         method: "PUT",
         body: JSON.stringify({ ...requestPayload, clientRequestId: operationId }),
