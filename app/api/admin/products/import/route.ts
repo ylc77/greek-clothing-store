@@ -102,8 +102,47 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = getSupabaseAdminClient();
-  if (!supabase || !(await productImportRuntimeReady(supabase))) return configurationUnavailable();
+  if (!supabase) return configurationUnavailable();
   const actor = adminActorFromContext(authorized.context!);
+
+  // The idempotency fingerprint must only depend on the frozen user payload.
+  // Database preview versions are concurrency tokens for a newly-created Job;
+  // they change after a successful import and therefore must not participate in
+  // replay identity.
+  const payloadHash = stablePayloadHash({
+    schemaVersion: CSV_IMPORT_SCHEMA_VERSION,
+    fileHash: form.fileHash,
+    importMode: form.importMode,
+    inventoryMode: form.inventoryMode,
+    rows: form.parsed.rows,
+  });
+
+  try {
+    const existing = await loadProductImportJob(supabase as any, {
+      operationId: form.operationId,
+      limit: 50,
+    });
+    if (existing) {
+      if (existing.job.payload_hash !== payloadHash) {
+        return NextResponse.json(
+          {
+            error: "This operation ID is already attached to different CSV content.",
+            code: "CSV_IMPORT_OPERATION_CONFLICT",
+            operationSafeToDiscard: false,
+          },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json(
+        { ...existing, fileHash: form.fileHash, payloadHash, replayed: true },
+        { status: Number(existing.job.pending_rows || 0) > 0 ? 202 : 200 },
+      );
+    }
+  } catch {
+    return configurationUnavailable();
+  }
+
+  if (!(await productImportRuntimeReady(supabase))) return configurationUnavailable();
 
   let preparedRows: Awaited<ReturnType<typeof prepareProductImportRows>>;
   try {
@@ -114,14 +153,6 @@ export async function POST(request: NextRequest) {
   } catch {
     return configurationUnavailable();
   }
-
-  const payloadHash = stablePayloadHash({
-    schemaVersion: CSV_IMPORT_SCHEMA_VERSION,
-    fileHash: form.fileHash,
-    importMode: form.importMode,
-    inventoryMode: form.inventoryMode,
-    rows: preparedRows,
-  });
 
   const { data: startData, error: startError } = await (supabase as any).rpc(
     "product_import_start_rpc",

@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 // @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
-import {
-  CsvImportOperationIdStore,
-  CsvImportOperationStateError,
-  createCsvImportFingerprint,
-  type CsvImportOperationStorage,
-} from "../lib/csv-operation-id.ts";
+import { CsvImportOperationIdStore, CsvImportOperationStateError, createCsvImportFingerprint, type CsvImportOperationStorage } from "../lib/csv-operation-id.ts";
 
 class MemoryStorage implements CsvImportOperationStorage {
   readonly values = new Map<string, string>();
@@ -84,18 +79,33 @@ test("selecting a new file before submit replaces an unused ID, but after submit
   );
 });
 
-test("corrupt, expired attempted, or unavailable persisted state blocks a new write", () => {
+test("corrupt or unavailable persisted state blocks a new write", () => {
   const { storage, store } = fixture();
   storage.values.set(store.storageKeyForTest(), "{bad-json");
   assert.throws(() => store.getOrCreate("file-a"), (error: unknown) => error instanceof CsvImportOperationStateError && error.code === "OPERATION_STATE_CORRUPT");
 
-  let now = 1_000;
-  const expiring = new CsvImportOperationIdStore("expiry", new MemoryStorage(), { createId: () => "id", now: () => now, ttlMs: 10 });
-  const id = expiring.getOrCreate("file-a");
-  expiring.markAttempt(id);
-  now = 1_011;
-  assert.throws(() => expiring.getOrCreate("file-a"), (error: unknown) => error instanceof CsvImportOperationStateError && error.code === "OPERATION_EXPIRED_UNKNOWN");
-
   const unavailable = new CsvImportOperationIdStore("disabled", new DisabledStorage(), { createId: () => "id", now: () => 1_000, ttlMs: 10 });
   assert.throws(() => unavailable.getOrCreate("file-a"), (error: unknown) => error instanceof CsvImportOperationStateError && error.code === "OPERATION_STORAGE_UNAVAILABLE");
+});
+
+test("an attempted persistent Job remains recoverable after TTL while an unused ID can expire", () => {
+  let now = 1_000;
+  let next = 0;
+  const storage = new MemoryStorage();
+  const store = new CsvImportOperationIdStore("expiry", storage, { createId: () => `id-${++next}`, now: () => now, ttlMs: 10 });
+  const unused = store.getOrCreate("file-unused");
+  now = 1_011;
+  assert.notEqual(store.getOrCreate("file-next"), unused);
+
+  const attempted = store.getOrCreate("file-attempted");
+  store.markAttempt(attempted);
+  store.attachJob(attempted, "job-persistent");
+  now = 2_000;
+  assert.deepEqual(store.getPending(), {
+    operationId: attempted,
+    fingerprint: "file-attempted",
+    jobId: "job-persistent",
+    attempted: true,
+  });
+  assert.equal(store.getOrCreate("file-attempted"), attempted);
 });
