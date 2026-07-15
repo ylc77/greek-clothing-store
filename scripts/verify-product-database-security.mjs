@@ -42,6 +42,23 @@ begin
     end if;
   end loop;
 
+  function_oid := pg_catalog.to_regprocedure('app_private.product_lock_variant_identities(jsonb,bigint)');
+  if function_oid is null then
+    raise exception 'Variant identity lock helper is missing';
+  end if;
+  select p.prosecdef, p.proconfig
+  into function_is_definer, function_config
+  from pg_catalog.pg_proc p
+  where p.oid = function_oid;
+  if function_is_definer or not ('search_path=""' = any(coalesce(function_config, array[]::text[]))) then
+    raise exception 'Variant identity lock helper must be SECURITY INVOKER with an empty fixed search_path';
+  end if;
+  if pg_catalog.has_function_privilege('anon', function_oid, 'execute')
+     or pg_catalog.has_function_privilege('authenticated', function_oid, 'execute')
+     or pg_catalog.has_function_privilege('service_role', function_oid, 'execute') then
+    raise exception 'Variant identity lock helper must only be callable by its owning RPC role';
+  end if;
+
   if pg_catalog.to_regclass('public.product_operations') is null then
     raise exception 'product_operations is missing';
   end if;

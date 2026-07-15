@@ -48,6 +48,7 @@ const updateRoute = read("app/api/admin/products/[id]/route.ts");
 const bulkRoute = read("app/api/admin/products/bulk/route.ts");
 const dashboard = read("components/admin-dashboard.tsx");
 const envExample = read(".env.example");
+const productMigrationSource = read(`supabase/migrations/${productMigration}`);
 
 const handlerSource = (source, handlerName) => {
   const startMarker = `export async function ${handlerName}`;
@@ -203,6 +204,16 @@ assert.match(
 );
 
 assert.match(envExample, /^USE_PRODUCT_RPC=true$/m, ".env.example must enable transactional product RPCs by default");
+assert.match(
+  productMigrationSource,
+  /app_private\.product_lock_variant_identities/,
+  "product transactions must use a private globally ordered Variant identity lock helper",
+);
+assert.equal(
+  (productMigrationSource.match(/perform app_private\.product_lock_variant_identities\(/g) || []).length,
+  2,
+  "both product create and structure update must acquire globally ordered Variant identity locks",
+);
 
 console.log(
   `Product static gates passed: ${productMigration} is ordered, client-init is exact, product routes are RPC-only, and browser operation IDs survive retries.`,
