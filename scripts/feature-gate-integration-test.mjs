@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
 import { createClient } from "@supabase/supabase-js";
 
@@ -130,6 +132,20 @@ try {
     .update({ plan: "custom", features: disabled, updated_by: "feature-gate-integration-test", updated_at: new Date().toISOString() })
     .eq("id", 1);
   if (updateError) throw updateError;
+  const { data: persistedFeature, error: persistedFeatureError } = await supabase
+    .from("feature_settings")
+    .select("features")
+    .eq("id", 1)
+    .single();
+  if (persistedFeatureError) throw persistedFeatureError;
+  for (const key of ["quick_sell", "pos_checkout", "pos_orders", "pos_void", "staff_accounts", "skroutz_feed", "ai_tools"]) {
+    assert.equal(persistedFeature.features[key], false, `${key} was not disabled in the local test database`);
+  }
+
+  // Next's persistent unstable_cache survives between the sequential integration
+  // app processes. Clear only this repository's cache so this test reads the
+  // database state it just established instead of a preceding test's snapshot.
+  fs.rmSync(path.join(ROOT, ".next", "cache"), { recursive: true, force: true });
 
   const before = await countRows(supabase);
   server = await startApp(local);
