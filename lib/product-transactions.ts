@@ -411,6 +411,7 @@ export function productRpcFailure(error: unknown) {
     ["PRODUCT_SKU_CONFLICT", 409, "PRODUCT_SKU_CONFLICT", "Product SKU already exists.", true],
     ["PRODUCT_VARIANT_CONFLICT", 409, "PRODUCT_VARIANT_CONFLICT", "Variant SKU, barcode, size, or supplier SKU conflicts with another Variant.", true],
     ["PRODUCT_NOT_FOUND", 404, "PRODUCT_NOT_FOUND", "Product not found.", true],
+    ["PRODUCT_VARIANTS_REQUIRED", 400, "PRODUCT_VARIANTS_REQUIRED", "Changing the base price requires the current authoritative Variant list.", true],
     ["PRODUCT_INVALID_ARGUMENT", 400, "INVALID_ARGUMENT", "Product operation parameters are invalid.", true],
     ["PRODUCT_RECONCILIATION_REQUIRED", 409, "PRODUCT_RECONCILIATION_REQUIRED", "Product inventory data requires manual reconciliation.", false],
     ["PRODUCT_RUNTIME_UNAVAILABLE", 503, "PRODUCT_RPC_UNAVAILABLE", "Transactional product prerequisites are unavailable.", false],

@@ -2468,7 +2468,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     return !normalized || normalized === "ONE-SIZE" ? productSku.trim() : `${productSku.trim()}-${normalized}`;
   }
 
-  function buildProductVariantPayloads() {
+  function buildProductVariantPayloads(productBasePriceChanged = false) {
     const originalVariants = editingProductSnapshot?.variants || [];
     return sortSizeKeys(Object.keys(sizeStock)).map((size, index) => {
       const normalizedSize = size.trim().toUpperCase();
@@ -2484,7 +2484,14 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
         color: form.color.trim(),
         quantity: Math.max(0, Math.trunc(Number(sizeStock[size]) || 0)),
         ...(original ? { expected_on_hand: Math.max(0, Math.trunc(Number(original.quantity_on_hand) || 0)) } : {}),
-        price: original?.price ?? null,
+        price: original
+          ? (productBasePriceChanged
+              && (original.price === null
+                || original.price === undefined
+                || Number(original.price) === Number(editingProductSnapshot?.price))
+            ? Number(form.price)
+            : original.price ?? null)
+          : Number(form.price),
         supplier_id: form.supplier_id || null,
         supplier_sku: procurement?.supplier_sku?.trim() || "",
         cost_price: procurement?.cost_price ?? null,
@@ -2755,8 +2762,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     if (p.fit_type) aiData.fit_type = p.fit_type;
     aiData.material_verified = p.material_verified === true;
 
-    const variants = buildProductVariantPayloads();
-    const catalogChanged = productCatalogChanged(variants);
+    const productBasePriceChanged = Boolean(
+      editingProductSnapshot
+      && Number(p.price) !== Number(editingProductSnapshot.price),
+    );
+    const variants = buildProductVariantPayloads(productBasePriceChanged);
+    const catalogChanged = productCatalogChanged(variants) || productBasePriceChanged;
     const payload: Record<string, unknown> = {
       ...(p as Record<string, unknown>),
       ...aiData,
