@@ -2814,8 +2814,13 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             fd.append("sku", sku);
             fd.append("mode", "main");
             const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: fd });
-            const d = await r.json();
-            const results = (d.results || []) as ApiResult[];
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(String(d.error || "主图上传失败"));
+            const results = (Array.isArray(d.results) ? d.results : []) as ApiResult[];
+            if (results.length === 0) {
+              imgFail++;
+              imgErrors.push(String(d.error || "主图上传没有返回文件结果"));
+            }
             for (const res of results) {
               if (res.ok) imgOk++;
               else { imgFail++; if (res.message) imgErrors.push(res.message); }
@@ -2827,8 +2832,13 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             fd.append("sku", sku);
             fd.append("mode", "gallery");
             const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: fd });
-            const d = await r.json();
-            const results = (d.results || []) as ApiResult[];
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(String(d.error || "商品多图上传失败"));
+            const results = (Array.isArray(d.results) ? d.results : []) as ApiResult[];
+            if (results.length === 0) {
+              imgFail += newGalleryFiles.length;
+              imgErrors.push(String(d.error || "商品多图上传没有返回文件结果"));
+            }
             for (const res of results) {
               if (res.ok) imgOk++;
               else { imgFail++; if (res.message) imgErrors.push(res.message); }
@@ -3038,6 +3048,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         const mainResult = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: main });
         const mainData = await readJson(mainResult, "主图上传失败");
         if (!mainResult.ok) throw new Error(mainData.error || "主图上传失败");
+        {
+          const results = (Array.isArray(mainData.results) ? mainData.results : []) as ApiResult[];
+          if (results.length === 0 || results.some(result => !result.ok)) {
+            throw new Error(results.find(result => !result.ok)?.message || mainData.error || "主图上传失败");
+          }
+        }
         if (quickBackFiles.length > 0) {
           const gallery = new FormData();
           quickBackFiles.forEach(file => gallery.append("images", file));
@@ -3046,6 +3062,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           const galleryResult = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: gallery });
           const galleryData = await readJson(galleryResult, "多图上传失败");
           if (!galleryResult.ok) throw new Error(galleryData.error || "多图上传失败");
+          const results = (Array.isArray(galleryData.results) ? galleryData.results : []) as ApiResult[];
+          if (results.length === 0 || results.some(result => !result.ok)) {
+            throw new Error(results.find(result => !result.ok)?.message || galleryData.error || "多图上传失败");
+          }
         }
       } catch (error) {
         imageFailure = error instanceof Error ? error.message : "图片上传失败";
