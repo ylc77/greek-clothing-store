@@ -24,9 +24,37 @@ import { getSupabaseBrowserAuthClient } from "@/lib/supabase";
 import { skroutzReadinessIssues } from "@/lib/skroutz-readiness";
 import { PosOperationIdStore } from "@/lib/pos-operation-id";
 import { InventoryOperationIdStore, InventoryOperationStateError } from "@/lib/inventory-operation-id";
+import {
+  ProductOperationIdStore,
+  ProductOperationStateError,
+  createProductOperationFingerprint,
+} from "@/lib/product-operation-id";
 
 /* ── Types ───────────────────────────────────────────────── */
-type AdminProduct = ProductFormData & { id: string; size_stock?: Record<string, number> | null; variant_procurement?: Record<string, VariantProcurement> };
+type AdminProductVariant = {
+  id: string;
+  variant_sku: string;
+  barcode: string | null;
+  size: string | null;
+  color: string | null;
+  price: number | null;
+  cost_price: number | null;
+  supplier_id: string | null;
+  supplier_sku: string | null;
+  reorder_level: number | null;
+  active: boolean;
+  sort_order: number;
+  quantity_on_hand: number;
+  quantity_reserved: number;
+};
+type AdminProduct = ProductFormData & {
+  id: string;
+  metadata_version: number;
+  structure_version: number;
+  size_stock?: Record<string, number> | null;
+  variant_procurement?: Record<string, VariantProcurement>;
+  variants?: AdminProductVariant[];
+};
 type ApiResult = { rowNumber?: number; fileName?: string; sku: string; ok: boolean; message: string; imageUrl?: string; translated?: boolean; translateError?: string };
 class AdminApiError extends Error {
   readonly status: number;
@@ -751,6 +779,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const [loginLoading, setLoginLoading] = useState(false);
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [form, setForm] = useState<ProductFormData>(emptyProduct); const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingProductSnapshot, setEditingProductSnapshot] = useState<AdminProduct | null>(null);
   const [loading, setLoading] = useState(false); const [translating, setTranslating] = useState(false);
   const [aiMetaLoading, setAiMetaLoading] = useState(false);
   const [aiCopyLoading, setAiCopyLoading] = useState(false);
@@ -819,6 +848,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const [adjustInventory, setAdjustInventory] = useState<InventoryAdjustState>({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" });
   const inventoryOperationIdsRef = useRef<InventoryOperationIdStore | null>(null);
   const quickSellOperationIdsRef = useRef<InventoryOperationIdStore | null>(null);
+  const productOperationIdsRef = useRef<ProductOperationIdStore | null>(null);
   const [labelSearch, setLabelSearch] = useState("");
   const [labelCategory, setLabelCategory] = useState("");
   const [labelSubcategory, setLabelSubcategory] = useState("");
@@ -1363,6 +1393,39 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       quickSellOperationIdsRef.current = new InventoryOperationIdStore("quick-sell", window.sessionStorage);
     }
     return quickSellOperationIdsRef.current;
+  }
+
+  function productOperationIds() {
+    if (!productOperationIdsRef.current) {
+      productOperationIdsRef.current = new ProductOperationIdStore("product", window.sessionStorage);
+    }
+    return productOperationIdsRef.current;
+  }
+
+  function handleProductOperationFailure(scope: string, operationId: string, error: unknown) {
+    if (error instanceof AdminApiError && error.operationSafeToDiscard) {
+      try { productOperationIds().discardKnownNoWrite(scope, operationId); } catch {}
+      return;
+    }
+    if (error instanceof ProductOperationStateError && error.code !== "OPERATION_STORAGE_UNAVAILABLE") {
+      setConfirm({
+        open: true,
+        title: "重置未确认的商品操作？",
+        desc: `${error.message} 只有确认已核对商品、Variant、库存余额和流水后，才应重置并生成新的业务 ID。`,
+        confirmText: "我已核对，重置操作",
+        variant: "danger",
+        action: () => {
+          try {
+            productOperationIds().cancel(scope);
+            toast("未确认的商品业务 ID 已重置，请重新提交。", "ok");
+          } catch (resetError) {
+            toast(resetError instanceof Error ? resetError.message : "无法重置商品操作状态", "err");
+          } finally {
+            setConfirm(c => ({ ...c, open: false }));
+          }
+        },
+      });
+    }
   }
 
   function handleInventoryOperationFailure(
@@ -2332,9 +2395,33 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     });
   }
   function generateNextSku() { const prefix = skuPrefix(form.category, form.subcategory); const existing = products.filter(p => p.sku.startsWith(prefix)); let max = 0; for (const p of existing) { const rest = p.sku.slice(prefix.length); const n = parseInt(rest, 10); if (!isNaN(n) && n > max) max = n; } const next = String(max + 1).padStart(3, "0"); updateField("sku", prefix + next); toast(`SKU 已生成: ${prefix + next}`); }
-  function loadSizeStock(p: AdminProduct) { const ss = (p as Record<string,unknown>).size_stock; if (ss && typeof ss === 'object' && !Array.isArray(ss)) { const rec: Record<string,number> = {}; for (const [k,v] of Object.entries(ss as Record<string,unknown>)) { if (typeof v === 'number') rec[k.toUpperCase()] = v; } setSizeStock(rec); } else { setSizeStock((p.size_system || inferredSizeSystem(p.category)) === "one_size" ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(Number(p.stock) || 0)) } : {}); } }
+  function loadSizeStock(p: AdminProduct) {
+    if (Array.isArray(p.variants) && p.variants.length > 0) {
+      const authoritative: Record<string, number> = {};
+      for (const variant of p.variants) {
+        if (variant.active === false) continue;
+        const size = String(variant.size || "ONE SIZE").trim().toUpperCase();
+        authoritative[size] = Math.max(0, Math.trunc(Number(variant.quantity_on_hand) || 0));
+      }
+      setSizeStock(authoritative);
+      return;
+    }
+
+    const legacy = (p as Record<string, unknown>).size_stock;
+    if (legacy && typeof legacy === "object" && !Array.isArray(legacy)) {
+      const fallback: Record<string, number> = {};
+      for (const [size, quantity] of Object.entries(legacy as Record<string, unknown>)) {
+        if (typeof quantity === "number") fallback[size.toUpperCase()] = quantity;
+      }
+      setSizeStock(fallback);
+      return;
+    }
+    setSizeStock((p.size_system || inferredSizeSystem(p.category)) === "one_size"
+      ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(Number(p.stock) || 0)) }
+      : {});
+  }
   function formFromProduct(p: AdminProduct): ProductFormData { return { sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, size_system:p.size_system || inferredSizeSystem(p.category), image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, supplier_id:p.supplier_id || "", supplier_style_code:p.supplier_style_code || "", barcode:p.barcode, ean:p.ean || "", mpn:p.mpn || "", vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active, material: p.material || "", fiber_composition_gr:p.fiber_composition_gr || "", fiber_composition_en:p.fiber_composition_en || "", care_instructions_gr:p.care_instructions_gr || "", care_instructions_en:p.care_instructions_en || "", country_of_origin:p.country_of_origin || "", manufacturer_name:p.manufacturer_name || "", manufacturer_contact:p.manufacturer_contact || "", eu_responsible_person:p.eu_responsible_person || "", product_safety_notes_gr:p.product_safety_notes_gr || "", product_safety_notes_en:p.product_safety_notes_en || "", fit_type: (p as Record<string,unknown>).fit_type as string || "regular", ai_keywords: Array.isArray((p as Record<string,unknown>).ai_keywords) ? ((p as Record<string,unknown>).ai_keywords as string[]).join(",") : String((p as Record<string,unknown>).ai_keywords || ""), style_tags: Array.isArray((p as Record<string,unknown>).style_tags) ? ((p as Record<string,unknown>).style_tags as string[]).join(",") : String((p as Record<string,unknown>).style_tags || ""), size_chart: typeof (p as Record<string,unknown>).size_chart === "object" ? JSON.stringify((p as Record<string,unknown>).size_chart) : String((p as Record<string,unknown>).size_chart || ""), material_verified: (p as Record<string,unknown>).material_verified === true }; }
-  function openProductForm(p: AdminProduct) { const nextForm = formFromProduct(p); setEditingId(p.id); setForm(nextForm); loadSizeStock(p); setVariantProcurement(p.variant_procurement || {}); setShowSizeChart(!!nextForm.size_chart.trim()); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); return nextForm; }
+  function openProductForm(p: AdminProduct) { const nextForm = formFromProduct(p); setEditingId(p.id); setEditingProductSnapshot(p); setForm(nextForm); loadSizeStock(p); setVariantProcurement(p.variant_procurement || {}); setShowSizeChart(!!nextForm.size_chart.trim()); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); return nextForm; }
   function startEdit(p: AdminProduct) { openProductForm(p); }
   function focusAdminField(field: string) {
     window.setTimeout(() => {
@@ -2370,7 +2457,137 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     openProductForm(product);
     focusAdminField(fieldMap[issueCode] || "sku");
   }
-  function copyProduct(p: AdminProduct) { setEditingId(null); setForm({ ...p, sku: p.sku + "-COPY" }); loadSizeStock(p); setVariantProcurement(p.variant_procurement || {}); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  function copyProduct(p: AdminProduct) { setEditingId(null); setEditingProductSnapshot(null); setForm({ ...p, sku: p.sku + "-COPY" }); loadSizeStock(p); setVariantProcurement(p.variant_procurement || {}); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
+
+  function productVariantSku(productSku: string, size: string) {
+    const normalized = size
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return !normalized || normalized === "ONE-SIZE" ? productSku.trim() : `${productSku.trim()}-${normalized}`;
+  }
+
+  function buildProductVariantPayloads(productBasePriceChanged = false) {
+    const originalVariants = editingProductSnapshot?.variants || [];
+    return sortSizeKeys(Object.keys(sizeStock)).map((size, index) => {
+      const normalizedSize = size.trim().toUpperCase();
+      const original = originalVariants.find(variant =>
+        String(variant.size || "ONE SIZE").trim().toUpperCase() === normalizedSize,
+      );
+      const procurement = variantProcurement[normalizedSize] || variantProcurement[size];
+      return {
+        ...(original?.id ? { id: original.id } : {}),
+        variant_sku: original?.variant_sku || productVariantSku(form.sku, normalizedSize),
+        barcode: original?.barcode || (normalizedSize === "ONE SIZE" ? form.barcode.trim() : ""),
+        size: normalizedSize,
+        color: form.color.trim(),
+        quantity: Math.max(0, Math.trunc(Number(sizeStock[size]) || 0)),
+        ...(original ? { expected_on_hand: Math.max(0, Math.trunc(Number(original.quantity_on_hand) || 0)) } : {}),
+        price: original
+          ? (productBasePriceChanged
+              && (original.price === null
+                || original.price === undefined
+                || Number(original.price) === Number(editingProductSnapshot?.price))
+            ? Number(form.price)
+            : original.price ?? null)
+          : Number(form.price),
+        supplier_id: form.supplier_id || null,
+        supplier_sku: procurement?.supplier_sku?.trim() || "",
+        cost_price: procurement?.cost_price ?? null,
+        reorder_level: procurement?.reorder_level ?? null,
+        active: true,
+        sort_order: index,
+      };
+    });
+  }
+
+  function productCatalogChanged(nextVariants: ReturnType<typeof buildProductVariantPayloads>) {
+    if (!editingProductSnapshot) return true;
+    const original = (editingProductSnapshot.variants || [])
+      .filter(variant => variant.active !== false)
+      .sort((left, right) => left.sort_order - right.sort_order || String(left.size).localeCompare(String(right.size)))
+      .map((variant, index) => ({
+        id: variant.id,
+        variant_sku: variant.variant_sku,
+        barcode: variant.barcode || "",
+        size: String(variant.size || "ONE SIZE").trim().toUpperCase(),
+        color: variant.color || "",
+        quantity: Math.max(0, Math.trunc(Number(variant.quantity_on_hand) || 0)),
+        price: variant.price ?? null,
+        supplier_id: variant.supplier_id || null,
+        supplier_sku: variant.supplier_sku?.trim() || "",
+        cost_price: variant.cost_price ?? null,
+        reorder_level: variant.reorder_level ?? null,
+        active: true,
+        sort_order: Number.isFinite(variant.sort_order) ? variant.sort_order : index,
+      }));
+    const desired = nextVariants.map((variant) => ({
+      id: variant.id || null,
+      variant_sku: variant.variant_sku,
+      barcode: variant.barcode,
+      size: variant.size,
+      color: variant.color,
+      quantity: variant.quantity,
+      price: variant.price,
+      supplier_id: variant.supplier_id,
+      supplier_sku: variant.supplier_sku,
+      cost_price: variant.cost_price,
+      reorder_level: variant.reorder_level,
+      active: variant.active,
+      sort_order: variant.sort_order,
+    }));
+    return createProductOperationFingerprint(original) !== createProductOperationFingerprint(desired);
+  }
+
+  function resetProductEditor() {
+    setForm(emptyProduct);
+    setEditingId(null);
+    setEditingProductSnapshot(null);
+    setSizeStock({});
+    setVariantProcurement({});
+    setNewMainFile(null);
+    setNewGalleryFiles([]);
+  }
+
+  function cancelProductEditor() {
+    const scope = editingId ? `editor:update:${editingId}` : "editor:create";
+    try { productOperationIds().cancel(scope); } catch (error) {
+      toast(error instanceof Error ? error.message : "无法清除商品操作状态。", "err");
+      return;
+    }
+    resetProductEditor();
+  }
+
+  async function saveProductMetadata(
+    product: AdminProduct,
+    patch: Record<string, unknown>,
+    scopeName: string,
+  ) {
+    const scope = `${scopeName}:${product.id}`;
+    const requestPayload = {
+      ...patch,
+      expectedMetadataVersion: Number(product.metadata_version),
+      expectedStructureVersion: Number(product.structure_version),
+    };
+    let operationId = "";
+    try {
+      const fingerprint = createProductOperationFingerprint(requestPayload);
+      operationId = productOperationIds().getOrCreate(scope, fingerprint);
+      productOperationIds().markAttempt(scope, operationId);
+      const result = await api(`/api/admin/products/${product.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ ...requestPayload, clientRequestId: operationId }),
+      });
+      try { productOperationIds().complete(scope, operationId); } catch (storageError) {
+        toast(storageError instanceof Error ? storageError.message : "商品已保存，但本地业务 ID 清理失败。", "err");
+      }
+      return result;
+    } catch (error) {
+      handleProductOperationFailure(scope, operationId, error);
+      throw error;
+    }
+  }
   function addSize(sz: string) { setSizeStock(prev => { if (sz in prev) return prev; return { ...prev, [sz]: 0 }; }); setVariantProcurement(prev => prev[sz] ? prev : { ...prev, [sz]: { supplier_sku: "", cost_price: null, reorder_level: null } }); }
   function toggleSizeSummary() { setShowSizeSummary(prev => !prev); }
   function addMissingSizes() { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); if (parts.length === 0) { toast("sizes 字段为空", "err"); return; } setSizeStock(prev => { let added = 0; const next = { ...prev }; for (const s of parts) { if (!(s in next)) { next[s] = 0; added++; } } if (added > 0) { toast(`已补充 ${added} 个缺失尺码，已有库存不变`); return next; } toast("所有 sizes 尺码已在库存表中"); return prev; }); }
@@ -2477,7 +2694,19 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     try {
       for (const product of targets) {
         try {
-          const payload: Record<string, unknown> = { ...product };
+          const payload: Record<string, unknown> = {
+            name_cn: product.name_cn,
+            name_en: product.name_en,
+            name_gr: product.name_gr,
+            description_cn: product.description_cn,
+            description_en: product.description_en,
+            description_gr: product.description_gr,
+            fit_type: product.fit_type,
+            material: product.material,
+            ai_keywords: product.ai_keywords,
+            style_tags: product.style_tags,
+            material_verified: product.material_verified,
+          };
           const hasChinese = hasText(product.name_cn) || hasText(product.description_cn);
           if (hasChinese && (!hasText(product.name_en) || !hasText(product.description_en) || !hasText(product.name_gr) || !hasText(product.description_gr))) {
             const translated = await api("/api/admin/translate", { method: "POST", body: JSON.stringify({ name_cn: product.name_cn, description_cn: product.description_cn }) }) as TranslationResult;
@@ -2499,7 +2728,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
             if (!hasStyleTags && d.style_tags) payload.style_tags = String(d.style_tags).split(/[,，\s]+/).filter(Boolean);
             payload.material_verified = false;
           }
-          await api(`/api/admin/products/${product.id}`, { method: "PUT", body: JSON.stringify(payload) });
+          await saveProductMetadata(product, payload, "ai-complete");
           ok++;
         } catch {
           fail++;
@@ -2516,11 +2745,158 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   /* ── Submit / Delete ──────────────────────────────────── */
   async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!form.sku.trim()) { toast("请填写 SKU", "err"); return; } if (!form.name_cn.trim() && !form.name_en.trim() && !form.name_gr.trim()) { toast("请至少填写一个语言的商品名", "err"); return; } if (form.size_chart.trim()) { try { JSON.parse(form.size_chart.trim()); } catch { toast("尺码表 JSON 格式不正确，请检查", "err"); return; } }
 if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品没有图片", desc: "该商品没有主图，是否继续保存？", confirmText: "继续保存", variant: "default", action: () => { setConfirm(c => ({ ...c, open: false })); doSubmit(); } }); return; } doSubmit(); }
-  async function doSubmit() { setLoading(true); const p = normalizeProduct(form); const sizeKeys = Object.keys(sizeStock); if (sizeKeys.length === 0) { toast("请先在尺码库存里选择尺码并填写库存", "err"); setLoading(false); return; } const aiData: Record<string, unknown> = {}; if (p.ai_keywords.trim()) aiData.ai_keywords = p.ai_keywords.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.style_tags.trim()) aiData.style_tags = p.style_tags.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); if (p.size_chart.trim()) aiData.size_chart = JSON.parse(p.size_chart.trim()); if (p.fit_type) aiData.fit_type = p.fit_type; aiData.material_verified = p.material_verified === true; const totalStock = stockTotal(sizeStock); const payload = { ...(p as Record<string,unknown>), ...aiData, sizes: sortSizeKeys(sizeKeys).join(","), size_stock: sizeStock, stock: totalStock, variant_procurement: variantProcurement }; const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products"; const method = editingId ? "PUT" : "POST"; try { const saved = await api(url, { method, body: JSON.stringify(payload) }); toast(editingId ? "商品已更新" : "商品已新增"); if (!editingId && (newMainFile || newGalleryFiles.length > 0)) { const sku = saved?.product?.sku || form.sku; let imgOk = 0; let imgFail = 0; const imgErrors: string[] = []; try { if (newMainFile) { const fd = new FormData(); fd.append("images", newMainFile); fd.append("sku", sku); fd.append("mode", "main"); const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (newGalleryFiles.length > 0) { const fd = new FormData(); newGalleryFiles.forEach(f => fd.append("images", f)); fd.append("sku", sku); fd.append("mode", "gallery"); const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: fd }); const d = await r.json(); const results = (d.results||[]) as ApiResult[]; for (const res of results) { if (res.ok) imgOk++; else { imgFail++; if (res.message) imgErrors.push(res.message); } } } if (imgFail > 0) { toast(`商品已保存。图片：成功 ${imgOk}，失败 ${imgFail}${imgErrors.length > 0 ? `（${imgErrors.join("；")}）` : ""}`, "err"); } else { toast("商品已保存，图片已上传"); } } catch { toast("商品已保存，图片上传失败", "err"); } setNewMainFile(null); setNewGalleryFiles([]); } setForm(emptyProduct); setEditingId(null); setSizeStock({}); setVariantProcurement({}); setTab("dashboard"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "保存失败", "err"); } finally { setLoading(false); } }
+  async function doSubmit() {
+    setLoading(true);
+    const p = normalizeProduct(form);
+    const sizeKeys = Object.keys(sizeStock);
+    if (sizeKeys.length === 0) {
+      toast("请先在尺码库存里选择尺码并填写库存", "err");
+      setLoading(false);
+      return;
+    }
+
+    const aiData: Record<string, unknown> = {};
+    if (p.ai_keywords.trim()) aiData.ai_keywords = p.ai_keywords.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean);
+    if (p.style_tags.trim()) aiData.style_tags = p.style_tags.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean);
+    if (p.size_chart.trim()) aiData.size_chart = JSON.parse(p.size_chart.trim());
+    if (p.fit_type) aiData.fit_type = p.fit_type;
+    aiData.material_verified = p.material_verified === true;
+
+    const productBasePriceChanged = Boolean(
+      editingProductSnapshot
+      && Number(p.price) !== Number(editingProductSnapshot.price),
+    );
+    const variants = buildProductVariantPayloads(productBasePriceChanged);
+    const catalogChanged = productCatalogChanged(variants) || productBasePriceChanged;
+    const payload: Record<string, unknown> = {
+      ...(p as Record<string, unknown>),
+      ...aiData,
+      sizes: sortSizeKeys([...sizeKeys]).join(","),
+      size_stock: sizeStock,
+      stock: stockTotal(sizeStock),
+      variant_procurement: variantProcurement,
+      ...(editingId
+        ? {
+            expectedMetadataVersion: Number(editingProductSnapshot?.metadata_version),
+            expectedStructureVersion: Number(editingProductSnapshot?.structure_version),
+            ...(catalogChanged ? { variants } : {}),
+          }
+        : { variants }),
+    };
+    const scope = editingId ? `editor:update:${editingId}` : "editor:create";
+    const fingerprint = createProductOperationFingerprint(payload);
+    const url = editingId ? `/api/admin/products/${editingId}` : "/api/admin/products";
+    const method = editingId ? "PUT" : "POST";
+    let operationId = "";
+
+    try {
+      operationId = productOperationIds().getOrCreate(scope, fingerprint);
+      productOperationIds().markAttempt(scope, operationId);
+      const saved = await api(url, {
+        method,
+        body: JSON.stringify({ ...payload, clientRequestId: operationId }),
+      });
+      try { productOperationIds().complete(scope, operationId); } catch (storageError) {
+        toast(storageError instanceof Error ? storageError.message : "商品已保存，但本地业务 ID 清理失败。", "err");
+      }
+      toast(editingId ? "商品已更新" : "商品已新增");
+      if (saved?.cacheWarning) toast(String(saved.cacheWarning), "err");
+
+      if (!editingId && (newMainFile || newGalleryFiles.length > 0)) {
+        const sku = saved?.product?.sku || form.sku;
+        let imgOk = 0;
+        let imgFail = 0;
+        const imgErrors: string[] = [];
+        try {
+          if (newMainFile) {
+            const fd = new FormData();
+            fd.append("images", newMainFile);
+            fd.append("sku", sku);
+            fd.append("mode", "main");
+            const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: fd });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(String(d.error || "主图上传失败"));
+            const results = (Array.isArray(d.results) ? d.results : []) as ApiResult[];
+            if (results.length === 0) {
+              imgFail++;
+              imgErrors.push(String(d.error || "主图上传没有返回文件结果"));
+            }
+            for (const res of results) {
+              if (res.ok) imgOk++;
+              else { imgFail++; if (res.message) imgErrors.push(res.message); }
+            }
+          }
+          if (newGalleryFiles.length > 0) {
+            const fd = new FormData();
+            newGalleryFiles.forEach(file => fd.append("images", file));
+            fd.append("sku", sku);
+            fd.append("mode", "gallery");
+            const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: fd });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(String(d.error || "商品多图上传失败"));
+            const results = (Array.isArray(d.results) ? d.results : []) as ApiResult[];
+            if (results.length === 0) {
+              imgFail += newGalleryFiles.length;
+              imgErrors.push(String(d.error || "商品多图上传没有返回文件结果"));
+            }
+            for (const res of results) {
+              if (res.ok) imgOk++;
+              else { imgFail++; if (res.message) imgErrors.push(res.message); }
+            }
+          }
+          if (imgFail > 0) {
+            toast(`商品已保存。图片：成功 ${imgOk}，失败 ${imgFail}${imgErrors.length > 0 ? `（${imgErrors.join("；")}）` : ""}`, "err");
+          } else {
+            toast("商品已保存，图片已上传");
+          }
+        } catch {
+          toast("商品已保存，图片上传失败；请从图片管理重试，不要重复新增商品。", "err");
+        }
+      }
+
+      resetProductEditor();
+      setTab("dashboard");
+      await loadProducts();
+    } catch (error) {
+      handleProductOperationFailure(scope, operationId, error);
+      toast(error instanceof Error ? error.message : "保存失败", "err");
+    } finally {
+      setLoading(false);
+    }
+  }
   function confirmDeleteProduct(p: AdminProduct) { setConfirm({ open: true, title: "确认下架商品？", desc: `下架 ${p.sku} 后商品将不会在前台显示，但数据会保留，之后可以恢复上架。`, confirmText: "确认下架", variant: "danger", action: () => executeDelete(p) }); }
-  async function executeDelete(p: AdminProduct) { setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "DELETE" }); toast("商品已下架"); setConfirm(c => ({ ...c, open: false })); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "下架失败", "err"); } finally { setLoading(false); } }
+  async function executeDelete(p: AdminProduct) {
+    setLoading(true);
+    const scope = `archive:${p.id}`;
+    const requestPayload = {
+      expectedMetadataVersion: Number(p.metadata_version),
+      expectedStructureVersion: Number(p.structure_version),
+    };
+    let operationId = "";
+    try {
+      const fingerprint = createProductOperationFingerprint(requestPayload);
+      operationId = productOperationIds().getOrCreate(scope, fingerprint);
+      productOperationIds().markAttempt(scope, operationId);
+      const result = await api(`/api/admin/products/${p.id}`, {
+        method: "DELETE",
+        body: JSON.stringify({ ...requestPayload, clientRequestId: operationId }),
+      });
+      try { productOperationIds().complete(scope, operationId); } catch (storageError) {
+        toast(storageError instanceof Error ? storageError.message : "商品已下架，但本地业务 ID 清理失败。", "err");
+      }
+      if (result?.cacheWarning) toast(String(result.cacheWarning), "err");
+      toast("商品已下架");
+      setConfirm(c => ({ ...c, open: false }));
+      await loadProducts();
+    } catch (error) {
+      handleProductOperationFailure(scope, operationId, error);
+      toast(error instanceof Error ? error.message : "下架失败", "err");
+    } finally {
+      setLoading(false);
+    }
+  }
   function confirmRestoreProduct(p: AdminProduct) { setConfirm({ open: true, title: "确认恢复上架？", desc: `恢复上架 ${p.sku} 后商品会重新在前台显示。`, confirmText: "确认恢复", variant: "success", action: () => executeRestore(p) }); }
-  async function executeRestore(p: AdminProduct) { setLoading(true); try { await api(`/api/admin/products/${p.id}`, { method: "PUT", body: JSON.stringify({ ...p, is_active: true }) }); toast("商品已恢复上架"); setConfirm(c => ({ ...c, open: false })); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "恢复失败", "err"); } finally { setLoading(false); } }
+  async function executeRestore(p: AdminProduct) { setLoading(true); try { const result = await saveProductMetadata(p, { is_active: true }, "restore"); if (result?.cacheWarning) toast(String(result.cacheWarning), "err"); toast("商品已恢复上架"); setConfirm(c => ({ ...c, open: false })); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "恢复失败", "err"); } finally { setLoading(false); } }
   async function permanentDelete(p: AdminProduct) { const input = window.prompt(`永久删除商品 ${p.sku}？\n\n此操作不可恢复！请输入 DELETE 确认：`); if (input !== "DELETE") { if (input !== null) toast("输入错误，已取消", "err"); return; } setLoading(true); try { await api(`/api/admin/products/${p.id}/permanent`, { method: "DELETE" }); toast("商品已永久删除"); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "删除失败", "err"); } finally { setLoading(false); } }
 
   function toggleSelect(id: string) { setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }
@@ -2528,9 +2904,52 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   function dismissConfirm() { setConfirm({ open: false, title: "", desc: "", confirmText: "", variant: "default", action: () => {} }); }
 
   function confirmBatch(isActive: boolean) { const ids = Array.from(selectedIds); if (ids.length === 0) { toast("请先选择商品", "err"); return; } setConfirm({ open: true, title: isActive ? "确认批量恢复上架？" : "确认批量下架？", desc: isActive ? `你将恢复上架选中的 ${ids.length} 个商品。恢复后商品会重新在前台显示。` : `你将下架选中的 ${ids.length} 个商品。下架后商品不会在前台显示，但数据会保留，可后续恢复上架。`, confirmText: isActive ? "确认恢复" : "确认下架", variant: isActive ? "success" : "danger", action: () => executeBatch(isActive, ids) }); }
-  async function executeBatch(isActive: boolean, ids: string[]) { const label = isActive ? "恢复上架" : "下架"; setLoading(true); setConfirm(c => ({ ...c, open: true, confirmText: "处理中..." })); try { const r = await fetch("/api/admin/products/bulk", { method: "PUT", headers: { "Content-Type": "application/json", ...adminAuthHeaders() }, body: JSON.stringify({ ids, is_active: isActive }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "批量操作失败"); toast(`已${label} ${ids.length} 个商品`); setSelectedIds(new Set()); } catch (er) { toast(er instanceof Error ? er.message : `批量${label}失败`, "err"); } finally { setLoading(false); setConfirm({ open: false, title: "", desc: "", confirmText: "", variant: "default", action: () => {} }); } }
+  async function executeBatch(isActive: boolean, ids: string[]) {
+    const label = isActive ? "恢复上架" : "下架";
+    const items = ids
+      .map(id => products.find(product => product.id === id))
+      .filter((product): product is AdminProduct => Boolean(product))
+      .map(product => ({
+        productId: Number(product.id),
+        expectedMetadataVersion: Number(product.metadata_version),
+        expectedStructureVersion: Number(product.structure_version),
+        isActive,
+      }))
+      .sort((left, right) => left.productId - right.productId);
+    if (items.length !== ids.length) {
+      toast("部分商品已不在当前列表，请刷新后重试。", "err");
+      return;
+    }
 
-  async function batchGenerateAiMeta() { const ids = Array.from(selectedIds); if (ids.length === 0) { toast("请先选择商品", "err"); return; } const targets = products.filter(p => ids.includes(p.id) && (p.name_cn?.trim() || p.name_en?.trim())); const skipped = ids.length - targets.length; setLoading(true); let ok = 0; let fail = 0; for (const p of targets) { try { const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", ...adminAuthHeaders() }, body: JSON.stringify({ product: { name_cn: p.name_cn, name_en: p.name_en, name_gr: p.name_gr, description_en: (p as Record<string,unknown>).description_en, category: p.category, subcategory: p.subcategory, price: p.price, sizes: p.sizes } }) }); const d = await r.json(); if (r.ok) { const payload: Record<string, unknown> = {}; if (d.fit_type) payload.fit_type = d.fit_type; if (d.material) payload.material = d.material; payload.material_verified = false; if (d.ai_keywords) { const kw = d.ai_keywords.split(/[,，\s]+/).filter(Boolean); payload.ai_keywords = kw; } if (d.style_tags) { const st = d.style_tags.split(/[,，\s]+/).filter(Boolean); payload.style_tags = st; } await api(`/api/admin/products/${p.id}`, { method: "PUT", body: JSON.stringify({ ...p, ...payload }) }); ok++; } else { fail++; } } catch { fail++; } } if (skipped > 0) toast(`完成：成功 ${ok}，失败 ${fail}。跳过 ${skipped} 个（无名称）`); else toast(`完成：成功 ${ok}，失败 ${fail}`); setSelectedIds(new Set()); setLoading(false); await loadProducts(); }
+    const scope = "bulk:status";
+    const fingerprint = createProductOperationFingerprint(items);
+    let operationId = "";
+    setLoading(true);
+    setConfirm(c => ({ ...c, open: true, confirmText: "处理中..." }));
+    try {
+      operationId = productOperationIds().getOrCreate(scope, fingerprint);
+      productOperationIds().markAttempt(scope, operationId);
+      const result = await api("/api/admin/products/bulk", {
+        method: "PUT",
+        body: JSON.stringify({ clientRequestId: operationId, items }),
+      });
+      try { productOperationIds().complete(scope, operationId); } catch (storageError) {
+        toast(storageError instanceof Error ? storageError.message : "批量操作已完成，但本地业务 ID 清理失败。", "err");
+      }
+      if (result?.cacheWarning) toast(String(result.cacheWarning), "err");
+      toast(`已${label} ${items.length} 个商品`);
+      setSelectedIds(new Set());
+      await loadProducts();
+    } catch (error) {
+      handleProductOperationFailure(scope, operationId, error);
+      toast(error instanceof Error ? error.message : `批量${label}失败`, "err");
+    } finally {
+      setLoading(false);
+      setConfirm({ open: false, title: "", desc: "", confirmText: "", variant: "default", action: () => {} });
+    }
+  }
+
+  async function batchGenerateAiMeta() { const ids = Array.from(selectedIds); if (ids.length === 0) { toast("请先选择商品", "err"); return; } const targets = products.filter(p => ids.includes(p.id) && (p.name_cn?.trim() || p.name_en?.trim())); const skipped = ids.length - targets.length; setLoading(true); let ok = 0; let fail = 0; for (const p of targets) { try { const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", ...adminAuthHeaders() }, body: JSON.stringify({ product: { name_cn: p.name_cn, name_en: p.name_en, name_gr: p.name_gr, description_en: (p as Record<string,unknown>).description_en, category: p.category, subcategory: p.subcategory, price: p.price, sizes: p.sizes } }) }); const d = await r.json(); if (r.ok) { const payload: Record<string, unknown> = {}; if (d.fit_type) payload.fit_type = d.fit_type; if (d.material) payload.material = d.material; payload.material_verified = false; if (d.ai_keywords) { const kw = d.ai_keywords.split(/[,，\s]+/).filter(Boolean); payload.ai_keywords = kw; } if (d.style_tags) { const st = d.style_tags.split(/[,，\s]+/).filter(Boolean); payload.style_tags = st; } await saveProductMetadata(p, payload, "ai-meta"); ok++; } else { fail++; } } catch { fail++; } } if (skipped > 0) toast(`完成：成功 ${ok}，失败 ${fail}。跳过 ${skipped} 个（无名称）`); else toast(`完成：成功 ${ok}，失败 ${fail}`); setSelectedIds(new Set()); setLoading(false); await loadProducts(); }
 
   /* ── CSV ──────────────────────────────────────────────── */
   async function handleCsv(f: File | null) { setCsvResults([]); if (!f) { setCsvRows([]); return; } setCsvRows(parseCsv(await f.text())); }
@@ -2552,6 +2971,20 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     const sizeKeys = Object.keys(parsedSizeStock);
     if (sizeKeys.length === 0) { toast("请先选择尺码并填写库存", "err"); return; }
     const stock = sizeKeys.reduce((sum, key) => sum + parsedSizeStock[key], 0);
+    const variants = sortSizeKeys([...sizeKeys]).map((size, index) => ({
+      variant_sku: productVariantSku(sku, size),
+      barcode: "",
+      size: size.trim().toUpperCase(),
+      color: quickAdd.color.trim(),
+      quantity: Math.max(0, Math.trunc(Number(parsedSizeStock[size]) || 0)),
+      price: null,
+      cost_price: null,
+      supplier_id: null,
+      supplier_sku: "",
+      reorder_level: null,
+      active: true,
+      sort_order: index,
+    }));
     const payload: Record<string, unknown> = {
       sku,
       category: quickAdd.category,
@@ -2578,28 +3011,71 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       ai_keywords: quickAdd.ai_keywords.trim() ? quickAdd.ai_keywords.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean) : [],
       style_tags: quickAdd.style_tags.trim() ? quickAdd.style_tags.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean) : [],
       material_verified: false,
+      variants,
     };
+    const scope = "quick-add:create";
+    const fingerprint = createProductOperationFingerprint(payload);
+    let operationId = "";
     setQuickSaving(true);
     try {
-      const saved = await api("/api/admin/products", { method: "POST", body: JSON.stringify(payload) });
-      const savedSku = saved?.product?.sku || sku;
-      const main = new FormData();
-      main.append("images", quickMainFile);
-      main.append("sku", savedSku);
-      main.append("mode", "main");
-      const mainResult = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: main });
-      const mainData = await readJson(mainResult, "主图上传失败");
-      if (!mainResult.ok) throw new Error(mainData.error || "主图上传失败");
-      if (quickBackFiles.length > 0) {
-        const gallery = new FormData();
-        quickBackFiles.forEach(file => gallery.append("images", file));
-        gallery.append("sku", savedSku);
-        gallery.append("mode", "gallery");
-        const galleryResult = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: gallery });
-        const galleryData = await readJson(galleryResult, "多图上传失败");
-        if (!galleryResult.ok) throw new Error(galleryData.error || "多图上传失败");
+      try {
+        operationId = productOperationIds().getOrCreate(scope, fingerprint);
+        productOperationIds().markAttempt(scope, operationId);
+      } catch (error) {
+        handleProductOperationFailure(scope, operationId, error);
+        throw error;
       }
-      toast(`快速上新完成：${savedSku}`);
+      let saved;
+      try {
+        saved = await api("/api/admin/products", {
+          method: "POST",
+          body: JSON.stringify({ ...payload, clientRequestId: operationId }),
+        });
+      } catch (error) {
+        handleProductOperationFailure(scope, operationId, error);
+        throw error;
+      }
+      try { productOperationIds().complete(scope, operationId); } catch (storageError) {
+        toast(storageError instanceof Error ? storageError.message : "商品已新增，但本地业务 ID 清理失败。", "err");
+      }
+      const savedSku = saved?.product?.sku || sku;
+      let imageFailure = "";
+      try {
+        const main = new FormData();
+        main.append("images", quickMainFile);
+        main.append("sku", savedSku);
+        main.append("mode", "main");
+        const mainResult = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: main });
+        const mainData = await readJson(mainResult, "主图上传失败");
+        if (!mainResult.ok) throw new Error(mainData.error || "主图上传失败");
+        {
+          const results = (Array.isArray(mainData.results) ? mainData.results : []) as ApiResult[];
+          if (results.length === 0 || results.some(result => !result.ok)) {
+            throw new Error(results.find(result => !result.ok)?.message || mainData.error || "主图上传失败");
+          }
+        }
+        if (quickBackFiles.length > 0) {
+          const gallery = new FormData();
+          quickBackFiles.forEach(file => gallery.append("images", file));
+          gallery.append("sku", savedSku);
+          gallery.append("mode", "gallery");
+          const galleryResult = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body: gallery });
+          const galleryData = await readJson(galleryResult, "多图上传失败");
+          if (!galleryResult.ok) throw new Error(galleryData.error || "多图上传失败");
+          const results = (Array.isArray(galleryData.results) ? galleryData.results : []) as ApiResult[];
+          if (results.length === 0 || results.some(result => !result.ok)) {
+            throw new Error(results.find(result => !result.ok)?.message || galleryData.error || "多图上传失败");
+          }
+        }
+      } catch (error) {
+        imageFailure = error instanceof Error ? error.message : "图片上传失败";
+      }
+      if (saved?.cacheWarning) toast(String(saved.cacheWarning), "err");
+      if (imageFailure) {
+        toast(`商品 ${savedSku} 已新增，但${imageFailure}。请从图片管理重试，不要重复新增商品。`, "err");
+      } else {
+        toast(`快速上新完成：${savedSku}`);
+      }
       setQuickAdd(emptyQuickAdd);
       setQuickSizeStock({});
       setQuickMainFile(null);
@@ -4957,7 +5433,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mt-4 flex flex-wrap gap-2">
                 {adminFeatures.ai_tools ? <button className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiCopyLoading} onClick={() => void generateProductCopy()} type="button">{aiCopyLoading ? "生成中..." : "AI 生成商品文案"}</button> : null}
                 {adminFeatures.ai_tools ? <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" disabled={translating} onClick={() => void translateProduct()} type="button">{translating ? "翻译中..." : "自动翻译"}</button> : null}
-                {editingId ? <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setVariantProcurement({}); }} type="button">取消编辑</button> : null}
+                {editingId ? <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={cancelProductEditor} type="button">取消编辑</button> : null}
               </div>
             </section>
 
@@ -5096,7 +5572,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <div className="admin-sticky-actions">
               <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:gap-3">
                 <button className="admin-button-primary w-full sm:w-auto" disabled={loading} type="submit">{editingId ? "保存修改" : "新增商品"}</button>
-                {editingId ? <button className="admin-button-secondary w-full sm:w-auto" onClick={() => { setEditingId(null); setForm(emptyProduct); setSizeStock({}); setVariantProcurement({}); setTab("dashboard"); }} type="button">取消编辑</button> : null}
+                {editingId ? <button className="admin-button-secondary w-full sm:w-auto" onClick={() => { cancelProductEditor(); setTab("dashboard"); }} type="button">取消编辑</button> : null}
               </div>
               <div className="flex flex-wrap gap-3">
                 {!form.sku.trim() ? <p className="text-xs text-amber-600">请填写 SKU</p> : null}

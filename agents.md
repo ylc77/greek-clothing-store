@@ -74,6 +74,9 @@ Keep edited Markdown files in UTF-8. Customer-facing documentation should use th
 The root `.env.local` was observed with a UTF-8 BOM, which Supabase CLI 2.109.1 rejected as an invalid environment-variable name. Do not expose or overwrite its secrets while working around this; remove the BOM safely or temporarily exclude the file from CLI startup.
 
 
+Supabase CLI 2.109.1 was also observed printing full legacy API keys from `npx supabase projects api-keys --project-ref ... --output json` even when `--reveal` was not supplied. Never run this command in logged, captured, shared, or CI output. Treat any exposed key as compromised and rotate or revoke it immediately; do not copy the output into reports, screenshots, chat, or repository files.
+
+
 Another workspace may already run local Supabase on the default 5432x ports. If `supabase/config.toml` currently defines dedicated 5532x ports, use that checked-in configuration; do not assume those ports without inspecting the file. Before `supabase start`, confirm Docker Desktop is running and inspect active containers for projects such as `huaren_life_plus`, `restaurant`, or `clothing_web`.
 
 
@@ -164,7 +167,7 @@ Inventory adjustment and Quick Sell writes are RPC-only through `public.inventor
 Quick Sell is an owner-only inventory shortcut and intentionally does not create a POS order, payment, or receipt. Staff must use the POS checkout flow. Both inventory adjustment and Quick Sell must preserve one browser business operation ID across double clicks, timeouts, response loss, and refreshes; an uncertain expired/corrupt ID requires explicit reconciliation before reset.
 
 
-Product create/edit and CSV import still contain historical inventory compatibility writes outside this RPC boundary. Do not describe those paths as transactionally hardened or silently migrate them while working on inventory adjustment / Quick Sell. They need a separately scoped review and regression suite.
+CSV import still contains historical inventory compatibility writes outside this RPC boundary. Product create/edit uses the separate product transaction boundary below; do not silently route CSV through it or describe CSV as transactionally hardened without its own review and regression suite.
 
 
 \---
@@ -183,4 +186,19 @@ The unpublished P1 migrations are intentionally ordered as `20260715100000_harde
 
 
 The standalone Supabase Postgres image used by installation-path tests may finish assigning the `storage` schema to `supabase_storage_admin` before the fixture runs, especially on Ubuntu GitHub runners. The `postgres` role then has no CREATE privilege on that schema even though the same test can pass during a different Windows startup window. Create the fixture `storage.buckets` table through `supabase_storage_admin` and explicitly grant the test `postgres` role the required DML privileges; do not rely on startup timing or change the production migration for this test-only ownership boundary.
+
+
+\---
+
+
+\## 15. Product transaction safety boundary
+
+
+Formal product creation and editing are RPC-only and require `USE_PRODUCT_RPC=true`. A false setting, missing product transaction migration, missing execute privilege, unavailable PostgREST, or RPC failure must fail closed with HTTP 503 before any product business write. Never restore the historical Node.js sequence that wrote `products`, Variants, balances, and movements independently.
+
+
+`inventory_balances` is the authoritative inventory source. Legacy `products.stock` and `products.size_stock` are compatibility projections that may only be updated inside the same product or inventory database transaction. Preserve one product business operation ID across double clicks, timeouts, response loss, and refreshes so a retry reuses the same idempotency key.
+
+
+CSV import, product image upload/deletion, and permanent product deletion are outside this P2 product transaction boundary. Do not claim those paths are transactionally hardened or expand this boundary without their own scoped review, migration, and regression coverage.
 
