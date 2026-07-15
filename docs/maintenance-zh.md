@@ -108,7 +108,7 @@ BASE_URL=https://你的域名.vercel.app npm run check:skroutz
 ### 老客户升级 → migrations
 已有真实数据的客户不能执行完整 `client-init.sql`。正常升级使用尚未应用的 `supabase/migrations`；只有具体升级说明明确要求时才使用 `supabase/patches/` 专用补丁。
 
-`20260714234237_transactional_inventory_operations.sql` 的时间戳早于后提交的 `20260715100000_*` / `20260715100001_*` POS migrations。若数据库已经应用后两者、却缺少前者，普通 dry-run 会拒绝插入较早版本。先确认目标 project ref，再运行 `npx supabase db push --dry-run --include-all`；只有计划列表完全符合预期时才运行 `npx supabase db push --include-all`。不要手动伪造 migration history。
+P1 migrations 已按 `20260715100000` POS checkout、`20260715100001` POS void、`20260715102000` 事务库存、`20260715110000` 开发者凭据的顺序排列。老客户正常使用 `db push --dry-run` 核对计划后再执行 `db push`，不要手工伪造 migration history。
 
 ### 新客户初始化 → client-init.sql
 新客户执行 `supabase/client-init.sql` 后，developer credential 保持未初始化。维护者在自己的电脑运行：

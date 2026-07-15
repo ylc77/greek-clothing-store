@@ -92,7 +92,7 @@ POS 使用前必须确认数据库已包含以下事务 RPC migrations（新客�
 
 `USE_POS_RPC=true` 是正式运行的必需配置。若配置不是 `true`、migration 未部署、函数缺失或 `service_role` 无执行权限，后台会显示红色阻断提示，checkout / void API 返回 503，并且不会创建订单、付款、库存变化或库存流水。系统不会自动回退到非事务 JavaScript 多步写入。
 
-库存调整和“快速售出”还必须包含 `20260714234237_transactional_inventory_operations.sql`。这两个正式写入入口只调用 `inventory_apply_rpc`：库存余额、库存流水、幂等记录和兼容的 `products.stock` / `products.size_stock` 投影在同一个数据库事务内完成。RPC 缺失、不可执行或不可用时 API 返回 503，不会回退到前端或服务端多步写入。
+库存调整和“快速售出”还必须包含 `20260715102000_transactional_inventory_operations.sql`。这两个正式写入入口只调用 `inventory_apply_rpc`：库存余额、库存流水、幂等记录和兼容的 `products.stock` / `products.size_stock` 投影在同一个数据库事务内完成。RPC 缺失、不可执行或不可用时 API 返回 503，不会回退到前端或服务端多步写入。
 
 “快速售出”是仅限 owner 的快速扣库存工具，适合店主临时登记一件已售商品；它不会创建 POS 订单、订单明细或付款记录，也不能代替正常 POS 扫码结账。店员应使用 POS 扫码流程，不能直接调用快速售出 API。
 
@@ -180,19 +180,7 @@ Supabase Storage：
 
 不可以。`supabase/migrations` 是已有客户升级的权威来源；只有部署说明明确指定时才使用专用 patch，避免破坏数据。
 
-批次 2 的 `20260714234237_transactional_inventory_operations.sql` 时间戳早于批次 1 的 `20260715100000_*` / `20260715100001_*`。如果某个测试或客户数据库已经记录了较新的 POS migration、却还没有这份库存 migration，普通 `db push --dry-run` 会安全拒绝插入较早版本。此时不要修补 migration history，也不要执行 `client-init.sql`，而应由维护者先确认已连接正确客户并检查计划：
-
-```powershell
-npx supabase db push --dry-run --include-all
-```
-
-只有输出明确包含预期缺失的 `20260714234237_transactional_inventory_operations.sql` 和本次计划部署的后续 migrations 时，才执行：
-
-```powershell
-npx supabase db push --include-all
-```
-
-若列表出现无法解释的 migration，立即停止并先核对 `supabase_migrations.schema_migrations` 与客户备份。全新客户的 `client-init.sql` 和从零 migration reset 不受这个历史顺序问题影响。
+当前未发布的 P1 migrations 已按依赖关系使用单调递增时间戳：POS checkout、POS void、事务库存、开发者凭据。正常升级使用 `db push --dry-run` 检查计划后再执行 `db push`，不要手工修改 migration history。
 
 ### 图片上传失败怎么办？
 
