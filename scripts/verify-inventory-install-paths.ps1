@@ -4,7 +4,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $migrationsDirectory = Join-Path $repoRoot "supabase\migrations"
 $clientInitPath = Join-Path $repoRoot "supabase\client-init.sql"
 $postgresImage = "public.ecr.aws/supabase/postgres:17.6.1.127"
-$inventoryMigration = "20260714234237_transactional_inventory_operations.sql"
+$inventoryMigration = "20260715102000_transactional_inventory_operations.sql"
 $testContainers = @(
   "clothing_inventory_client_init_test",
   "clothing_inventory_legacy_upgrade_test"

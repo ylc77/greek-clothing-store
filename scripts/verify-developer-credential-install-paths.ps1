@@ -117,8 +117,8 @@ $allMigrations = Get-ChildItem -LiteralPath $migrationsDirectory -Filter "*.sql"
 if ($allMigrations[-1].Name -ne $hardeningMigration) {
   throw "Developer credential hardening migration must sort after every existing migration"
 }
-if ([array]::IndexOf([string[]]$allMigrations.Name, "20260714234237_transactional_inventory_operations.sql") -gt [array]::IndexOf([string[]]$allMigrations.Name, "20260715100000_harden_pos_checkout_rpc.sql")) {
-  throw "Batch 2 inventory migration ordering changed unexpectedly"
+if ([array]::IndexOf([string[]]$allMigrations.Name, "20260715102000_transactional_inventory_operations.sql") -lt [array]::IndexOf([string[]]$allMigrations.Name, "20260715100001_reconcile_pos_void_rpc.sql")) {
+  throw "Transactional inventory migration must sort after POS checkout and void hardening"
 }
 
 try {
