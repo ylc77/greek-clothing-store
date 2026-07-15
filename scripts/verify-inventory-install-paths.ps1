@@ -158,6 +158,20 @@ try {
     Invoke-SqlFile $legacyContainer $migration.FullName
   }
   Invoke-SqlText $legacyContainer "drop function if exists public.set_updated_at() cascade;" "legacy missing trigger helper fixture"
+  $legacyFunctionFixture = @'
+create or replace function public.inventory_apply_rpc(
+  text, uuid, text, integer, text, text, text, boolean
+)
+returns jsonb
+language sql
+as $$ select '{"legacy": true}'::jsonb $$;
+
+create or replace function public.inventory_runtime_health_rpc()
+returns jsonb
+language sql
+as $$ select '{"ready": false, "version": "legacy"}'::jsonb $$;
+'@
+  Invoke-SqlText $legacyContainer $legacyFunctionFixture "legacy inventory function fixture"
   Invoke-SqlFile $legacyContainer $upgradeMigration.FullName
   Assert-InventorySchema $legacyContainer "legacy database upgrade"
   Write-Host "PASS inventory legacy migration-chain upgrade"
