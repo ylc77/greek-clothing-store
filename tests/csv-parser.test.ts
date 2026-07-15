@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 // @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
-import {
-  CsvInputError,
-  parseProductCsvBytes,
-  parseStrictCsvBoolean,
-  parseStrictCsvJson,
-  parseStrictCsvNumber,
-  parseStrictSizeStock,
-} from "../lib/csv-parser.ts";
+import { CsvInputError, parseProductCsvBytes, parseStrictCsvBoolean, parseStrictCsvJson, parseStrictCsvNumber, parseStrictSizeStock, readRequestBytesWithLimit } from "../lib/csv-parser.ts";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
+import { buildCsvVariantInputs } from "../lib/csv-variant-input.ts";
 
 const encoder = new TextEncoder();
 const aliases = { "product sku": "sku", title: "name_cn" };
@@ -90,6 +85,36 @@ test("file, row, column, and cell limits reject input before commit", () => {
   assert.throws(() => parseProductCsvBytes(bytes(base), { ...options, limits: { maxRowChars: 20 } }), expectCode("CSV_ROW_TOO_LONG"));
 });
 
+test("documented 500-row and 1 MiB capacity boundaries are enforced", () => {
+  const header = "sku,name_cn,category,subcategory,price,notes\n";
+  const row = (index: number, notes = "ok") => `SKU-${index},Dress ${index},women,dresses,10,${notes}`;
+  const maximumRows = header + Array.from({ length: 500 }, (_, index) => row(index)).join("\n");
+  assert.equal(parseProductCsvBytes(bytes(maximumRows), options).rows.length, 500);
+
+  const tooManyRows = `${maximumRows}\n${row(500)}`;
+  assert.throws(() => parseProductCsvBytes(bytes(tooManyRows), options), expectCode("CSV_TOO_MANY_ROWS"));
+
+  const largeCell = "x".repeat(32_000);
+  const nearLimit = header + Array.from({ length: 32 }, (_, index) => row(index, largeCell)).join("\n");
+  assert.ok(bytes(nearLimit).byteLength > 1_000_000 && bytes(nearLimit).byteLength <= 1_048_576);
+  assert.equal(parseProductCsvBytes(bytes(nearLimit), options).rows.length, 32);
+
+  const overLimit = header + Array.from({ length: 33 }, (_, index) => row(index, largeCell)).join("\n");
+  assert.ok(bytes(overLimit).byteLength > 1_048_576);
+  assert.throws(() => parseProductCsvBytes(bytes(overLimit), options), expectCode("CSV_FILE_TOO_LARGE"));
+});
+
+test("streamed request bodies are bounded even without a trustworthy Content-Length", async () => {
+  const exact = new Request("http://local.test", { method: "POST", body: bytes("12345") });
+  assert.deepEqual(await readRequestBytesWithLimit(exact, 5), bytes("12345"));
+
+  const oversized = new Request("http://local.test", { method: "POST", body: bytes("123456") });
+  await assert.rejects(
+    () => readRequestBytesWithLimit(oversized, 5),
+    expectCode("CSV_FILE_TOO_LARGE"),
+  );
+});
+
 test("numeric parsing is exact and rejects formulas, partial values, non-finite values, fractional inventory, negatives, and range overflow", () => {
   assert.equal(parseStrictCsvNumber("39.90", { field: "price", min: 0, max: 1_000_000 }), 39.9);
   assert.equal(parseStrictCsvNumber("3", { field: "stock", integer: true, min: 0, max: 1_000_000 }), 3);
@@ -124,4 +149,45 @@ test("JSON fields enforce schema, depth, item count, and string length", () => {
   assert.throws(() => parseStrictCsvJson('{"a":{"b":{"c":1}}}', { field: "size_chart", schema: "object", maxDepth: 2 }), expectCode("CSV_JSON_TOO_DEEP"));
   assert.throws(() => parseStrictCsvJson('["a","b","c"]', { field: "image_urls", schema: "string_array", maxItems: 2 }), expectCode("CSV_JSON_TOO_MANY_ITEMS"));
   assert.throws(() => parseStrictCsvJson('["toolong"]', { field: "ai_keywords", schema: "string_array", maxStringChars: 3 }), expectCode("CSV_JSON_STRING_TOO_LONG"));
+});
+
+test("omitted optional Variant columns remain absent so updates preserve existing procurement data", () => {
+  const variant = buildCsvVariantInputs({
+    headers: new Set(["sku", "price", "sizes", "size_stock"]),
+    sku: "DRESS-1",
+    price: 39,
+    color: "",
+    supplierId: null,
+    quantities: { S: 2 },
+    supplierSkus: new Map(),
+    costPrices: new Map(),
+    reorderLevels: new Map(),
+  })[0]!;
+
+  assert.equal("barcode" in variant, false);
+  assert.equal("color" in variant, false);
+  assert.equal("supplier_id" in variant, false);
+  assert.equal("supplier_sku" in variant, false);
+  assert.equal("cost_price" in variant, false);
+  assert.equal("reorder_level" in variant, false);
+});
+
+test("explicit optional Variant columns preserve the user's intent to set or clear values", () => {
+  const variant = buildCsvVariantInputs({
+    headers: new Set(["color", "supplier_id", "variant_supplier_skus", "variant_cost_prices", "variant_reorder_levels"]),
+    sku: "DRESS-1",
+    price: 39,
+    color: "red",
+    supplierId: null,
+    quantities: { S: 2 },
+    supplierSkus: new Map([["S", "SUP-1"]]),
+    costPrices: new Map([["S", 12.5]]),
+    reorderLevels: new Map([["S", 3]]),
+  })[0]!;
+
+  assert.equal(variant.color, "red");
+  assert.equal(variant.supplier_id, null);
+  assert.equal(variant.supplier_sku, "SUP-1");
+  assert.equal(variant.cost_price, 12.5);
+  assert.equal(variant.reorder_level, 3);
 });
