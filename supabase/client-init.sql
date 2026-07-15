@@ -3036,6 +3036,71 @@ alter table public.product_operations enable row level security;
 revoke all on table public.product_operations from public, anon, authenticated;
 grant select, insert, update, delete on table public.product_operations to service_role;
 
+create schema if not exists app_private;
+revoke all on schema app_private from public, anon, authenticated;
+
+-- PostgreSQL unique indexes can deadlock when two transactions acquire the
+-- same set of Variant identities in opposite orders. Lock every new identity,
+-- plus the current identities during updates, in one global lexical order
+-- before any Variant insert/update reaches a unique index.
+create or replace function app_private.product_lock_variant_identities(
+  p_variants jsonb,
+  p_product_id bigint
+)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_identity_key text;
+begin
+  for v_identity_key in
+    with input_rows as (
+      select item
+      from pg_catalog.jsonb_array_elements(p_variants) as items(item)
+    ),
+    existing_rows as (
+      select pg_catalog.to_jsonb(v) as item
+      from public.product_variants v
+      where p_product_id is not null and v.product_id = p_product_id
+    ),
+    variant_rows as (
+      select item from input_rows
+      union all
+      select item from existing_rows
+    ),
+    identity_keys as (
+      select 'variant_sku:' || pg_catalog.lower(pg_catalog.btrim(item ->> 'variant_sku')) as identity_key
+      from variant_rows
+      where pg_catalog.btrim(coalesce(item ->> 'variant_sku', '')) <> ''
+      union
+      select 'barcode:' || pg_catalog.btrim(item ->> 'barcode')
+      from variant_rows
+      where pg_catalog.btrim(coalesce(item ->> 'barcode', '')) <> ''
+      union
+      select 'supplier_sku:'
+        || pg_catalog.btrim(item ->> 'supplier_id')
+        || ':'
+        || pg_catalog.btrim(item ->> 'supplier_sku')
+      from variant_rows
+      where pg_catalog.btrim(coalesce(item ->> 'supplier_id', '')) <> ''
+        and pg_catalog.btrim(coalesce(item ->> 'supplier_sku', '')) <> ''
+    )
+    select identity_key
+    from identity_keys
+    order by identity_key
+  loop
+    perform pg_catalog.pg_advisory_xact_lock(
+      pg_catalog.hashtextextended('product:variant_identity:' || v_identity_key, 0)
+    );
+  end loop;
+end;
+$$;
+
+revoke all on function app_private.product_lock_variant_identities(jsonb, bigint)
+from public, anon, authenticated, service_role;
+
 create or replace function public.product_create_rpc(
   p_client_request_id text,
   p_metadata jsonb,
@@ -3154,6 +3219,8 @@ begin
   if v_location_id is null then
     raise exception using errcode = 'P0001', message = 'PRODUCT_RUNTIME_UNAVAILABLE: MAIN_STORE inventory location is missing or inactive';
   end if;
+
+  perform app_private.product_lock_variant_identities(p_variants, null);
 
   insert into public.products (
     sku,
@@ -3885,6 +3952,8 @@ begin
   end if;
 
   if p_variants is not null then
+    perform app_private.product_lock_variant_identities(p_variants, p_product_id);
+
     -- POS locks balances before updating its product projection, while
     -- inventory_apply_rpc locks Variant/product before balance. A blocking lock
     -- order cannot be compatible with both historical writers. Structure edits
