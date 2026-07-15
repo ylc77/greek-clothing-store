@@ -56,7 +56,10 @@ create table if not exists public.product_import_rows (
   metadata jsonb not null,
   variants jsonb not null,
   resolved_action text,
-  expected_product_id bigint references public.products(id) on delete set null,
+  -- Frozen optimistic-concurrency identity. Deliberately not a foreign key:
+  -- deleting the original product must not erase the ID and allow a later
+  -- product reusing the same SKU to be mistaken for the previewed target.
+  expected_product_id bigint,
   expected_metadata_version bigint,
   expected_structure_version bigint,
   status text not null default 'pending',
@@ -596,7 +599,9 @@ begin
       elsif v_error like '%PRODUCT_STOCK_CONFLICT%' then
         v_error_code := 'CSV_PRODUCT_STOCK_CONFLICT';
         v_error_summary := 'Inventory changed after preview; create a new preview before retrying.';
-      elsif v_error like '%PRODUCT_VARIANT_%' or v_error like '%PRODUCT_INVALID_ARGUMENT%' then
+      elsif v_error like '%CSV_PRODUCT_CONFLICT%'
+         or v_error like '%PRODUCT_VARIANT_%'
+         or v_error like '%PRODUCT_INVALID_ARGUMENT%' then
         v_error_code := 'CSV_PRODUCT_CONFLICT';
         v_error_summary := 'Product or Variant data conflicts with the current catalog; the row was rolled back.';
       elsif v_error like '%CSV_IMPORT_INVALID_ARGUMENT%' then
@@ -768,8 +773,12 @@ declare
   v_tables_ready boolean;
   v_functions_ready boolean;
   v_product_ready boolean;
+  v_private_helper_ready boolean;
   v_product_create_oid oid := pg_catalog.to_regprocedure('public.product_create_rpc(text,jsonb,jsonb,text,text)');
   v_product_update_oid oid := pg_catalog.to_regprocedure('public.product_update_rpc(text,bigint,bigint,bigint,jsonb,jsonb,text,text)');
+  v_product_health_oid oid := pg_catalog.to_regprocedure('public.product_runtime_health_rpc()');
+  v_private_helper_oid oid := pg_catalog.to_regprocedure('app_private.product_import_authoritative_variants(bigint,jsonb)');
+  v_product_health jsonb := '{}'::jsonb;
 begin
   v_tables_ready := pg_catalog.to_regclass('public.product_import_jobs') is not null
     and pg_catalog.to_regclass('public.product_import_rows') is not null;
@@ -780,16 +789,35 @@ begin
     and pg_catalog.has_function_privilege('service_role', v_apply_oid, 'execute')
     and pg_catalog.has_function_privilege('service_role', v_refresh_oid, 'execute')
     and pg_catalog.has_function_privilege('service_role', v_reconcile_oid, 'execute');
-  v_product_ready := v_product_create_oid is not null
+  if v_product_health_oid is not null
+     and pg_catalog.has_function_privilege('service_role', v_product_health_oid, 'execute') then
+    begin
+      select public.product_runtime_health_rpc() into v_product_health;
+    exception when others then
+      v_product_health := '{}'::jsonb;
+    end;
+  end if;
+  v_product_ready := coalesce((v_product_health ->> 'ready')::boolean, false)
+    and v_product_create_oid is not null
     and v_product_update_oid is not null
     and pg_catalog.has_function_privilege('service_role', v_product_create_oid, 'execute')
     and pg_catalog.has_function_privilege('service_role', v_product_update_oid, 'execute');
+  select exists (
+    select 1
+    from pg_catalog.pg_proc p
+    where p.oid = v_private_helper_oid
+      and p.prosecdef
+      and 'search_path=""' = any(coalesce(p.proconfig, array[]::text[]))
+  ) into v_private_helper_ready;
 
   return pg_catalog.jsonb_build_object(
-    'ready', v_tables_ready and v_functions_ready and v_product_ready,
+    'ready', v_tables_ready and v_functions_ready and v_product_ready and v_private_helper_ready,
     'tables_ready', v_tables_ready,
     'functions_ready', v_functions_ready,
     'product_rpc_ready', v_product_ready,
+    'product_runtime_health', v_product_health,
+    'main_store_ready', coalesce((v_product_health ->> 'main_store_ready')::boolean, false),
+    'private_variant_helper_ready', v_private_helper_ready,
     'migration_version', '20260716100000'
   );
 end;

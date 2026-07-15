@@ -32,6 +32,9 @@ function command(name, args, options = {}) {
     env: { ...process.env, ...(options.env || {}) },
   });
   if (result.status !== 0) {
+    if (options.sensitiveOutput) {
+      throw new Error(`${name} failed while reading the isolated local Supabase environment; output was intentionally suppressed.`);
+    }
     throw new Error(`${name} ${args.join(" ")} failed\n${result.stdout || ""}\n${result.stderr || ""}`);
   }
   return String(result.stdout || "").trim();
@@ -46,8 +49,8 @@ function sql(statement) {
 
 function readLocalEnvironment() {
   const output = process.platform === "win32"
-    ? command("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "npx supabase status -o env"])
-    : command("npx", ["supabase", "status", "-o", "env"]);
+    ? command("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "npx supabase status -o env"], { sensitiveOutput: true })
+    : command("npx", ["supabase", "status", "-o", "env"], { sensitiveOutput: true });
   const values = {};
   for (const line of output.split(/\r?\n/)) {
     const match = line.match(/^([A-Z0-9_]+)="(.*)"$/);
@@ -170,6 +173,10 @@ function importRow(rowNumber, productSku, variants, overrides = {}) {
     metadata: metadata(productSku, overrides.name || `CSV row ${rowNumber}`, overrides.metadata),
     variants,
   };
+  if (overrides.resolvedAction) row.resolved_action = overrides.resolvedAction;
+  if (overrides.expectedProductId !== undefined) row.expected_product_id = overrides.expectedProductId;
+  if (overrides.expectedMetadataVersion !== undefined) row.expected_metadata_version = overrides.expectedMetadataVersion;
+  if (overrides.expectedStructureVersion !== undefined) row.expected_structure_version = overrides.expectedStructureVersion;
   return { ...row, row_hash: hash(row) };
 }
 
@@ -333,8 +340,21 @@ async function assertClean() {
     rows: Number(sql(`select count(*) from public.product_import_rows r join public.product_import_jobs j on j.id = r.job_id where j.client_request_id like ${quote(`${PREFIX}%`)};`)),
     products: Number(sql(`select count(*) from public.products where sku like ${quote(`${PREFIX}%`)};`)),
     variants: Number(sql(`select count(*) from public.product_variants where variant_sku like ${quote(`${PREFIX}%`)};`)),
+    balances: Number(sql(`select count(*) from public.inventory_balances b join public.product_variants v on v.id = b.variant_id join public.products p on p.id = v.product_id where p.sku like ${quote(`${PREFIX}%`)};`)),
+    movements: Number(sql(`select count(*) from public.stock_movements m join public.product_variants v on v.id = m.variant_id join public.products p on p.id = v.product_id where p.sku like ${quote(`${PREFIX}%`)};`)),
+    productOperations: Number(sql(`select count(*) from public.product_operations where client_request_id like ${quote(`${PREFIX}%`)};`)),
+    inventoryOperations: Number(sql(`select count(*) from public.inventory_operations where operation_key like ${quote(`%${PREFIX}%`)};`)),
   };
-  assert.deepEqual(counts, { jobs: 0, rows: 0, products: 0, variants: 0 });
+  assert.deepEqual(counts, {
+    jobs: 0,
+    rows: 0,
+    products: 0,
+    variants: 0,
+    balances: 0,
+    movements: 0,
+    productOperations: 0,
+    inventoryOperations: 0,
+  });
 }
 
 function installFaultHarness() {
@@ -346,26 +366,42 @@ function installFaultHarness() {
     language plpgsql security definer set search_path = pg_catalog, public, audit_csv_test as $$
     declare product_sku text;
     begin
-      if not exists (select 1 from audit_csv_test.config where stage = 'movement') then return new; end if;
-      select p.sku into product_sku
-      from public.product_variants v join public.products p on p.id = v.product_id
-      where v.id = new.variant_id;
-      if product_sku like '${PREFIX}%' then raise exception 'AUDIT_CSV_FAULT:movement'; end if;
+      if tg_table_name = 'stock_movements' then
+        if exists (select 1 from audit_csv_test.config where stage = 'movement') then
+          select p.sku into product_sku
+          from public.product_variants v join public.products p on p.id = v.product_id
+          where v.id = new.variant_id;
+          if product_sku like '${PREFIX}%' then raise exception 'AUDIT_CSV_FAULT:movement'; end if;
+        end if;
+        return new;
+      end if;
+      if tg_table_name = 'product_import_rows' then
+        if new.status = 'succeeded'
+           and exists (select 1 from audit_csv_test.config where stage = 'row_result')
+           and exists (
+             select 1 from public.product_import_jobs j
+             where j.id = new.job_id and j.client_request_id like '${PREFIX}%'
+           )
+        then raise exception 'AUDIT_CSV_FAULT:row_result'; end if;
+      end if;
       return new;
     end;
     $$;
     create trigger audit_csv_fail_movement before insert on public.stock_movements
     for each row execute function audit_csv_test.fail_stage();
+    create trigger audit_csv_fail_row_result before update on public.product_import_rows
+    for each row execute function audit_csv_test.fail_stage();
   `);
 }
 
-function setFault(enabled) {
-  sql(`truncate audit_csv_test.config; ${enabled ? "insert into audit_csv_test.config values ('movement');" : ""}`);
+function setFault(stage = null) {
+  sql(`truncate audit_csv_test.config; ${stage ? `insert into audit_csv_test.config values (${quote(stage)});` : ""}`);
 }
 
 function uninstallFaultHarness() {
   sql(`
     drop trigger if exists audit_csv_fail_movement on public.stock_movements;
+    drop trigger if exists audit_csv_fail_row_result on public.product_import_rows;
     drop schema if exists audit_csv_test cascade;
   `);
 }
@@ -377,6 +413,8 @@ try {
     const { data, error } = await service.rpc("product_import_runtime_health_rpc");
     if (error) throw error;
     assert.equal(data?.ready, true, JSON.stringify(data));
+    assert.equal(data?.main_store_ready, true, JSON.stringify(data));
+    assert.equal(data?.private_variant_helper_ready, true, JSON.stringify(data));
     assert.equal(Number(sql("select count(*) from public.product_import_jobs;")), 0, "local fixture must start with no import jobs");
     assert.equal(Number(sql("select count(*) from public.product_import_rows;")), 0, "local fixture must start with no import rows");
     for (const table of ["product_import_jobs", "product_import_rows"]) {
@@ -398,12 +436,34 @@ try {
     }
   });
 
+  await runCase("CSV runtime health fails closed when MAIN_STORE is inactive", async () => {
+    const beforeJobs = Number(sql("select count(*) from public.product_import_jobs;"));
+    try {
+      sql("update public.inventory_locations set active = false where code = 'MAIN_STORE';");
+      const { data, error } = await service.rpc("product_import_runtime_health_rpc");
+      if (error) throw error;
+      assert.equal(data?.ready, false, JSON.stringify(data));
+      assert.equal(data?.main_store_ready, false, JSON.stringify(data));
+      assert.equal(Number(sql("select count(*) from public.product_import_jobs;")), beforeJobs);
+    } finally {
+      sql("update public.inventory_locations set active = true where code = 'MAIN_STORE';");
+    }
+  });
+
   await runCase("same operation and payload replays one job while a changed payload conflicts", async () => {
     const productSku = sku("JOB-REPLAY");
     const rows = [importRow(1, productSku, [variant(productSku, "S", 1)])];
     const payload = jobPayload(rows);
     const first = await startJob(payload);
-    const replay = await startJob(payload);
+    await applyRow(first.job.id, 1);
+    const databaseStateChangedRows = [{
+      ...rows[0],
+      expected_product_id: 999999,
+      expected_metadata_version: 999999,
+      expected_structure_version: 999999,
+      row_hash: hash({ ...rows[0], databaseStateChanged: true }),
+    }];
+    const replay = await startJob({ ...payload, rows: databaseStateChangedRows });
     assert.equal(replay.job.id, first.job.id);
     assert.equal(Number(sql(`select count(*) from public.product_import_jobs where client_request_id = ${quote(payload.clientRequestId)};`)), 1);
     assert.equal((await databaseRows(first.job.id)).length, 1);
@@ -413,6 +473,22 @@ try {
     assert.ok(conflict.error, JSON.stringify(conflict.data));
     assert.match(`${conflict.error.code || ""} ${conflict.error.message || ""}`, /IDEMPOTENCY|PAYLOAD|CONFLICT/i);
     assert.equal((await databaseRows(first.job.id)).length, 1);
+  });
+
+  await runCase("invalid Job and duplicate-row creation failures leave no partial Job records", async () => {
+    const productSku = sku("START-ROLLBACK");
+    const first = importRow(1, productSku, [variant(productSku, "S", 1)]);
+    const duplicate = importRow(2, productSku.toLowerCase(), [variant(productSku, "M", 1)]);
+    const duplicatePayload = jobPayload([first, duplicate]);
+    const duplicateResult = await startJobRaw(duplicatePayload);
+    assert.ok(duplicateResult.error, JSON.stringify(duplicateResult.data));
+    assert.equal(Number(sql(`select count(*) from public.product_import_jobs where client_request_id = ${quote(duplicatePayload.clientRequestId)};`)), 0);
+    assert.equal(Number(sql(`select count(*) from public.product_import_rows where normalized_sku = ${quote(productSku.toLowerCase())};`)), 0);
+
+    const invalidPayload = jobPayload([first], { payloadHash: "not-a-hash" });
+    const invalidResult = await startJobRaw(invalidPayload);
+    assert.ok(invalidResult.error, JSON.stringify(invalidResult.data));
+    assert.equal(Number(sql(`select count(*) from public.product_import_jobs where client_request_id = ${quote(invalidPayload.clientRequestId)};`)), 0);
   });
 
   await runCase("create_only creates multi-size and ONE SIZE rows atomically", async () => {
@@ -509,17 +585,17 @@ try {
     const { job } = await startJob(jobPayload([row]));
     installFaultHarness();
     try {
-      setFault(true);
+      setFault("movement");
       await applyRow(job.id, 1);
       let [stored] = await databaseRows(job.id);
       assert.equal(stored.status, "failed");
       assert.equal(await databaseProduct(productSku), null, "failed row leaked a product");
       assert.equal(Number(stored.attempt_count), 1);
 
-      setFault(false);
+      setFault();
       await applyRow(job.id, 1);
       [stored] = await databaseRows(job.id);
-      assert.equal(stored.status, "succeeded");
+      assert.equal(stored.status, "succeeded", JSON.stringify(stored));
       assert.equal(Number(stored.attempt_count), 2);
       const before = await productState(productSku);
       const operationId = stored.operation_id;
@@ -530,6 +606,29 @@ try {
       assert.equal(Number(replayed.attempt_count), 2, "successful row was executed again");
       assert.equal(after.movements.length, before.movements.length);
       assert.deepEqual(onHandBySize(after), { S: 3 });
+    } finally {
+      uninstallFaultHarness();
+    }
+  });
+
+  await runCase("row success-record fault rolls the complete product transaction back and remains retryable", async () => {
+    const productSku = sku("ROW-RESULT-FAULT");
+    const row = importRow(1, productSku, [variant(productSku, "S", 2)]);
+    const { job } = await startJob(jobPayload([row]));
+    installFaultHarness();
+    try {
+      setFault("row_result");
+      await applyRow(job.id, 1);
+      let [stored] = await databaseRows(job.id);
+      assert.equal(stored.status, "failed");
+      assert.equal(stored.retryable, true);
+      assert.equal(await databaseProduct(productSku), null, "row result failure leaked product writes");
+
+      setFault();
+      await applyRow(job.id, 1);
+      [stored] = await databaseRows(job.id);
+      assert.equal(stored.status, "succeeded", JSON.stringify(stored));
+      assert.deepEqual(onHandBySize(await assertProjection(productSku)), { S: 2 });
     } finally {
       uninstallFaultHarness();
     }
@@ -567,6 +666,129 @@ try {
     await assertProjection(productSku);
   });
 
+  await runCase("two CSV jobs updating one frozen product allow one winner without lost metadata", async () => {
+    const productSku = sku("TWO-UPDATES");
+    const state = await seedProduct(productSku, [{ size: "S", quantity: 2 }], { name: "Before CSV race" });
+    const frozen = {
+      resolvedAction: "update",
+      expectedProductId: state.product.id,
+      expectedMetadataVersion: state.product.metadata_version,
+      expectedStructureVersion: state.product.structure_version,
+    };
+    const rowA = importRow(1, productSku, [], { ...frozen, name: "CSV winner A" });
+    const rowB = importRow(1, productSku, [], { ...frozen, name: "CSV winner B" });
+    const [{ job: jobA }, { job: jobB }] = await Promise.all([
+      startJob(jobPayload([rowA], { importMode: "update_existing", inventoryMode: "metadata_only" })),
+      startJob(jobPayload([rowB], { importMode: "update_existing", inventoryMode: "metadata_only" })),
+    ]);
+    await Promise.all([applyRow(jobA.id, 1), applyRow(jobB.id, 1)]);
+    const statuses = [(await databaseRows(jobA.id))[0].status, (await databaseRows(jobB.id))[0].status].sort();
+    assert.deepEqual(statuses, ["failed", "succeeded"]);
+    assert.match((await databaseProduct(productSku)).name_en, /^CSV winner [AB]$/);
+    assert.deepEqual(onHandBySize(await productState(productSku)), { S: 2 });
+  });
+
+  await runCase("CSV update cannot overwrite a product edited after preview", async () => {
+    const productSku = sku("ADMIN-RACE");
+    const state = await seedProduct(productSku, [{ size: "S", quantity: 2 }], { name: "Before admin edit" });
+    const csvRow = importRow(1, productSku, [], {
+      name: "Stale CSV edit",
+      resolvedAction: "update",
+      expectedProductId: state.product.id,
+      expectedMetadataVersion: state.product.metadata_version,
+      expectedStructureVersion: state.product.structure_version,
+    });
+    const { job } = await startJob(jobPayload([csvRow], { importMode: "update_existing", inventoryMode: "metadata_only" }));
+    const { error: editError } = await service.rpc("product_update_rpc", {
+      p_client_request_id: id("ADMIN-EDIT"),
+      p_product_id: state.product.id,
+      p_expected_metadata_version: state.product.metadata_version,
+      p_expected_structure_version: state.product.structure_version,
+      p_metadata: { name_en: "Fresh admin edit" },
+      p_variants: null,
+      p_actor: ACTOR,
+      p_source: SOURCE,
+    });
+    if (editError) throw editError;
+    await applyRow(job.id, 1);
+    const [stored] = await databaseRows(job.id);
+    assert.equal(stored.status, "failed");
+    assert.match(`${stored.error_code || ""} ${stored.error_summary || ""}`, /VERSION|CONFLICT/i);
+    assert.equal((await databaseProduct(productSku)).name_en, "Fresh admin edit");
+  });
+
+  await runCase("frozen product identity survives deletion and blocks same-SKU replacement", async () => {
+    const productSku = sku("TARGET-REPLACED");
+    const original = await seedProduct(productSku, [{ size: "S", quantity: 1 }], { name: "Original target" });
+    const frozenRow = importRow(1, productSku, [], {
+      name: "Must not update replacement",
+      resolvedAction: "update",
+      expectedProductId: original.product.id,
+      expectedMetadataVersion: original.product.metadata_version,
+      expectedStructureVersion: original.product.structure_version,
+    });
+    const { job } = await startJob(jobPayload([frozenRow], {
+      importMode: "update_existing",
+      inventoryMode: "metadata_only",
+    }));
+
+    sql(`
+      delete from public.inventory_operations where variant_id in (
+        select id from public.product_variants where product_id = ${Number(original.product.id)}
+      );
+      delete from public.stock_movements where variant_id in (
+        select id from public.product_variants where product_id = ${Number(original.product.id)}
+      );
+      delete from public.product_operations where product_id = ${Number(original.product.id)};
+      delete from public.products where id = ${Number(original.product.id)};
+    `);
+    const replacement = await seedProduct(productSku, [{ size: "S", quantity: 4 }], { name: "Replacement target" });
+    assert.notEqual(Number(replacement.product.id), Number(original.product.id));
+
+    await applyRow(job.id, 1);
+    const [stored] = await databaseRows(job.id);
+    assert.equal(Number(stored.expected_product_id), Number(original.product.id));
+    assert.equal(stored.status, "failed");
+    assert.equal(stored.retryable, false);
+    assert.equal(stored.error_code, "CSV_PRODUCT_CONFLICT");
+    assert.equal((await databaseProduct(productSku)).name_en, "Replacement target");
+    assert.deepEqual(onHandBySize(await productState(productSku)), { S: 4 });
+  });
+
+  await runCase("CSV set_inventory cannot overwrite inventory adjusted after preview", async () => {
+    const productSku = sku("INVENTORY-RACE");
+    const state = await seedProduct(productSku, [{ size: "S", quantity: 2 }]);
+    const existingVariant = state.variants.find((item) => item.size === "S");
+    const csvRow = importRow(1, productSku, [variant(productSku, "S", 5, {
+      id: existingVariant.id,
+      variant_sku: existingVariant.variant_sku,
+      barcode: existingVariant.barcode,
+      expected_on_hand: 2,
+    })], {
+      resolvedAction: "update",
+      expectedProductId: state.product.id,
+      expectedMetadataVersion: state.product.metadata_version,
+      expectedStructureVersion: state.product.structure_version,
+    });
+    const { job } = await startJob(jobPayload([csvRow], { importMode: "update_existing", inventoryMode: "set_inventory" }));
+    const { error: adjustmentError } = await service.rpc("inventory_apply_rpc", {
+      p_client_request_id: id("INVENTORY-ADJUST"),
+      p_variant_id: existingVariant.id,
+      p_mode: "adjust_by",
+      p_quantity: 1,
+      p_operation_type: "manual",
+      p_reason: "CSV concurrency test",
+      p_created_by: ACTOR,
+      p_auto_deactivate: false,
+    });
+    if (adjustmentError) throw adjustmentError;
+    await applyRow(job.id, 1);
+    const [stored] = await databaseRows(job.id);
+    assert.equal(stored.status, "failed");
+    assert.match(`${stored.error_code || ""} ${stored.error_summary || ""}`, /STOCK|CONFLICT/i);
+    assert.deepEqual(onHandBySize(await assertProjection(productSku)), { S: 3 });
+  });
+
   await runCase("job summary refresh and reconciliation detect and repair cached count drift", async () => {
     const successSku = sku("SUMMARY-SUCCESS");
     const missingSku = sku("SUMMARY-MISSING");
@@ -599,6 +821,99 @@ try {
     reconciliation = await service.rpc("product_import_reconciliation_rpc", { p_job_id: job.id });
     if (reconciliation.error) throw reconciliation.error;
     assert.equal(reconciliation.data?.healthy, true, JSON.stringify(reconciliation.data));
+  });
+
+  await runCase("100-row import stays bounded and reports measurable capacity data", async () => {
+    const rows = Array.from({ length: 100 }, (_, index) => {
+      const productSku = sku(`CAPACITY-${String(index + 1).padStart(3, "0")}`);
+      return importRow(index + 1, productSku, [variant(productSku, "ONE SIZE", 1)]);
+    });
+    const heapBefore = process.memoryUsage().heapUsed;
+    const startedAt = performance.now();
+    const { job } = await startJob(jobPayload(rows, { importMode: "create_only", inventoryMode: "set_inventory" }));
+    for (let offset = 0; offset < rows.length; offset += 10) {
+      await Promise.all(rows.slice(offset, offset + 10).map((row) => applyRow(job.id, row.row_number)));
+    }
+    const summary = await refreshJob(job.id);
+    const durationMs = Math.round(performance.now() - startedAt);
+    const heapAfter = process.memoryUsage().heapUsed;
+    assert.equal(Number(summary.succeeded_rows), 100, JSON.stringify(summary));
+    assert.equal(Number(summary.failed_rows), 0, JSON.stringify(summary));
+    console.log("CSV_CAPACITY_METRICS", JSON.stringify({
+      rows: 100,
+      durationMs,
+      heapBeforeBytes: heapBefore,
+      heapAfterBytes: heapAfter,
+      summaryBytes: Buffer.byteLength(JSON.stringify(summary)),
+    }));
+  });
+
+  await runCase("100-row mixed result preserves 50 successes and 50 safe conflicts", async () => {
+    const fixtures = Array.from({ length: 100 }, (_, index) => {
+      const productSku = sku(`MIXED-${String(index + 1).padStart(3, "0")}`);
+      return {
+        productSku,
+        shouldConflict: index % 2 === 0,
+        row: importRow(index + 1, productSku, [variant(productSku, "ONE SIZE", 0)]),
+      };
+    });
+    const conflicts = fixtures.filter((fixture) => fixture.shouldConflict);
+    for (let offset = 0; offset < conflicts.length; offset += 10) {
+      await Promise.all(conflicts.slice(offset, offset + 10).map((fixture) => (
+        seedProduct(fixture.productSku, [{ size: "ONE SIZE", quantity: 1 }], { name: "Mixed existing product" })
+      )));
+    }
+
+    const { job } = await startJob(jobPayload(fixtures.map((fixture) => fixture.row), {
+      importMode: "create_only",
+      inventoryMode: "metadata_only",
+    }));
+    for (let offset = 0; offset < fixtures.length; offset += 20) {
+      await Promise.all(fixtures.slice(offset, offset + 20).map((fixture) => (
+        applyRow(job.id, fixture.row.row_number)
+      )));
+    }
+
+    const summary = await refreshJob(job.id);
+    const storedRows = await databaseRows(job.id);
+    assert.equal(Number(summary.succeeded_rows), 50, JSON.stringify(summary));
+    assert.equal(Number(summary.failed_rows), 50, JSON.stringify(summary));
+    assert.equal(Number(summary.pending_rows), 0, JSON.stringify(summary));
+    assert.equal(storedRows.filter((row) => row.status === "succeeded").length, 50);
+    assert.equal(storedRows.filter((row) => row.status === "failed").length, 50);
+    assert.ok(storedRows.filter((row) => row.status === "failed").every((row) => (
+      row.retryable === false && /EXIST|CONFLICT/i.test(`${row.error_code || ""} ${row.error_summary || ""}`)
+    )));
+    assert.equal(Buffer.byteLength(JSON.stringify(summary)) < 8 * 1024, true, "mixed Job summary grew unexpectedly");
+  });
+
+  await runCase("500-row job is accepted and 501 rows are rejected without a Job", async () => {
+    const rows = Array.from({ length: 500 }, (_, index) => {
+      const productSku = sku(`MAX-${String(index + 1).padStart(3, "0")}`);
+      return importRow(index + 1, productSku, [variant(productSku, "ONE SIZE", 0)]);
+    });
+    const startedAt = performance.now();
+    const payload = jobPayload(rows, { importMode: "create_only", inventoryMode: "metadata_only" });
+    const { job } = await startJob(payload);
+    const durationMs = Math.round(performance.now() - startedAt);
+    assert.equal((await databaseRows(job.id)).length, 500);
+
+    const tooManyPayload = jobPayload([
+      ...rows,
+      importRow(501, sku("MAX-501"), [variant(sku("MAX-501-VARIANT"), "ONE SIZE", 0)]),
+    ], { importMode: "create_only", inventoryMode: "metadata_only" });
+    const rejected = await startJobRaw(tooManyPayload);
+    assert.ok(rejected.error, JSON.stringify(rejected.data));
+    assert.equal(
+      Number(sql(`select count(*) from public.product_import_jobs where client_request_id = ${quote(tooManyPayload.clientRequestId)};`)),
+      0,
+    );
+    console.log("CSV_CAPACITY_METRICS", JSON.stringify({
+      rows: 500,
+      jobCreationDurationMs: durationMs,
+      persistedRowRecords: 500,
+      responseBytes: Buffer.byteLength(JSON.stringify(job)),
+    }));
   });
 } finally {
   try { uninstallFaultHarness(); } catch {}
