@@ -74,7 +74,7 @@ If POS RPC checkout or void shows production issues:
 
 1. Set Vercel Production environment variable `USE_POS_RPC=false`.
 2. Redeploy Production.
-3. Pause POS checkout and void operations.
+3. Confirm POS checkout and void now return the explicit configuration block; do not use a JS fallback.
 4. Preserve the failed order number, SKU, timestamp, and API response.
 5. Run `supabase/pos-runtime-health-checks.sql`.
 6. Run `supabase/erp-phase-1-reconciliation-checks.sql`.
@@ -85,4 +85,4 @@ If POS RPC checkout or void shows production issues:
 - Keep `USE_POS_RPC=true` after this successful rollout.
 - For the first few business days, run the POS runtime health check after closing.
 - If any check returns rows, pause POS checkout and void before continuing sales.
-- Keep the legacy Supabase JS fallback path in code until POS RPC has been stable in production for a longer period.
+- Keep the historical Supabase JS path unreachable; RPC failure must block writes instead of falling back.

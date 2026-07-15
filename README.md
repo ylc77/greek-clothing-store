@@ -35,6 +35,7 @@
 - 它只用于全新的空 Supabase 项目。
 - 不要在已有客户数据的数据库重复执行。
 - 新客户不需要手动逐个执行 `supabase/migrations`。
+- 执行完成后 `developer_access` 保持空表，店铺设置、法律设置和版本功能写入会安全拒绝；模板不会自动提供默认开发者密码。
 
 ### 三、复制 Supabase 配置
 
@@ -53,7 +54,20 @@
 - `service_role` 绝不能使用 `NEXT_PUBLIC_` 前缀。
 - 不要把 `service_role` 写入 Git、README、截图、聊天记录或前端代码。
 
-### 四、部署到 Vercel
+### 四、初始化该客户专属的开发者凭据
+
+这一步由维护者在自己的项目目录执行，不需要客户电脑参与。先把该客户的 Supabase URL 和 service role/secret key 放入本机、已被 Git 忽略的 `.env.local`，然后确认 URL 中的 project ref，例如 `https://abcdefgh.supabase.co` 的 ref 是 `abcdefgh`。
+
+```powershell
+npm run developer:status -- --project-ref abcdefgh
+npm run developer:bootstrap -- --project-ref abcdefgh
+```
+
+CLI 会显示目标 project ref，并要求再次输入确认；随后为该客户生成独立随机 salt、hash 和 credential version。随机密码只显示一次，立即保存到维护者密码管理器。再次执行 bootstrap 会被拒绝，不会覆盖已有凭据。
+
+如果需要输入自己生成的高强度密码，使用 `--password-stdin`，不要把密码作为普通命令行参数。开发者明文密码不得写入 PostgreSQL、`.env.local`、Vercel、Git、浏览器存储、截图、聊天记录或日志。
+
+### 五、部署到 Vercel
 
 1. 登录 [Vercel](https://vercel.com)。
 2. 点击 **Add New → Project**。
@@ -67,12 +81,24 @@ NEXT_PUBLIC_SUPABASE_URL=https://你的项目.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=你的-publishable-或-anon-key
 SUPABASE_SERVICE_ROLE_KEY=你的-service-role-key
 ADMIN_PASSWORD=设置一个强密码
-USE_POS_RPC=false
+USE_POS_RPC=true
 ```
+
+POS 使用前必须确认数据库已包含以下事务 RPC migrations（新客户的 `client-init.sql` 已自动包含）：
+
+- `20260705000100_add_pos_rpc_functions.sql`
+- `20260715100000_harden_pos_checkout_rpc.sql`
+- `20260715100001_reconcile_pos_void_rpc.sql`
+
+`USE_POS_RPC=true` 是正式运行的必需配置。若配置不是 `true`、migration 未部署、函数缺失或 `service_role` 无执行权限，后台会显示红色阻断提示，checkout / void API 返回 503，并且不会创建订单、付款、库存变化或库存流水。系统不会自动回退到非事务 JavaScript 多步写入。
+
+库存调整和“快速售出”还必须包含 `20260715102000_transactional_inventory_operations.sql`。这两个正式写入入口只调用 `inventory_apply_rpc`：库存余额、库存流水、幂等记录和兼容的 `products.stock` / `products.size_stock` 投影在同一个数据库事务内完成。RPC 缺失、不可执行或不可用时 API 返回 503，不会回退到前端或服务端多步写入。
+
+“快速售出”是仅限 owner 的快速扣库存工具，适合店主临时登记一件已售商品；它不会创建 POS 订单、订单明细或付款记录，也不能代替正常 POS 扫码结账。店员应使用 POS 扫码流程，不能直接调用快速售出 API。
 
 `ADMIN_PASSWORD` 是仅供维护者使用的服务器端紧急 owner 密码，每个客户建议设置不同值，不要告诉购买系统的商家。商家日常使用通过 Supabase Auth 创建的员工账号，不使用这个环境变量密码。
 
-店铺设置和法律设置另有独立的开发者密码。`client-init.sql` 已把该密码的加盐哈希写入私有表，新客户部署时不需要再增加一个明文环境变量；只有维护者保留并输入原始密码。数据库、Git、README 和 Vercel 环境变量中都不保存该明文。
+店铺设置、法律设置和客户版本功能使用刚才 bootstrap 生成的独立开发者密码。Vercel 环境变量中不配置该明文；数据库只保存不可逆 scrypt hash 和会话失效版本。
 
 如果希望商家始终无法自行修改这些内容，Supabase / Vercel 项目所有权、`service_role`、源码仓库写权限也应由维护者保管。拥有这些基础设施最高权限的人始终可以直接修改数据库或代码，应用内密码无法限制基础设施所有者。
 
@@ -91,7 +117,7 @@ AI 模特图默认使用最多两张真实商品参考图，通过 GPT Image 2 �
 7. 部署完成后打开正式网址。
 8. 如果绑定了自定义域名，把 `NEXT_PUBLIC_SITE_URL` 改为最终域名并重新部署一次。
 
-### 五、首次后台配置
+### 六、首次后台配置
 
 1. 打开 `https://你的域名/admin`。
 2. 维护者使用 `ADMIN_PASSWORD` 登录，并为商家创建所需的员工账号；不要把紧急 owner 密码交给商家。
@@ -110,7 +136,7 @@ AI 模特图默认使用最多两张真实商品参考图，通过 GPT Image 2 �
 
 POS 模块只负责系统内扫码销售记录和库存同步，不代替真实收银机、银行 POS、税务小票或 myDATA。
 
-### 六、上线检查
+### 七、上线检查
 
 前台：
 
@@ -124,6 +150,7 @@ POS 模块只负责系统内扫码销售记录和库存同步，不代替真实�
 后台：
 
 - [ ] 后台可以登录。
+- [ ] `npm run developer:status -- --project-ref 客户项目ref` 显示 `Initialized: true`、`Must rotate: false`。
 - [ ] 商家员工账号不能进入或修改店铺设置、法律设置。
 - [ ] 维护者开发者密码可以解锁店铺设置和法律设置，退出或关闭浏览器后需要重新解锁。
 - [ ] 可以新增、编辑和下架商品。
@@ -151,11 +178,26 @@ Supabase Storage：
 
 ### 可以对已有客户执行 client-init.sql 吗？
 
-不可以。已有客户升级只能执行尚未应用的 migration 或专用 patch，避免破坏数据。
+不可以。`supabase/migrations` 是已有客户升级的权威来源；只有部署说明明确指定时才使用专用 patch，避免破坏数据。
+
+当前未发布的 P1 migrations 已按依赖关系使用单调递增时间戳：POS checkout、POS void、事务库存、开发者凭据。正常升级使用 `db push --dry-run` 检查计划后再执行 `db push`，不要手工修改 migration history。
 
 ### 图片上传失败怎么办？
 
 检查 `product-images` bucket、Vercel 的 `SUPABASE_SERVICE_ROLE_KEY`、文件类型和大小。数据库初始化成功不代表 Storage 上传一定已经验收。
+
+### 开发者密码丢失或需要轮换怎么办？
+
+只要维护者仍持有该客户的 service role/secret key，就在自己的客户项目目录运行：
+
+```powershell
+npm run developer:status -- --project-ref abcdefgh
+npm run developer:rotate -- --project-ref abcdefgh
+```
+
+轮换成功后旧密码和所有旧开发者 Cookie 立即失效。不要新增公开重置接口，也不要通过邮件或聊天发送开发者密码。建议至少每年轮换一次；维护人员变化、疑似泄露或客户基础设施转移时立即轮换。
+
+如果客户项目正式移交给另一位维护者，应先轮换开发者凭据，再移交 Supabase/Vercel/仓库权限，并撤销旧维护者的 service role/secret key 和账号访问。普通商家 owner 不获得开发者密码或 service role。
 
 ## 开发维护说明
 
@@ -163,7 +205,11 @@ Supabase Storage：
 
 - `supabase/migrations` 是数据库开发和升级的权威来源。
 - `supabase/client-init.sql` 是根据 migrations 生成的新客户空库部署快照。
-- `public.developer_access` 只保存开发者密码的加盐哈希；`anon` 和 `authenticated` 无权读取或修改，应用只通过服务器端 `service_role` 校验。
+- POS checkout / void 正式写入只允许调用事务 RPC；`USE_POS_RPC=false` 仅作为阻断 POS 写入的紧急开关，不是非事务 fallback。
+- 库存调整和快速售出正式写入只允许调用 `inventory_apply_rpc`；每次用户操作必须保留同一个业务 ID，超时或响应丢失后的重试必须复用该 ID。
+- 快速售出是 owner-only 的库存工具，不产生 POS 订单或付款；需要销售记录时必须使用 POS 扫码结账。
+- `public.developer_access` 空表表示未初始化；有记录时只保存 scrypt hash、随机 credential version、整数 password version 和轮换时间，不保存明文。
+- 新客户运行 `npm run developer:bootstrap -- --project-ref ...`；已有客户升级后统一进入 `must_rotate`，运行 `npm run developer:rotate -- --project-ref ...` 才能重新访问受保护设置。
 - 店铺设置和法律设置不能改回普通 owner/员工权限；相关 API 必须继续要求开发者会话。
 - 新增或修改 migration 后，运行：
 
@@ -183,6 +229,11 @@ npm install
 npm run dev -- --port 3010
 npm run typecheck
 npm run build
+npm run test:pos
+npm run test:inventory
+npm run test:inventory-install-paths
+npm run test:developer
+npm run test:developer-install-paths
 npm run check:site
 npm run check:skroutz
 ```

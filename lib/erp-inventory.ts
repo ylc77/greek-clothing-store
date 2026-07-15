@@ -166,27 +166,60 @@ export type InventoryReconciliationResult = {
     quantity_on_hand: number;
   }>;
   blankMovementReasons: Array<{ movement_id: string; variant_id: string; movement_type: string }>;
-};
-
-export type AdjustInventoryVariantInput = {
-  variantId: string;
-  mode: "set_to" | "adjust_by";
-  quantity: number;
-  reason: string;
-  clientRequestId: string;
-  operationType?: "manual" | "stocktake" | "receiving" | "return";
-  createdBy?: string | null;
-};
-
-export type AdjustInventoryVariantResult = {
-  variantId: string;
-  productId: number;
-  quantityBefore: number;
-  quantityAfter: number;
-  quantityDelta: number;
-  alreadyProcessed: boolean;
-  noChange: boolean;
-  legacySyncWarning?: string;
+  negativeBalances: Array<{
+    balance_id: string;
+    variant_id: string;
+    location_id: string;
+    quantity_on_hand: number;
+    quantity_reserved: number;
+  }>;
+  duplicateOperationKeys: Array<{ operation_key: string; duplicate_count: number }>;
+  movementDeltaMismatches: Array<{
+    movement_id: string;
+    variant_id: string;
+    location_id: string;
+    quantity_before: number;
+    quantity_after: number;
+    quantity_delta: number;
+  }>;
+  movementContinuityMismatches: Array<{
+    variant_id: string;
+    location_id: string;
+    previous_movement_id: string;
+    previous_quantity_after: number;
+    movement_id: string;
+    quantity_before: number;
+  }>;
+  balanceVsLatestMovementMismatches: Array<{
+    balance_id: string;
+    variant_id: string;
+    location_id: string;
+    balance_quantity_on_hand: number;
+    latest_movement_id: string;
+    latest_quantity_after: number;
+  }>;
+  balancesWithoutMovements: Array<{
+    balance_id: string;
+    variant_id: string;
+    location_id: string;
+    quantity_on_hand: number;
+  }>;
+  operationsMissingMovements: Array<{
+    operation_key: string;
+    operation_type: string;
+    variant_id: string;
+    location_id: string;
+    quantity_before: number;
+    quantity_after: number;
+    quantity_delta: number;
+  }>;
+  runtimeHealth: {
+    ready: boolean;
+    version: string | null;
+    apply_deployed: boolean;
+    apply_executable: boolean;
+    operations_table_deployed: boolean;
+  };
 };
 
 function adminClient() {
@@ -808,7 +841,7 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
 
   const { data: balances, error: balancesError } = await supabase
     .from("inventory_balances")
-    .select("id, variant_id, quantity_on_hand, quantity_reserved");
+    .select("id, variant_id, location_id, quantity_on_hand, quantity_reserved");
 
   if (balancesError) {
     throw new Error(`Failed to load balances for reconciliation: ${balancesError.message}`);
@@ -827,13 +860,148 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
       quantity_on_hand: numberQuantity(balance.quantity_on_hand),
     }));
 
-  const { data: movementReasons, error: movementsError } = await supabase
+  const negativeBalances = (balances || [])
+    .filter((balance: Record<string, unknown>) => {
+      const onHand = Number(balance.quantity_on_hand);
+      const reserved = Number(balance.quantity_reserved);
+      return !Number.isFinite(onHand) || !Number.isFinite(reserved) || onHand < 0 || reserved < 0;
+    })
+    .map((balance: Record<string, unknown>) => ({
+      balance_id: String(balance.id || ""),
+      variant_id: String(balance.variant_id || ""),
+      location_id: String(balance.location_id || ""),
+      quantity_on_hand: Number(balance.quantity_on_hand),
+      quantity_reserved: Number(balance.quantity_reserved),
+    }));
+
+  const { data: movements, error: movementsError } = await supabase
     .from("stock_movements")
-    .select("id, variant_id, movement_type, reason");
+    .select("id, variant_id, location_id, movement_type, quantity_before, quantity_after, quantity_delta, reason, source_type, idempotency_key, created_at")
+    .order("created_at", { ascending: true });
 
   if (movementsError) {
-    throw new Error(`Failed to load movement reasons for reconciliation: ${movementsError.message}`);
+    throw new Error(`Failed to load movements for reconciliation: ${movementsError.message}`);
   }
+
+  const movementDeltaMismatches: InventoryReconciliationResult["movementDeltaMismatches"] = [];
+  const movementContinuityMismatches: InventoryReconciliationResult["movementContinuityMismatches"] = [];
+  const movementGroups = new Map<string, Array<Record<string, unknown>>>();
+  for (const movement of movements || []) {
+    const before = Number(movement.quantity_before);
+    const after = Number(movement.quantity_after);
+    const delta = Number(movement.quantity_delta);
+    if (!Number.isFinite(before) || !Number.isFinite(after) || !Number.isFinite(delta) || after - before !== delta) {
+      movementDeltaMismatches.push({
+        movement_id: String(movement.id || ""),
+        variant_id: String(movement.variant_id || ""),
+        location_id: String(movement.location_id || ""),
+        quantity_before: before,
+        quantity_after: after,
+        quantity_delta: delta,
+      });
+    }
+    const groupKey = `${String(movement.variant_id || "")}:${String(movement.location_id || "")}`;
+    const group = movementGroups.get(groupKey) || [];
+    group.push(movement as Record<string, unknown>);
+    movementGroups.set(groupKey, group);
+  }
+
+  for (const group of movementGroups.values()) {
+    for (let index = 1; index < group.length; index += 1) {
+      const previous = group[index - 1];
+      const current = group[index];
+      const previousAfter = Number(previous.quantity_after);
+      const currentBefore = Number(current.quantity_before);
+      if (previousAfter !== currentBefore) {
+        movementContinuityMismatches.push({
+          variant_id: String(current.variant_id || ""),
+          location_id: String(current.location_id || ""),
+          previous_movement_id: String(previous.id || ""),
+          previous_quantity_after: previousAfter,
+          movement_id: String(current.id || ""),
+          quantity_before: currentBefore,
+        });
+      }
+    }
+  }
+
+  const balanceVsLatestMovementMismatches: InventoryReconciliationResult["balanceVsLatestMovementMismatches"] = [];
+  const balancesWithoutMovements: InventoryReconciliationResult["balancesWithoutMovements"] = [];
+  for (const balance of balances || []) {
+    const groupKey = `${String(balance.variant_id || "")}:${String(balance.location_id || "")}`;
+    const group = movementGroups.get(groupKey) || [];
+    const balanceQuantity = Number(balance.quantity_on_hand);
+    const latest = group.at(-1);
+    if (!latest) {
+      if (balanceQuantity !== 0) {
+        balancesWithoutMovements.push({
+          balance_id: String(balance.id || ""),
+          variant_id: String(balance.variant_id || ""),
+          location_id: String(balance.location_id || ""),
+          quantity_on_hand: balanceQuantity,
+        });
+      }
+      continue;
+    }
+    const latestAfter = Number(latest.quantity_after);
+    if (latestAfter !== balanceQuantity) {
+      balanceVsLatestMovementMismatches.push({
+        balance_id: String(balance.id || ""),
+        variant_id: String(balance.variant_id || ""),
+        location_id: String(balance.location_id || ""),
+        balance_quantity_on_hand: balanceQuantity,
+        latest_movement_id: String(latest.id || ""),
+        latest_quantity_after: latestAfter,
+      });
+    }
+  }
+
+  const { data: operations, error: operationsError } = await supabase
+    .from("inventory_operations")
+    .select("operation_key, operation_type, variant_id, location_id, quantity_before, quantity_after, quantity_delta");
+  if (operationsError) {
+    throw new Error(`Failed to load inventory operation keys for reconciliation: ${operationsError.message}`);
+  }
+  const operationCounts = new Map<string, number>();
+  for (const operation of operations || []) {
+    const key = String(operation.operation_key || "");
+    operationCounts.set(key, (operationCounts.get(key) || 0) + 1);
+  }
+  const duplicateOperationKeys = Array.from(operationCounts.entries())
+    .filter(([, duplicateCount]) => duplicateCount > 1)
+    .map(([operation_key, duplicate_count]) => ({ operation_key, duplicate_count }));
+  const movementOperationKeys = new Set(
+    (movements || [])
+      .map((movement: Record<string, unknown>) => String(movement.idempotency_key || ""))
+      .filter(Boolean),
+  );
+  const operationsMissingMovements = (operations || [])
+    .filter((operation: Record<string, unknown>) => (
+      Number(operation.quantity_delta) !== 0
+      && !movementOperationKeys.has(String(operation.operation_key || ""))
+    ))
+    .map((operation: Record<string, unknown>) => ({
+      operation_key: String(operation.operation_key || ""),
+      operation_type: String(operation.operation_type || ""),
+      variant_id: String(operation.variant_id || ""),
+      location_id: String(operation.location_id || ""),
+      quantity_before: Number(operation.quantity_before),
+      quantity_after: Number(operation.quantity_after),
+      quantity_delta: Number(operation.quantity_delta),
+    }));
+
+  const { data: runtimeHealthData, error: runtimeHealthError } = await supabase.rpc("inventory_runtime_health_rpc");
+  if (runtimeHealthError) {
+    throw new Error(`Failed to load inventory RPC health: ${runtimeHealthError.message}`);
+  }
+  const health = (runtimeHealthData || {}) as Record<string, unknown>;
+  const runtimeHealth = {
+    ready: health.ready === true,
+    version: typeof health.version === "string" ? health.version : null,
+    apply_deployed: health.apply_deployed === true,
+    apply_executable: health.apply_executable === true,
+    operations_table_deployed: health.operations_table_deployed === true,
+  };
 
   return {
     stockVsBalanceMismatches,
@@ -843,13 +1011,21 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
     duplicateVariantSkus,
     duplicateBarcodes,
     reservedExceedsOnHand,
-    blankMovementReasons: (movementReasons || [])
+    blankMovementReasons: (movements || [])
       .filter((movement: Record<string, unknown>) => !String(movement.reason || "").trim())
       .map((movement: Record<string, unknown>) => ({
         movement_id: String(movement.id || ""),
         variant_id: String(movement.variant_id || ""),
         movement_type: String(movement.movement_type || ""),
       })),
+    negativeBalances,
+    duplicateOperationKeys,
+    movementDeltaMismatches,
+    movementContinuityMismatches,
+    balanceVsLatestMovementMismatches,
+    balancesWithoutMovements,
+    operationsMissingMovements,
+    runtimeHealth,
   };
 }
 
@@ -1251,257 +1427,5 @@ export async function syncProductInventoryFromLegacy(input: SyncProductInventory
     variantCount: targets.length,
     balanceUpdates,
     movementCount,
-  };
-}
-
-export async function syncLegacyStockFromErp(productId: number) {
-  if (!Number.isFinite(productId)) {
-    throw new Error("Product ID is required for legacy stock sync.");
-  }
-
-  const supabase = adminClient() as any;
-  const location = await getMainInventoryLocation();
-
-  const { data: variants, error: variantsError } = await supabase
-    .from("product_variants")
-    .select("id, size, active, sort_order")
-    .eq("product_id", Math.trunc(productId))
-    .order("sort_order", { ascending: true });
-
-  if (variantsError) {
-    throw new Error(`Failed to load variants for legacy stock sync: ${variantsError.message}`);
-  }
-
-  const activeVariants = (variants || []).filter((variant: Record<string, unknown>) => variant.active !== false);
-  const variantIds = activeVariants.map((variant: Record<string, unknown>) => String(variant.id));
-  const balanceByVariantId = new Map<string, number>();
-
-  if (variantIds.length > 0) {
-    const { data: balances, error: balancesError } = await supabase
-      .from("inventory_balances")
-      .select("variant_id, quantity_on_hand")
-      .eq("location_id", location.id)
-      .in("variant_id", variantIds);
-
-    if (balancesError) {
-      throw new Error(`Failed to load balances for legacy stock sync: ${balancesError.message}`);
-    }
-
-    for (const balance of balances || []) {
-      balanceByVariantId.set(String(balance.variant_id), numberQuantity(balance.quantity_on_hand));
-    }
-  }
-
-  const sizeStock: Record<string, number> = {};
-  let stock = 0;
-  for (const variant of activeVariants) {
-    const variantId = String(variant.id);
-    const quantity = balanceByVariantId.get(variantId) || 0;
-    const size = String(variant.size || "ONE SIZE").trim() || "ONE SIZE";
-    sizeStock[size] = (sizeStock[size] || 0) + quantity;
-    stock += quantity;
-  }
-
-  const sizes = Object.keys(sizeStock).join(",");
-  const { error: updateError } = await supabase
-    .from("products")
-    .update({
-      stock,
-      size_stock: sizeStock,
-      sizes,
-    })
-    .eq("id", Math.trunc(productId));
-
-  if (updateError) {
-    throw new Error(`Failed to sync ERP stock back to product: ${updateError.message}`);
-  }
-
-  return {
-    productId: Math.trunc(productId),
-    stock,
-    size_stock: sizeStock,
-    sizes,
-  };
-}
-
-export async function adjustInventoryVariant(
-  input: AdjustInventoryVariantInput,
-): Promise<AdjustInventoryVariantResult> {
-  const variantId = typeof input.variantId === "string" ? input.variantId.trim() : "";
-  const reason = typeof input.reason === "string" ? input.reason.trim() : "";
-  const clientRequestId = typeof input.clientRequestId === "string" ? input.clientRequestId.trim() : "";
-  const operationType = input.operationType || "manual";
-  const operationConfig: Record<
-    NonNullable<AdjustInventoryVariantInput["operationType"]>,
-    { movementType: InventoryMovementType; sourceType: string }
-  > = {
-    manual: { movementType: "manual_adjustment", sourceType: "admin_inventory_adjustment" },
-    stocktake: { movementType: "correction", sourceType: "admin_stocktake" },
-    receiving: { movementType: "transfer_in", sourceType: "admin_receiving" },
-    return: { movementType: "return", sourceType: "admin_customer_return" },
-  };
-
-  if (!variantId) {
-    throw new Error("Variant ID is required.");
-  }
-  if (input.mode !== "set_to" && input.mode !== "adjust_by") {
-    throw new Error("Invalid adjustment mode.");
-  }
-  if (!operationConfig[operationType]) {
-    throw new Error("Invalid inventory operation type.");
-  }
-  if (!Number.isInteger(input.quantity)) {
-    throw new Error("Quantity must be an integer.");
-  }
-  if (operationType === "stocktake" && input.mode !== "set_to") {
-    throw new Error("Stocktake must set the counted inventory quantity.");
-  }
-  if (operationType === "stocktake" && input.quantity < 0) {
-    throw new Error("Stocktake quantity cannot be negative.");
-  }
-  if ((operationType === "receiving" || operationType === "return") && (input.mode !== "adjust_by" || input.quantity <= 0)) {
-    throw new Error("Receiving and return quantities must add a positive integer.");
-  }
-  if (!reason) {
-    throw new Error("Adjustment reason is required.");
-  }
-  if (!clientRequestId) {
-    throw new Error("clientRequestId is required.");
-  }
-
-  const supabase = adminClient() as any;
-  const location = await getMainInventoryLocation();
-  const operation = operationConfig[operationType];
-  const idempotencyKey = `${operation.sourceType}:${clientRequestId}:${variantId}`;
-
-  const { data: existingMovement, error: movementReadError } = await supabase
-    .from("stock_movements")
-    .select("id, quantity_before, quantity_after, quantity_delta, variant_id")
-    .eq("idempotency_key", idempotencyKey)
-    .maybeSingle();
-
-  if (movementReadError) {
-    throw new Error(`Failed to check inventory adjustment idempotency: ${movementReadError.message}`);
-  }
-
-  const { data: variant, error: variantError } = await supabase
-    .from("product_variants")
-    .select("id, product_id, variant_sku")
-    .eq("id", variantId)
-    .maybeSingle();
-
-  if (variantError) {
-    throw new Error(`Failed to load variant for adjustment: ${variantError.message}`);
-  }
-  if (!variant) {
-    throw new Error("Variant not found.");
-  }
-
-  if (existingMovement) {
-    return {
-      variantId,
-      productId: Number(variant.product_id),
-      quantityBefore: numberQuantity(existingMovement.quantity_before),
-      quantityAfter: numberQuantity(existingMovement.quantity_after),
-      quantityDelta: Number(existingMovement.quantity_delta) || 0,
-      alreadyProcessed: true,
-      noChange: false,
-    };
-  }
-
-  const { data: balance, error: balanceError } = await supabase
-    .from("inventory_balances")
-    .select("id, quantity_on_hand, quantity_reserved")
-    .eq("variant_id", variantId)
-    .eq("location_id", location.id)
-    .maybeSingle();
-
-  if (balanceError) {
-    throw new Error(`Failed to load variant balance for adjustment: ${balanceError.message}`);
-  }
-
-  const before = balance ? numberQuantity(balance.quantity_on_hand) : 0;
-  const after = input.mode === "set_to" ? input.quantity : before + input.quantity;
-  if (after < 0) {
-    throw new Error("Adjustment would make inventory negative.");
-  }
-
-  const delta = after - before;
-  if (delta === 0) {
-    return {
-      variantId,
-      productId: Number(variant.product_id),
-      quantityBefore: before,
-      quantityAfter: after,
-      quantityDelta: 0,
-      alreadyProcessed: false,
-      noChange: true,
-    };
-  }
-
-  const reserved = balance ? numberQuantity(balance.quantity_reserved) : 0;
-  const nextReserved = Math.min(reserved, after);
-  if (balance) {
-    const { error: updateBalanceError } = await supabase
-      .from("inventory_balances")
-      .update({
-        quantity_on_hand: after,
-        quantity_reserved: nextReserved,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", balance.id);
-
-    if (updateBalanceError) {
-      throw new Error(`Failed to update inventory balance: ${updateBalanceError.message}`);
-    }
-  } else {
-    const { error: insertBalanceError } = await supabase.from("inventory_balances").insert({
-      variant_id: variantId,
-      location_id: location.id,
-      quantity_on_hand: after,
-      quantity_reserved: 0,
-      updated_at: new Date().toISOString(),
-    });
-
-    if (insertBalanceError) {
-      throw new Error(`Failed to create inventory balance: ${insertBalanceError.message}`);
-    }
-  }
-
-  const { error: movementError } = await supabase.from("stock_movements").insert({
-    variant_id: variantId,
-    location_id: location.id,
-    movement_type: operation.movementType,
-    quantity_delta: delta,
-    quantity_before: before,
-    quantity_after: after,
-    reason,
-    source_type: operation.sourceType,
-    source_id: variantId,
-    idempotency_key: idempotencyKey,
-    created_by: input.createdBy || "admin",
-  });
-
-  if (movementError) {
-    throw new Error(`Failed to write inventory adjustment movement: ${movementError.message}`);
-  }
-
-  let legacySyncWarning: string | undefined;
-  try {
-    await syncLegacyStockFromErp(Number(variant.product_id));
-  } catch (error) {
-    legacySyncWarning =
-      error instanceof Error ? error.message : "Failed to sync ERP stock back to legacy product fields.";
-  }
-
-  return {
-    variantId,
-    productId: Number(variant.product_id),
-    quantityBefore: before,
-    quantityAfter: after,
-    quantityDelta: delta,
-    alreadyProcessed: false,
-    noChange: false,
-    legacySyncWarning,
   };
 }

@@ -1753,27 +1753,1201 @@ create table if not exists public.developer_access (
   id smallint primary key default 1,
   password_hash text not null,
   password_version integer not null default 1,
+  credential_version uuid not null default gen_random_uuid(),
+  initialized_at timestamptz not null default now(),
+  rotated_at timestamptz,
+  must_rotate boolean not null default true,
+  updated_at timestamptz not null default now(),
+  constraint developer_access_singleton_check check (id = 1),
+  constraint developer_access_password_hash_not_blank_check check (btrim(password_hash) <> ''),
+  constraint developer_access_password_version_check check (password_version >= 1),
+  constraint developer_access_password_hash_format_check check (
+    password_hash ~ '^scrypt\$16384\$8\$1\$[A-Za-z0-9+/]+={0,2}\$[A-Za-z0-9+/]{86}==$'
+  )
+);
+
+alter table public.developer_access enable row level security;
+
+revoke all on table public.developer_access from public, anon, authenticated;
+grant select, insert, update, delete on table public.developer_access to service_role;
+
+comment on table public.developer_access is
+  'Private per-customer developer credential. An empty table means uninitialized. Never seed or expose a reusable credential.';
+
+commit;
+
+-- END MIGRATION: 20260715090000_add_developer_access.sql
+
+-- ============================================================================
+-- BEGIN MIGRATION: 20260715100000_harden_pos_checkout_rpc.sql
+-- ============================================================================
+begin;
+
+-- Keep the historical six-argument function for migration compatibility, but
+-- remove direct Data API access. The new nine-argument wrapper is the only
+-- supported checkout entry point and executes the old implementation inside
+-- the same database transaction.
+revoke execute on function public.pos_checkout_rpc(text, text, jsonb, numeric, text, text)
+  from public, anon, authenticated, service_role;
+
+create or replace function public.pos_checkout_rpc(
+  p_client_request_id text,
+  p_payment_method text,
+  p_items jsonb,
+  p_discount_total numeric,
+  p_notes text,
+  p_created_by text,
+  p_legal_terms_version text,
+  p_privacy_policy_version text,
+  p_legal_accepted_at timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_client_request_id text := pg_catalog.btrim(coalesce(p_client_request_id, ''));
+  v_result jsonb;
+  v_order_id uuid;
+  v_already_processed boolean;
+begin
+  if v_client_request_id = '' then
+    raise exception 'client_request_id is required';
+  end if;
+
+  -- Serialize identical business operations before the historical RPC reads
+  -- the idempotency key. A replay therefore returns the committed order rather
+  -- than racing inventory locks and reporting a false stock conflict.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('pos_sale:' || v_client_request_id, 0)
+  );
+
+  v_result := public.pos_checkout_rpc(
+    p_client_request_id,
+    p_payment_method,
+    p_items,
+    p_discount_total,
+    p_notes,
+    p_created_by
+  );
+
+  v_order_id := nullif(v_result #>> '{order,id}', '')::uuid;
+  v_already_processed := coalesce((v_result ->> 'already_processed')::boolean, false);
+
+  if v_order_id is null then
+    raise exception 'POS checkout RPC returned no order id';
+  end if;
+
+  if not v_already_processed then
+    update public.sales_orders
+    set
+      legal_terms_version = nullif(pg_catalog.btrim(coalesce(p_legal_terms_version, '')), ''),
+      privacy_policy_version = nullif(pg_catalog.btrim(coalesce(p_privacy_policy_version, '')), ''),
+      legal_accepted_at = case
+        when nullif(pg_catalog.btrim(coalesce(p_legal_terms_version, '')), '') is not null
+          or nullif(pg_catalog.btrim(coalesce(p_privacy_policy_version, '')), '') is not null
+        then coalesce(p_legal_accepted_at, pg_catalog.now())
+        else null
+      end,
+      updated_at = pg_catalog.now()
+    where id = v_order_id;
+
+    if not found then
+      raise exception 'POS checkout order % disappeared before legal acceptance was recorded', v_order_id;
+    end if;
+  end if;
+
+  return v_result;
+end;
+$$;
+
+create or replace function public.pos_runtime_health_rpc()
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_checkout regprocedure := pg_catalog.to_regprocedure(
+    'public.pos_checkout_rpc(text,text,jsonb,numeric,text,text,text,text,timestamp with time zone)'
+  );
+  v_void regprocedure := pg_catalog.to_regprocedure(
+    'public.pos_void_rpc(uuid,text,text,text)'
+  );
+  v_checkout_executable boolean := false;
+  v_void_executable boolean := false;
+begin
+  if v_checkout is not null then
+    v_checkout_executable := pg_catalog.has_function_privilege('service_role', v_checkout, 'EXECUTE');
+  end if;
+  if v_void is not null then
+    v_void_executable := pg_catalog.has_function_privilege('service_role', v_void, 'EXECUTE');
+  end if;
+
+  return pg_catalog.jsonb_build_object(
+    'ready', v_checkout is not null and v_void is not null and v_checkout_executable and v_void_executable,
+    'version', 'pos-transaction-v2',
+    'checkout_deployed', v_checkout is not null,
+    'checkout_executable', v_checkout_executable,
+    'void_deployed', v_void is not null,
+    'void_executable', v_void_executable
+  );
+end;
+$$;
+
+revoke execute on function public.pos_checkout_rpc(
+  text, text, jsonb, numeric, text, text, text, text, timestamptz
+) from public, anon, authenticated;
+grant execute on function public.pos_checkout_rpc(
+  text, text, jsonb, numeric, text, text, text, text, timestamptz
+) to service_role;
+
+revoke execute on function public.pos_runtime_health_rpc()
+  from public, anon, authenticated;
+grant execute on function public.pos_runtime_health_rpc()
+  to service_role;
+
+commit;
+
+-- END MIGRATION: 20260715100000_harden_pos_checkout_rpc.sql
+
+-- ============================================================================
+-- BEGIN MIGRATION: 20260715100001_reconcile_pos_void_rpc.sql
+-- ============================================================================
+begin;
+
+create or replace function public.pos_void_rpc(
+  p_order_id uuid,
+  p_client_request_id text,
+  p_reason text,
+  p_created_by text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_client_request_id text := pg_catalog.btrim(coalesce(p_client_request_id, ''));
+  v_reason text := pg_catalog.btrim(coalesce(p_reason, ''));
+  v_created_by text := nullif(pg_catalog.btrim(coalesce(p_created_by, '')), '');
+  v_order_status text;
+  v_location_id uuid;
+  v_row record;
+  v_expected_count integer;
+  v_existing_count integer;
+  v_missing_count integer;
+  v_restored_items jsonb := '[]'::jsonb;
+begin
+  if p_order_id is null then
+    raise exception 'order_id is required';
+  end if;
+  if v_client_request_id = '' then
+    raise exception 'client_request_id is required';
+  end if;
+  if pg_catalog.length(v_reason) < 3 then
+    raise exception 'reason is required and must be at least 3 characters';
+  end if;
+  if v_created_by is null then
+    raise exception 'created_by is required';
+  end if;
+
+  select o.status
+    into v_order_status
+  from public.sales_orders o
+  where o.id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'POS order was not found';
+  end if;
+  if v_order_status = 'refunded' then
+    raise exception 'refunded order cannot be voided';
+  end if;
+  if v_order_status not in ('completed', 'voided') then
+    raise exception 'only completed orders can be voided';
+  end if;
+
+  select l.id
+    into v_location_id
+  from public.inventory_locations l
+  where l.code = 'MAIN_STORE'
+  limit 1;
+
+  if v_location_id is null then
+    raise exception using
+      errcode = 'P0001',
+      message = 'POS_VOID_RECONCILIATION_REQUIRED: MAIN_STORE inventory location is missing';
+  end if;
+
+  create temporary table if not exists pg_temp.pos_void_expected (
+    variant_id uuid primary key,
+    product_id bigint not null,
+    product_sku text not null,
+    variant_sku text not null,
+    expected_quantity integer not null check (expected_quantity > 0),
+    restored_quantity integer not null default 0,
+    missing_quantity integer not null default 0
+  ) on commit drop;
+
+  create temporary table if not exists pg_temp.pos_void_rows (
+    variant_id uuid primary key,
+    product_id bigint not null,
+    product_sku text not null,
+    variant_sku text not null,
+    balance_id uuid not null,
+    restored_quantity integer not null,
+    missing_quantity integer not null,
+    quantity_before integer not null,
+    quantity_after integer not null
+  ) on commit drop;
+
+  truncate table pg_temp.pos_void_expected;
+  truncate table pg_temp.pos_void_rows;
+
+  insert into pg_temp.pos_void_expected (
+    variant_id,
+    product_id,
+    product_sku,
+    variant_sku,
+    expected_quantity
+  )
+  select
+    i.variant_id,
+    pg_catalog.min(i.product_id)::bigint,
+    coalesce(nullif(pg_catalog.btrim(pg_catalog.min(i.product_sku)), ''), pg_catalog.min(i.variant_sku)),
+    pg_catalog.min(i.variant_sku),
+    pg_catalog.sum(i.quantity)::integer
+  from public.sales_order_items i
+  where i.order_id = p_order_id
+  group by i.variant_id;
+
+  select pg_catalog.count(*)::integer
+    into v_expected_count
+  from pg_temp.pos_void_expected;
+
+  if v_expected_count = 0 then
+    raise exception using
+      errcode = 'P0001',
+      message = 'POS_VOID_RECONCILIATION_REQUIRED: order has no item quantities to restore';
+  end if;
+
+  if exists (
+    select 1
+    from public.stock_movements m
+    left join pg_temp.pos_void_expected e on e.variant_id = m.variant_id
+    where m.source_type = 'pos_void'
+      and m.source_id = p_order_id::text
+      and (
+        e.variant_id is null
+        or m.location_id <> v_location_id
+        or m.movement_type <> 'return'
+        or m.quantity_delta <= 0
+        or m.quantity_after <> m.quantity_before + m.quantity_delta
+      )
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'POS_VOID_RECONCILIATION_REQUIRED: existing void movements are inconsistent';
+  end if;
+
+  update pg_temp.pos_void_expected e
+  set restored_quantity = restored.quantity
+  from (
+    select m.variant_id, pg_catalog.sum(m.quantity_delta)::integer as quantity
+    from public.stock_movements m
+    where m.source_type = 'pos_void'
+      and m.source_id = p_order_id::text
+    group by m.variant_id
+  ) restored
+  where restored.variant_id = e.variant_id;
+
+  if exists (
+    select 1
+    from pg_temp.pos_void_expected e
+    where e.restored_quantity < 0
+       or e.restored_quantity > e.expected_quantity
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'POS_VOID_RECONCILIATION_REQUIRED: restored quantity exceeds the order quantity';
+  end if;
+
+  update pg_temp.pos_void_expected
+  set missing_quantity = expected_quantity - restored_quantity
+  where true;
+
+  select pg_catalog.count(*)::integer
+    into v_existing_count
+  from public.stock_movements m
+  where m.source_type = 'pos_void'
+    and m.source_id = p_order_id::text;
+
+  -- A row marked voided without any restoration ledger cannot be safely
+  -- distinguished from an old partial JS write that failed before movement
+  -- insertion. Stop and require reconciliation instead of adding stock again.
+  if v_order_status = 'voided' and v_existing_count = 0 then
+    raise exception using
+      errcode = 'P0001',
+      message = 'POS_VOID_RECONCILIATION_REQUIRED: voided order has no restoration movements';
+  end if;
+
+  if exists (
+    select 1
+    from pg_temp.pos_void_expected e
+    left join public.inventory_balances b
+      on b.variant_id = e.variant_id
+     and b.location_id = v_location_id
+    where b.id is null
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'POS_VOID_RECONCILIATION_REQUIRED: an order variant has no MAIN_STORE balance';
+  end if;
+
+  for v_row in
+    select
+      e.variant_id,
+      e.product_id,
+      e.product_sku,
+      e.variant_sku,
+      e.restored_quantity,
+      e.missing_quantity,
+      b.id as balance_id,
+      b.quantity_on_hand
+    from pg_temp.pos_void_expected e
+    join public.inventory_balances b
+      on b.variant_id = e.variant_id
+     and b.location_id = v_location_id
+    order by e.variant_id
+    for update of b
+  loop
+    insert into pg_temp.pos_void_rows (
+      variant_id,
+      product_id,
+      product_sku,
+      variant_sku,
+      balance_id,
+      restored_quantity,
+      missing_quantity,
+      quantity_before,
+      quantity_after
+    ) values (
+      v_row.variant_id,
+      v_row.product_id,
+      v_row.product_sku,
+      v_row.variant_sku,
+      v_row.balance_id,
+      v_row.restored_quantity,
+      v_row.missing_quantity,
+      v_row.quantity_on_hand,
+      v_row.quantity_on_hand + v_row.missing_quantity
+    );
+  end loop;
+
+  if (select pg_catalog.count(*) from pg_temp.pos_void_rows) <> v_expected_count then
+    raise exception using
+      errcode = 'P0001',
+      message = 'POS_VOID_RECONCILIATION_REQUIRED: not every order variant could be locked';
+  end if;
+
+  select pg_catalog.count(*)::integer
+    into v_missing_count
+  from pg_temp.pos_void_rows
+  where missing_quantity > 0;
+
+  if v_missing_count > 0 then
+    update public.inventory_balances b
+    set
+      quantity_on_hand = r.quantity_after,
+      updated_at = pg_catalog.now()
+    from pg_temp.pos_void_rows r
+    where b.id = r.balance_id
+      and r.missing_quantity > 0;
+
+    insert into public.stock_movements (
+      variant_id,
+      location_id,
+      movement_type,
+      quantity_delta,
+      quantity_before,
+      quantity_after,
+      reason,
+      source_type,
+      source_id,
+      idempotency_key,
+      created_by
+    )
+    select
+      r.variant_id,
+      v_location_id,
+      'return',
+      r.missing_quantity,
+      r.quantity_before,
+      r.quantity_after,
+      v_reason,
+      'pos_void',
+      p_order_id::text,
+      'pos_void:' || v_client_request_id || ':' || p_order_id::text || ':' || r.variant_id::text,
+      v_created_by
+    from pg_temp.pos_void_rows r
+    where r.missing_quantity > 0;
+
+    for v_row in
+      select distinct r.product_id
+      from pg_temp.pos_void_rows r
+      where r.missing_quantity > 0
+    loop
+      perform app_private.pos_sync_legacy_stock_from_erp(v_row.product_id);
+    end loop;
+  end if;
+
+  update public.sales_orders
+  set
+    status = 'voided',
+    payment_status = 'voided',
+    voided_at = coalesce(voided_at, pg_catalog.now()),
+    updated_at = pg_catalog.now()
+  where id = p_order_id;
+
+  update public.payments
+  set status = 'voided'
+  where order_id = p_order_id;
+
+  select coalesce(
+    pg_catalog.jsonb_agg(
+      pg_catalog.jsonb_build_object(
+        'variant_id', r.variant_id,
+        'variant_sku', r.variant_sku,
+        'quantity_before', r.quantity_before,
+        'quantity_after', r.quantity_after,
+        'quantity_delta', r.missing_quantity,
+        'previously_restored', r.restored_quantity
+      ) order by r.variant_sku
+    ) filter (where r.missing_quantity > 0),
+    '[]'::jsonb
+  )
+    into v_restored_items
+  from pg_temp.pos_void_rows r;
+
+  return app_private.pos_order_payload(p_order_id, v_missing_count = 0)
+    || pg_catalog.jsonb_build_object('restored_items', v_restored_items);
+end;
+$$;
+
+revoke execute on function public.pos_void_rpc(uuid, text, text, text)
+  from public, anon, authenticated;
+grant execute on function public.pos_void_rpc(uuid, text, text, text)
+  to service_role;
+
+commit;
+
+-- END MIGRATION: 20260715100001_reconcile_pos_void_rpc.sql
+
+-- ============================================================================
+-- BEGIN MIGRATION: 20260715102000_transactional_inventory_operations.sql
+-- ============================================================================
+begin;
+
+create table if not exists public.inventory_operations (
+  id uuid primary key default gen_random_uuid(),
+  operation_key text not null unique,
+  client_request_id text not null,
+  operation_type text not null,
+  variant_id uuid not null references public.product_variants(id) on delete restrict,
+  location_id uuid not null references public.inventory_locations(id) on delete restrict,
+  mode text not null,
+  requested_quantity integer not null,
+  quantity_before integer not null,
+  quantity_after integer not null,
+  quantity_delta integer not null,
+  reason text not null,
+  source_type text not null,
+  source_id text not null,
+  actor text not null,
+  auto_deactivate boolean not null default false,
+  result jsonb not null,
+  created_at timestamptz not null default now(),
+  constraint inventory_operations_type_check
+    check (operation_type in ('manual', 'stocktake', 'receiving', 'return', 'quick_sell')),
+  constraint inventory_operations_mode_check
+    check (mode in ('set_to', 'adjust_by')),
+  constraint inventory_operations_reason_not_blank_check
+    check (btrim(reason) <> ''),
+  constraint inventory_operations_actor_not_blank_check
+    check (btrim(actor) <> ''),
+  constraint inventory_operations_quantity_check
+    check (
+      quantity_before >= 0
+      and quantity_after >= 0
+      and quantity_delta = quantity_after - quantity_before
+    )
+);
+
+create index if not exists inventory_operations_variant_created_idx
+  on public.inventory_operations (variant_id, created_at desc);
+
+create index if not exists inventory_operations_source_idx
+  on public.inventory_operations (source_type, source_id);
+
+alter table public.inventory_operations enable row level security;
+revoke all on table public.inventory_operations from public, anon, authenticated;
+grant select, insert, update, delete on table public.inventory_operations to service_role;
+
+create or replace function public.inventory_apply_rpc(
+  p_client_request_id text,
+  p_variant_id uuid,
+  p_mode text,
+  p_quantity integer,
+  p_operation_type text,
+  p_reason text,
+  p_created_by text,
+  p_auto_deactivate boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+set statement_timeout = '10s'
+as $$
+declare
+  v_client_request_id text := pg_catalog.btrim(coalesce(p_client_request_id, ''));
+  v_mode text := pg_catalog.btrim(coalesce(p_mode, ''));
+  v_operation_type text := pg_catalog.btrim(coalesce(p_operation_type, ''));
+  v_reason text := pg_catalog.btrim(coalesce(p_reason, ''));
+  v_created_by text := pg_catalog.btrim(coalesce(p_created_by, ''));
+  v_operation_key text;
+  v_source_type text;
+  v_movement_type text;
+  v_location_id uuid;
+  v_variant record;
+  v_balance record;
+  v_existing public.inventory_operations%rowtype;
+  v_before integer;
+  v_reserved integer;
+  v_after integer;
+  v_delta integer;
+  v_stock integer := 0;
+  v_size_stock jsonb := '{"ONE SIZE": 0}'::jsonb;
+  v_sizes text := 'ONE SIZE';
+  v_product_active boolean;
+  v_result jsonb;
+begin
+  if v_client_request_id = '' or pg_catalog.length(v_client_request_id) > 128 then
+    raise exception 'INVENTORY_INVALID_ARGUMENT: clientRequestId must contain 1 to 128 characters';
+  end if;
+  if p_variant_id is null then
+    raise exception 'INVENTORY_INVALID_ARGUMENT: variantId is required';
+  end if;
+  if v_reason = '' or pg_catalog.length(v_reason) < 3 or pg_catalog.length(v_reason) > 500 then
+    raise exception 'INVENTORY_INVALID_ARGUMENT: reason must contain 3 to 500 characters';
+  end if;
+  if v_created_by = '' or pg_catalog.length(v_created_by) > 200 then
+    raise exception 'INVENTORY_INVALID_ARGUMENT: actor is required and must not exceed 200 characters';
+  end if;
+  if p_quantity is null or pg_catalog.abs(p_quantity::bigint) > 1000000 then
+    raise exception 'INVENTORY_INVALID_ARGUMENT: quantity must be an integer between -1000000 and 1000000';
+  end if;
+
+  case v_operation_type
+    when 'manual' then
+      if v_mode not in ('set_to', 'adjust_by') then
+        raise exception 'INVENTORY_INVALID_ARGUMENT: manual mode must be set_to or adjust_by';
+      end if;
+      if v_mode = 'set_to' and p_quantity < 0 then
+        raise exception 'INVENTORY_INVALID_ARGUMENT: set_to quantity cannot be negative';
+      end if;
+      v_source_type := 'admin_inventory_adjustment';
+      v_movement_type := 'manual_adjustment';
+    when 'stocktake' then
+      if v_mode <> 'set_to' or p_quantity < 0 then
+        raise exception 'INVENTORY_INVALID_ARGUMENT: stocktake must set a non-negative quantity';
+      end if;
+      v_source_type := 'admin_stocktake';
+      v_movement_type := 'correction';
+    when 'receiving' then
+      if v_mode <> 'adjust_by' or p_quantity <= 0 then
+        raise exception 'INVENTORY_INVALID_ARGUMENT: receiving must add a positive quantity';
+      end if;
+      v_source_type := 'admin_receiving';
+      v_movement_type := 'transfer_in';
+    when 'return' then
+      if v_mode <> 'adjust_by' or p_quantity <= 0 then
+        raise exception 'INVENTORY_INVALID_ARGUMENT: return must add a positive quantity';
+      end if;
+      v_source_type := 'admin_customer_return';
+      v_movement_type := 'return';
+    when 'quick_sell' then
+      if v_mode <> 'adjust_by' or p_quantity >= 0 then
+        raise exception 'INVENTORY_INVALID_ARGUMENT: quick_sell must deduct a negative quantity';
+      end if;
+      v_source_type := 'quick_sell';
+      v_movement_type := 'sale';
+    else
+      raise exception 'INVENTORY_INVALID_ARGUMENT: invalid operationType';
+  end case;
+
+  v_operation_key :=
+    case when v_operation_type = 'quick_sell' then 'quick_sell:' else 'inventory:' end
+    || v_client_request_id;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(v_operation_key, 0)
+  );
+
+  select *
+    into v_existing
+  from public.inventory_operations
+  where operation_key = v_operation_key
+  for update;
+
+  if found then
+    if v_existing.variant_id <> p_variant_id
+      or v_existing.operation_type <> v_operation_type
+      or v_existing.mode <> v_mode
+      or v_existing.requested_quantity <> p_quantity
+      or v_existing.reason <> v_reason
+      or v_existing.actor <> v_created_by
+      or v_existing.auto_deactivate <> coalesce(p_auto_deactivate, false)
+    then
+      raise exception 'INVENTORY_OPERATION_CONFLICT: operation ID was already used with different parameters';
+    end if;
+
+    return pg_catalog.jsonb_set(
+      v_existing.result,
+      '{alreadyProcessed}',
+      'true'::jsonb,
+      true
+    );
+  end if;
+
+  select id
+    into v_location_id
+  from public.inventory_locations
+  where code = 'MAIN_STORE'
+    and active is distinct from false
+  limit 1;
+
+  if v_location_id is null then
+    raise exception 'INVENTORY_NOT_FOUND: active MAIN_STORE location is missing';
+  end if;
+
+  select
+    v.id,
+    v.product_id,
+    v.variant_sku,
+    coalesce(nullif(pg_catalog.btrim(v.size), ''), 'ONE SIZE') as size,
+    v.active as variant_active,
+    p.sku as product_sku,
+    p.is_active as product_active
+    into v_variant
+  from public.product_variants v
+  join public.products p on p.id = v.product_id
+  where v.id = p_variant_id
+  for update of v, p;
+
+  if not found then
+    raise exception 'INVENTORY_NOT_FOUND: variant was not found';
+  end if;
+
+  if v_operation_type = 'quick_sell'
+    and (v_variant.product_active is false or v_variant.variant_active is false)
+  then
+    raise exception 'INVENTORY_INACTIVE: product and variant must both be active';
+  end if;
+
+  if v_operation_type <> 'quick_sell' then
+    insert into public.inventory_balances (
+      variant_id,
+      location_id,
+      quantity_on_hand,
+      quantity_reserved,
+      updated_at
+    ) values (
+      p_variant_id,
+      v_location_id,
+      0,
+      0,
+      pg_catalog.now()
+    )
+    on conflict (variant_id, location_id) do nothing;
+  end if;
+
+  select id, quantity_on_hand, quantity_reserved
+    into v_balance
+  from public.inventory_balances
+  where variant_id = p_variant_id
+    and location_id = v_location_id
+  for update;
+
+  if not found then
+    raise exception 'INVENTORY_NOT_FOUND: variant has no MAIN_STORE inventory balance';
+  end if;
+
+  v_before := v_balance.quantity_on_hand;
+  v_reserved := v_balance.quantity_reserved;
+
+  if v_operation_type = 'quick_sell'
+    and (v_before - v_reserved) < (0 - p_quantity)
+  then
+    raise exception 'INVENTORY_INSUFFICIENT_AVAILABLE: requested %, available %',
+      0 - p_quantity,
+      greatest(v_before - v_reserved, 0);
+  end if;
+
+  v_after :=
+    case
+      when v_mode = 'set_to' then p_quantity
+      else v_before + p_quantity
+    end;
+
+  if v_after < 0 then
+    raise exception 'INVENTORY_INSUFFICIENT_STOCK: operation would make inventory negative';
+  end if;
+  if v_after < v_reserved then
+    raise exception 'INVENTORY_RESERVED_CONFLICT: resulting on-hand quantity would be below reserved quantity';
+  end if;
+
+  v_delta := v_after - v_before;
+
+  insert into public.inventory_operations (
+    operation_key,
+    client_request_id,
+    operation_type,
+    variant_id,
+    location_id,
+    mode,
+    requested_quantity,
+    quantity_before,
+    quantity_after,
+    quantity_delta,
+    reason,
+    source_type,
+    source_id,
+    actor,
+    auto_deactivate,
+    result
+  ) values (
+    v_operation_key,
+    v_client_request_id,
+    v_operation_type,
+    p_variant_id,
+    v_location_id,
+    v_mode,
+    p_quantity,
+    v_before,
+    v_after,
+    v_delta,
+    v_reason,
+    v_source_type,
+    v_operation_key,
+    v_created_by,
+    coalesce(p_auto_deactivate, false),
+    '{}'::jsonb
+  );
+
+  if v_delta <> 0 then
+    update public.inventory_balances
+    set
+      quantity_on_hand = v_after,
+      updated_at = pg_catalog.now()
+    where id = v_balance.id;
+
+    if not found then
+      raise exception 'INVENTORY_INVARIANT: locked balance disappeared';
+    end if;
+
+    insert into public.stock_movements (
+      variant_id,
+      location_id,
+      movement_type,
+      quantity_delta,
+      quantity_before,
+      quantity_after,
+      reason,
+      source_type,
+      source_id,
+      idempotency_key,
+      created_by
+    ) values (
+      p_variant_id,
+      v_location_id,
+      v_movement_type,
+      v_delta,
+      v_before,
+      v_after,
+      v_reason,
+      v_source_type,
+      v_operation_key,
+      v_operation_key,
+      v_created_by
+    );
+  end if;
+
+  with active_variants as (
+    select
+      coalesce(nullif(pg_catalog.btrim(v.size), ''), 'ONE SIZE') as size,
+      v.sort_order,
+      coalesce(b.quantity_on_hand, 0)::integer as quantity_on_hand
+    from public.product_variants v
+    left join public.inventory_balances b
+      on b.variant_id = v.id
+     and b.location_id = v_location_id
+    where v.product_id = v_variant.product_id
+      and v.active is distinct from false
+  ),
+  size_totals as (
+    select
+      size,
+      pg_catalog.min(sort_order) as sort_order,
+      pg_catalog.sum(quantity_on_hand)::integer as quantity_on_hand
+    from active_variants
+    group by size
+  )
+  select
+    coalesce(pg_catalog.sum(quantity_on_hand), 0)::integer,
+    coalesce(
+      pg_catalog.jsonb_object_agg(size, quantity_on_hand order by sort_order, size),
+      '{"ONE SIZE": 0}'::jsonb
+    ),
+    coalesce(
+      pg_catalog.string_agg(size, ',' order by sort_order, size),
+      'ONE SIZE'
+    )
+    into v_stock, v_size_stock, v_sizes
+  from size_totals;
+
+  update public.products
+  set
+    stock = v_stock,
+    size_stock = v_size_stock,
+    sizes = v_sizes,
+    is_active = case
+      when v_operation_type = 'quick_sell'
+        and coalesce(p_auto_deactivate, false)
+        and v_stock = 0
+      then false
+      else is_active
+    end
+  where id = v_variant.product_id
+  returning is_active into v_product_active;
+
+  if not found then
+    raise exception 'INVENTORY_INVARIANT: product disappeared during legacy projection';
+  end if;
+
+  v_result := pg_catalog.jsonb_build_object(
+    'ok', true,
+    'rpc', true,
+    'operationId', v_operation_key,
+    'alreadyProcessed', false,
+    'noChange', v_delta = 0,
+    'operationType', v_operation_type,
+    'variantId', p_variant_id,
+    'variantSku', v_variant.variant_sku,
+    'size', v_variant.size,
+    'productId', v_variant.product_id,
+    'productSku', v_variant.product_sku,
+    'quantityBefore', v_before,
+    'quantityAfter', v_after,
+    'quantityDelta', v_delta,
+    'quantityReserved', v_reserved,
+    'quantityAvailable', v_after - v_reserved,
+    'product', pg_catalog.jsonb_build_object(
+      'id', v_variant.product_id,
+      'sku', v_variant.product_sku,
+      'stock', v_stock,
+      'size_stock', v_size_stock,
+      'sizes', v_sizes,
+      'is_active', v_product_active
+    )
+  );
+
+  update public.inventory_operations
+  set result = v_result
+  where operation_key = v_operation_key;
+
+  insert into public.audit_logs (
+    actor,
+    action,
+    entity,
+    entity_id,
+    before,
+    after,
+    metadata
+  ) values (
+    v_created_by,
+    'inventory_operation',
+    'product_variant',
+    p_variant_id::text,
+    pg_catalog.jsonb_build_object(
+      'quantity_on_hand', v_before,
+      'quantity_reserved', v_reserved
+    ),
+    pg_catalog.jsonb_build_object(
+      'quantity_on_hand', v_after,
+      'quantity_reserved', v_reserved
+    ),
+    pg_catalog.jsonb_build_object(
+      'operation_key', v_operation_key,
+      'operation_type', v_operation_type,
+      'mode', v_mode,
+      'requested_quantity', p_quantity,
+      'source_type', v_source_type,
+      'reason', v_reason
+    )
+  );
+
+  return v_result;
+end;
+$$;
+
+create or replace function public.inventory_runtime_health_rpc()
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_apply regprocedure := pg_catalog.to_regprocedure(
+    'public.inventory_apply_rpc(text,uuid,text,integer,text,text,text,boolean)'
+  );
+  v_executable boolean := false;
+  v_operations_table regclass := pg_catalog.to_regclass('public.inventory_operations');
+begin
+  if v_apply is not null then
+    v_executable := pg_catalog.has_function_privilege('service_role', v_apply, 'EXECUTE');
+  end if;
+
+  return pg_catalog.jsonb_build_object(
+    'ready', v_apply is not null and v_executable and v_operations_table is not null,
+    'version', 'inventory-transaction-v1',
+    'apply_deployed', v_apply is not null,
+    'apply_executable', v_executable,
+    'operations_table_deployed', v_operations_table is not null
+  );
+end;
+$$;
+
+revoke execute on function public.inventory_apply_rpc(
+  text, uuid, text, integer, text, text, text, boolean
+) from public, anon, authenticated;
+grant execute on function public.inventory_apply_rpc(
+  text, uuid, text, integer, text, text, text, boolean
+) to service_role;
+
+revoke execute on function public.inventory_runtime_health_rpc()
+  from public, anon, authenticated;
+grant execute on function public.inventory_runtime_health_rpc()
+  to service_role;
+
+commit;
+
+-- END MIGRATION: 20260715102000_transactional_inventory_operations.sql
+
+-- ============================================================================
+-- BEGIN MIGRATION: 20260715110000_harden_developer_credentials.sql
+-- ============================================================================
+begin;
+
+create extension if not exists pgcrypto;
+
+create table if not exists public.developer_access (
+  id smallint primary key default 1,
+  password_hash text not null,
+  password_version integer not null default 1,
+  credential_version uuid not null default gen_random_uuid(),
+  initialized_at timestamptz not null default now(),
+  rotated_at timestamptz,
+  must_rotate boolean not null default true,
   updated_at timestamptz not null default now(),
   constraint developer_access_singleton_check check (id = 1),
   constraint developer_access_password_hash_not_blank_check check (btrim(password_hash) <> '')
 );
 
+alter table public.developer_access
+  add column if not exists password_version integer not null default 1,
+  add column if not exists credential_version uuid not null default gen_random_uuid(),
+  add column if not exists initialized_at timestamptz not null default now(),
+  add column if not exists rotated_at timestamptz,
+  add column if not exists must_rotate boolean not null default true,
+  add column if not exists updated_at timestamptz not null default now();
+
+create or replace function public.developer_credential_hash_is_valid(p_password_hash text)
+returns boolean
+language sql
+immutable
+strict
+set search_path = ''
+as $$
+  select
+    pg_catalog.length(p_password_hash) between 128 and 512
+    and p_password_hash ~ '^scrypt\$16384\$8\$1\$[A-Za-z0-9+/]+={0,2}\$[A-Za-z0-9+/]{86}==$'
+    and pg_catalog.length(pg_catalog.split_part(p_password_hash, '$', 5)) between 24 and 88
+    and pg_catalog.length(pg_catalog.split_part(p_password_hash, '$', 5)) % 4 = 0
+    and pg_catalog.length(pg_catalog.split_part(p_password_hash, '$', 6)) = 88;
+$$;
+
+-- Invalid legacy rows cannot be verified safely. Removing only the credential
+-- fails closed and allows service-role bootstrap recovery without touching any
+-- Store, Legal, Feature, product, order, or inventory data.
+delete from public.developer_access
+where not public.developer_credential_hash_is_valid(password_hash);
+
+-- Every pre-existing credential is treated as potentially shared. Its old
+-- password and all old cookies remain blocked until the trusted CLI rotates it.
+update public.developer_access
+set
+  credential_version = gen_random_uuid(),
+  initialized_at = coalesce(initialized_at, updated_at, now()),
+  must_rotate = true,
+  updated_at = now();
+
+alter table public.developer_access
+  drop constraint if exists developer_access_password_hash_format_check;
+alter table public.developer_access
+  add constraint developer_access_password_hash_format_check
+  check (public.developer_credential_hash_is_valid(password_hash));
+
+alter table public.developer_access
+  drop constraint if exists developer_access_password_version_check;
+alter table public.developer_access
+  add constraint developer_access_password_version_check
+  check (password_version >= 1);
+
 alter table public.developer_access enable row level security;
+revoke all on table public.developer_access from public, anon, authenticated;
+grant select, insert, update, delete on table public.developer_access to service_role;
 
-revoke all on table public.developer_access from anon, authenticated;
-grant select, insert, update on table public.developer_access to service_role;
-
-insert into public.developer_access (id, password_hash, password_version)
-values (
-  1,
-  'scrypt$16384$8$1$JVBQevdc5mVIsFKfhZYDBQ==$h57PoCu6BNPP/PWRxi3E3vt+eK1secqL+ZALrDolv/Xbn4V344uMobV9VCcVnJZgAmWf9XjJkcAN0KhGsihdBg==',
-  1
+create or replace function public.developer_credential_bootstrap_rpc(
+  p_password_hash text,
+  p_credential_version uuid
 )
-on conflict (id) do nothing;
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+set statement_timeout = '10s'
+as $$
+declare
+  v_inserted integer;
+  v_now timestamptz := pg_catalog.clock_timestamp();
+begin
+  if not public.developer_credential_hash_is_valid(p_password_hash) then
+    raise exception 'DEV_CREDENTIAL_INVALID_HASH: a bounded scrypt credential is required';
+  end if;
+  if p_credential_version is null then
+    raise exception 'DEV_CREDENTIAL_INVALID_ARGUMENT: credential version is required';
+  end if;
+
+  insert into public.developer_access (
+    id,
+    password_hash,
+    password_version,
+    credential_version,
+    initialized_at,
+    rotated_at,
+    must_rotate,
+    updated_at
+  ) values (
+    1,
+    p_password_hash,
+    1,
+    p_credential_version,
+    v_now,
+    null,
+    false,
+    v_now
+  )
+  on conflict (id) do nothing;
+
+  get diagnostics v_inserted = row_count;
+  if v_inserted <> 1 then
+    raise exception 'DEV_CREDENTIAL_ALREADY_INITIALIZED: bootstrap refused';
+  end if;
+
+  return pg_catalog.jsonb_build_object(
+    'initialized', true,
+    'mustRotate', false
+  );
+end;
+$$;
+
+create or replace function public.developer_credential_rotate_rpc(
+  p_password_hash text,
+  p_credential_version uuid,
+  p_expected_credential_version uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+set statement_timeout = '10s'
+as $$
+declare
+  v_existing public.developer_access%rowtype;
+  v_now timestamptz := pg_catalog.clock_timestamp();
+begin
+  if not public.developer_credential_hash_is_valid(p_password_hash) then
+    raise exception 'DEV_CREDENTIAL_INVALID_HASH: a bounded scrypt credential is required';
+  end if;
+  if p_credential_version is null or p_expected_credential_version is null then
+    raise exception 'DEV_CREDENTIAL_INVALID_ARGUMENT: credential versions are required';
+  end if;
+
+  select *
+    into v_existing
+  from public.developer_access
+  where id = 1
+  for update;
+
+  if not found then
+    raise exception 'DEV_CREDENTIAL_UNINITIALIZED: bootstrap is required';
+  end if;
+  if v_existing.credential_version <> p_expected_credential_version then
+    raise exception 'DEV_CREDENTIAL_CONFLICT: credential changed before rotation';
+  end if;
+
+  update public.developer_access
+  set
+    password_hash = p_password_hash,
+    password_version = v_existing.password_version + 1,
+    credential_version = p_credential_version,
+    rotated_at = v_now,
+    must_rotate = false,
+    updated_at = v_now
+  where id = 1;
+
+  if not found then
+    raise exception 'DEV_CREDENTIAL_INVARIANT: locked credential disappeared';
+  end if;
+
+  return pg_catalog.jsonb_build_object(
+    'initialized', true,
+    'mustRotate', false
+  );
+end;
+$$;
+
+revoke execute on function public.developer_credential_hash_is_valid(text)
+  from public, anon, authenticated;
+grant execute on function public.developer_credential_hash_is_valid(text)
+  to service_role;
+
+revoke execute on function public.developer_credential_bootstrap_rpc(text, uuid)
+  from public, anon, authenticated;
+grant execute on function public.developer_credential_bootstrap_rpc(text, uuid)
+  to service_role;
+
+revoke execute on function public.developer_credential_rotate_rpc(text, uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.developer_credential_rotate_rpc(text, uuid, uuid)
+  to service_role;
 
 comment on table public.developer_access is
-  'Private developer-only credential hash for Store Settings and Legal Settings. Never expose through anon/authenticated policies.';
+  'Private per-customer developer credential. Empty means uninitialized; must_rotate blocks application sessions until trusted CLI rotation.';
 
 commit;
 
--- END MIGRATION: 20260715090000_add_developer_access.sql
+-- END MIGRATION: 20260715110000_harden_developer_credentials.sql

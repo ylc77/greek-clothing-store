@@ -181,8 +181,8 @@ Do not present these as completed:
 
 If POS RPC has a production issue:
 
-1. Set `USE_POS_RPC=false` in Vercel Production.
-2. Redeploy production.
-3. Pause POS checkout.
-4. Run ERP and POS health checks.
-5. Keep the existing Supabase JS fallback path until RPC is fully stable.
+1. Pause POS checkout and void operations.
+2. Set `USE_POS_RPC=false` only if an API-level emergency block is required, then redeploy.
+3. Run ERP and POS health checks and preserve the affected request IDs.
+4. Repair or roll forward the RPC migration before setting `USE_POS_RPC=true` again.
+5. Do not enable the historical Supabase JS multi-step fallback.

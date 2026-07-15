@@ -139,3 +139,48 @@ The product page was previously observed passing `size_stock` to the AI assistan
 
 AI size and stock answers must use an authoritative server-side product record selected by SKU. Do not trust browser-supplied product fields as the source of truth. Include `size_system`, distinguish available sizes from sold-out sizes, and never infer conversions between letter, EU women's numeric, EU men's numeric, EU shoe, One Size, or custom sizing without an explicit product `size_chart` mapping.
 
+
+\---
+
+
+\## 12. POS transaction safety boundary
+
+
+Formal POS checkout and void writes are RPC-only. `USE_POS_RPC=true` is required when POS is enabled; false, missing RPC migrations, missing execute privilege, or an unavailable RPC must fail closed with HTTP 503. Never restore the historical Supabase JS multi-step fallback.
+
+
+Checkout legal versions and actor identity are written inside the checkout transaction. Void completion must reconcile every order Variant against `pos_void` movement quantities; an inconsistent or indeterminate ledger must return `POS_VOID_RECONCILIATION_REQUIRED` instead of reporting success. Preserve the browser business operation ID across timeouts and response loss so retries reuse the same database idempotency key.
+
+
+\---
+
+
+\## 13. Inventory transaction safety boundary
+
+
+Inventory adjustment and Quick Sell writes are RPC-only through `public.inventory_apply_rpc`. The operation record, locked inventory balance, stock movement, and legacy `products.stock` / `products.size_stock` projection must commit or roll back together. Missing migrations, execute privilege, PostgREST, or RPC availability must fail closed with HTTP 503; never add a Supabase JS multi-step fallback.
+
+
+Quick Sell is an owner-only inventory shortcut and intentionally does not create a POS order, payment, or receipt. Staff must use the POS checkout flow. Both inventory adjustment and Quick Sell must preserve one browser business operation ID across double clicks, timeouts, response loss, and refreshes; an uncertain expired/corrupt ID requires explicit reconciliation before reset.
+
+
+Product create/edit and CSV import still contain historical inventory compatibility writes outside this RPC boundary. Do not describe those paths as transactionally hardened or silently migrate them while working on inventory adjustment / Quick Sell. They need a separately scoped review and regression suite.
+
+
+\---
+
+
+\## 14. Per-customer developer credential boundary
+
+
+Clean installations must leave `public.developer_access` empty. Never seed a developer plaintext password or reusable fixed hash in a migration, client-init snapshot, test, example, or document. A maintainer initializes each customer with `npm run developer:bootstrap -- --project-ref ...` using a local server-only Supabase service/secret key; rotation and recovery use the corresponding CLI, never a public web endpoint.
+
+
+Every pre-existing developer credential is treated as potentially shared and must remain `must_rotate=true` until CLI rotation. Store Settings, Legal Settings, and Feature Settings must fail closed when the row is absent, invalid, or requires rotation. Developer session signatures bind the current hash, password version, and random credential version so any rotation invalidates every old Cookie.
+
+
+The unpublished P1 migrations are intentionally ordered as `20260715100000_harden_pos_checkout_rpc.sql`, `20260715100001_reconcile_pos_void_rpc.sql`, `20260715102000_transactional_inventory_operations.sql`, and `20260715110000_harden_developer_credentials.sql`. Keep this monotonic order for all later migrations and verify clean reset, client-init, POS/inventory legacy upgrades, legacy shared credential, and existing unique credential upgrades.
+
+
+The standalone Supabase Postgres image used by installation-path tests may finish assigning the `storage` schema to `supabase_storage_admin` before the fixture runs, especially on Ubuntu GitHub runners. The `postgres` role then has no CREATE privilege on that schema even though the same test can pass during a different Windows startup window. Create the fixture `storage.buckets` table through `supabase_storage_admin` and explicitly grant the test `postgres` role the required DML privileges; do not rely on startup timing or change the production migration for this test-only ownership boundary.
+

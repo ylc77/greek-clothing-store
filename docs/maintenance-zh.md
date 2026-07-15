@@ -25,7 +25,8 @@ lib/                    工具库
 supabase/
   client-init.sql        新客户一键初始化
   demo-products.sql      演示商品（可选）
-  patches/              老客户升级补丁
+  migrations/           数据库开发和老客户升级的权威来源
+  patches/              仅在具体升级说明明确要求时使用的专用补丁
 ```
 
 ## 数据库表
@@ -104,20 +105,24 @@ BASE_URL=https://你的域名.vercel.app npm run check:skroutz
 
 ## 后续维护规则
 
-### 老客户升级 → patches
-已有真实数据的客户，不能直接执行完整 `client-init.sql`。应新建 `supabase/patches/` 下的 SQL 补丁：
+### 老客户升级 → migrations
+已有真实数据的客户不能执行完整 `client-init.sql`。正常升级使用尚未应用的 `supabase/migrations`；只有具体升级说明明确要求时才使用 `supabase/patches/` 专用补丁。
 
-```sql
--- supabase/patches/2026-06-21-add-field.sql
-alter table products add column if not exists new_field text;
-```
+P1 migrations 已按 `20260715100000` POS checkout、`20260715100001` POS void、`20260715102000` 事务库存、`20260715110000` 开发者凭据的顺序排列。老客户正常使用 `db push --dry-run` 核对计划后再执行 `db push`，不要手工伪造 migration history。
 
 ### 新客户初始化 → client-init.sql
-新客户直接执行 `supabase/client-init.sql`。
+新客户执行 `supabase/client-init.sql` 后，developer credential 保持未初始化。维护者在自己的电脑运行：
+
+```powershell
+npm run developer:status -- --project-ref 客户项目ref
+npm run developer:bootstrap -- --project-ref 客户项目ref
+```
+
+密码只显示一次并保存到密码管理器，不写入 PostgreSQL、Vercel、Git 或浏览器存储。已有客户应用凭据 hardening migration 后必须运行 `npm run developer:rotate -- --project-ref 客户项目ref`；旧密码和旧 Cookie 在轮换前均不能使用。
 
 ### 每次数据库改动必须同时做
-1. 新增 `supabase/patches/YYYY-MM-DD-描述.sql`
-2. 同步更新 `supabase/client-init.sql`（CREATE TABLE + seed）
+1. 使用 Supabase CLI 新增单调递增的 `supabase/migrations/<timestamp>_描述.sql`；不要把新 migration 插到已发布版本之前
+2. 运行 `scripts/build-client-init.ps1` 重新生成 `supabase/client-init.sql`；不得手工添加共享凭据 seed
 3. 涉及演示数据 → 更新 `supabase/demo-products.sql`
 4. 更新相关文档（本文档和 client-guide-zh.md）
 5. 运行 `npm run build`

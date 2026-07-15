@@ -153,7 +153,13 @@ export default function AdminSettingsPage() {
   async function checkDeveloperSession() {
     try {
       const response = await fetch("/api/admin/developer-session", { cache: "no-store" });
-      setAuthorized(response.ok);
+      const data = await response.json().catch(() => ({}));
+      setAuthorized(response.ok && data.sessionValid === true);
+      if (data.initialized === false) {
+        setAuthError("开发者凭据尚未初始化，请由维护者在自己的电脑运行 bootstrap CLI。");
+      } else if (data.mustRotate === true) {
+        setAuthError("旧开发者凭据已停用，请由维护者通过 CLI 完成轮换。");
+      }
     } finally {
       setAuthChecking(false);
     }

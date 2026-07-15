@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   createDeveloperSessionToken,
-  developerRequestIsAuthorized,
+  developerSessionCookiePath,
   developerSessionCookieName,
+  developerSessionLifetimeSeconds,
+  getDeveloperSessionStatus,
   verifyDeveloperPassword,
 } from "@/lib/developer-auth";
 
@@ -44,8 +46,7 @@ function isRateLimited(key: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const ok = await developerRequestIsAuthorized(request);
-  return noStore(NextResponse.json({ ok }, { status: ok ? 200 : 401 }));
+  return noStore(NextResponse.json(await getDeveloperSessionStatus(request)));
 }
 
 export async function POST(request: NextRequest) {
@@ -55,8 +56,26 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = await request.json().catch(() => null);
-  const valid = await verifyDeveloperPassword(payload?.password);
-  if (!valid) {
+  const verification = await verifyDeveloperPassword(payload?.password);
+  if (verification === "uninitialized") {
+    return noStore(NextResponse.json({
+      error: "开发者凭据尚未初始化，请由维护者在自己的电脑运行 bootstrap CLI。",
+      code: "DEVELOPER_CREDENTIAL_UNINITIALIZED",
+    }, { status: 503 }));
+  }
+  if (verification === "must_rotate") {
+    return noStore(NextResponse.json({
+      error: "开发者凭据必须先通过维护者 CLI 轮换，旧密码和旧会话已停用。",
+      code: "DEVELOPER_CREDENTIAL_ROTATION_REQUIRED",
+    }, { status: 409 }));
+  }
+  if (verification === "unavailable") {
+    return noStore(NextResponse.json({
+      error: "开发者凭据状态不可用，请检查 migration 后通过维护者 CLI 恢复。",
+      code: "DEVELOPER_CREDENTIAL_UNAVAILABLE",
+    }, { status: 503 }));
+  }
+  if (verification !== "ok") {
     recordFailedAttempt(key);
     return noStore(NextResponse.json({ error: "开发者密码不正确。" }, { status: 401 }));
   }
@@ -67,12 +86,13 @@ export async function POST(request: NextRequest) {
   }
 
   attempts.delete(key);
-  const response = NextResponse.json({ ok: true });
+  const response = NextResponse.json({ initialized: true, mustRotate: false, sessionValid: true });
   response.cookies.set(developerSessionCookieName, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
-    path: "/",
+    path: developerSessionCookiePath,
+    maxAge: developerSessionLifetimeSeconds,
   });
   return noStore(response);
 }
@@ -83,8 +103,17 @@ export async function DELETE() {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
+    path: developerSessionCookiePath,
+    expires: new Date(0),
+    maxAge: 0,
+  });
+  response.cookies.set(developerSessionCookieName, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
     path: "/",
     expires: new Date(0),
+    maxAge: 0,
   });
   return noStore(response);
 }

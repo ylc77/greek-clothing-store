@@ -93,9 +93,14 @@ export async function isFeatureEnabled(key: FeatureKey): Promise<boolean> {
   return settings.features[key];
 }
 
+export async function isFeatureEnabledUncached(key: FeatureKey): Promise<boolean> {
+  const settings = await getFeatureSettingsUncached();
+  return settings.features[key];
+}
+
 export function featureDisabledResponse(key: FeatureKey) {
   return NextResponse.json(
-    { error: "当前客户版本未启用该功能。", code: "FEATURE_DISABLED", feature: key },
+    { error: "当前客户版本未启用该功能。", code: "FEATURE_DISABLED", feature: key, operationSafeToDiscard: true },
     { status: 403 },
   );
 }

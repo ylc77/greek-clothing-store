@@ -7,6 +7,31 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test:pos-operation-ids": "node --experimental-strip-types --test tests/pos-operation-id.test.ts",
+    "test:pos-integration": "node scripts/pos-integration-test.mjs",
+    "test:pos": "npm run test:pos-operation-ids && npm run test:pos-integration",
+    "test:pos-install-paths": "node scripts/run-powershell.mjs scripts/verify-pos-install-paths.ps1",
+    "test:inventory-operation-ids": "node --experimental-strip-types --test tests/inventory-operation-id.test.ts",
+    "test:inventory-integration": "node scripts/inventory-integration-test.mjs",
+    "test:inventory": "npm run test:inventory-operation-ids && npm run test:inventory-integration",
+    "test:inventory-install-paths": "node scripts/run-powershell.mjs scripts/verify-inventory-install-paths.ps1",
+    "test:developer-credentials": "node --experimental-strip-types --test tests/developer-credentials.test.ts",
+    "test:developer-integration": "node scripts/developer-credential-integration-test.mjs",
+    "test:developer-install-paths": "node scripts/run-powershell.mjs scripts/verify-developer-credential-install-paths.ps1",
+    "test:developer-secrets": "node scripts/scan-developer-secrets.mjs",
+    "test:developer": "npm run test:developer-credentials && npm run test:developer-integration && npm run test:developer-secrets",
+    "test:feature-catalog": "node --experimental-strip-types --test tests/feature-catalog.test.ts",
+    "test:feature-gates": "node scripts/feature-gate-integration-test.mjs",
+    "test:p1-unit": "npm run test:pos-operation-ids && npm run test:inventory-operation-ids && npm run test:developer-credentials && npm run test:feature-catalog",
+    "test:p1-integration": "npm run test:pos-integration && npm run test:inventory-integration && npm run test:developer-integration && npm run test:feature-gates",
+    "test:p1-install-paths": "npm run test:pos-install-paths && npm run test:inventory-install-paths && npm run test:developer-install-paths",
+    "check:p1-static": "node scripts/verify-p1-static-gates.mjs",
+    "check:p1-db-security": "node scripts/verify-p1-database-security.mjs",
+    "check:p1-cleanup": "node scripts/verify-p1-test-cleanup.mjs",
+    "db:snapshot": "node scripts/run-powershell.mjs scripts/build-client-init.ps1",
+    "developer:bootstrap": "node --experimental-strip-types scripts/developer-credentials.ts bootstrap",
+    "developer:rotate": "node --experimental-strip-types scripts/developer-credentials.ts rotate",
+    "developer:status": "node --experimental-strip-types scripts/developer-credentials.ts status",
     "check:site": "node scripts/site-smoke-check.js",
     "check:skroutz": "node scripts/site-smoke-check.js --strict-feed"
   },
@@ -27,5 +52,10 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.3"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.19"
+    }
   }
 }
