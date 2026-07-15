@@ -16,6 +16,7 @@ env:
   CI: "true"
   NEXT_TELEMETRY_DISABLED: "1"
   SUPABASE_TELEMETRY_DISABLED: "1"
+  USE_PRODUCT_RPC: "true"
 
 jobs:
   static-quality:
@@ -49,7 +50,9 @@ jobs:
           fi
 
       - name: Verify migrations, generated snapshot, feature gates, and tracked env files
-        run: npm run check:p1-static
+        run: |
+          npm run check:p1-static
+          npm run check:product-static
 
       - name: Regenerate client snapshot and require zero drift
         run: |
@@ -65,6 +68,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:55321
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-public-placeholder
           USE_POS_RPC: "true"
+          USE_PRODUCT_RPC: "true"
         run: npm run build
 
       - name: Scan source and browser bundle for credentials
@@ -100,8 +104,10 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Run operation ID, credential, and Feature Gate unit tests
-        run: npm run test:p1-unit
+      - name: Run operation ID, credential, Feature Gate, and product unit tests
+        run: |
+          npm run test:p1-unit
+          npm run test:product-unit
 
   local-supabase-integration:
     name: Local Supabase integration and security
@@ -137,14 +143,19 @@ jobs:
       - name: Reset migration chain from zero
         run: supabase db reset --local --no-seed
 
-      - name: Run POS, inventory, developer credential, permission, and Feature Gate integration tests
+      - name: Run POS, inventory, developer credential, Feature Gate, and product integration tests
         shell: bash
         run: |
           set -o pipefail
-          npm run test:p1-integration 2>&1 | tee "$RUNNER_TEMP/p1-integration.log"
+          {
+            npm run test:p1-integration
+            npm run test:product-integration
+          } 2>&1 | tee "$RUNNER_TEMP/p1-integration.log"
 
       - name: Verify RPC grants, RLS, and SECURITY DEFINER search paths
-        run: npm run check:p1-db-security
+        run: |
+          npm run check:p1-db-security
+          npm run check:product-db-security
 
       - name: Run local database advisors
         run: supabase db advisors --local
@@ -182,7 +193,11 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Verify POS, inventory, and developer credential install paths
-        run: npm run test:p1-install-paths
+      - name: Verify POS, inventory, developer credential, and product install paths
+        run: |
+          npm run test:p1-install-paths
+          npm run test:product-install-paths
       - name: Verify ordered migration snapshot
-        run: npm run check:p1-static
+        run: |
+          npm run check:p1-static
+          npm run check:product-static
