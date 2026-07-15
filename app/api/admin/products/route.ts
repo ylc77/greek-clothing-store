@@ -1,38 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
-import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
-import { parseVariantProcurement, productForForm, validateProductPayload } from "@/lib/admin-products";
+import {
+  adminActorFromContext,
+  adminHasPermission,
+  getAdminAuthContextFromRequest,
+} from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
-import { syncProductInventoryFromLegacy } from "@/lib/erp-inventory";
+import { finalizeCommittedProductMutation } from "@/lib/product-cache-policy";
+import { featureDisabledResponse, isFeatureEnabled, isFeatureEnabledUncached } from "@/lib/features";
+import {
+  loadProductSnapshot,
+  loadProductSnapshots,
+  parseCreateProductMutation,
+  productErrorResponse,
+  productIdFromRpcResult,
+  productRpcFailure,
+  productRpcWasReplay,
+  productSnapshotFromRpcResult,
+  readProductRequestBody,
+} from "@/lib/product-transactions";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { Product } from "@/lib/types";
 
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
+export const dynamic = "force-dynamic";
 
-function unavailable() {
-  return NextResponse.json(
-    { error: "Admin Supabase is not configured. Add SUPABASE_SERVICE_ROLE_KEY and ADMIN_PASSWORD." },
-    { status: 500 }
+function productRpcRequired() {
+  return productErrorResponse(
+    "Transactional product RPC is required before product writes can be used.",
+    503,
+    "PRODUCT_RPC_REQUIRED",
+    false,
   );
 }
 
-export async function GET(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "products:read"))) {
-    return unauthorized();
+async function authorize(request: NextRequest, permission: "products:read" | "products:write") {
+  const authContext = await getAdminAuthContextFromRequest(request);
+  if (!authContext) {
+    return { response: productErrorResponse("Unauthorized", 401, "UNAUTHORIZED", true) };
   }
+  if (!adminHasPermission(authContext, permission)) {
+    return { response: productErrorResponse("Forbidden", 403, "FORBIDDEN", true) };
+  }
+  return { authContext };
+}
+
+export async function GET(request: NextRequest) {
+  const authorized = await authorize(request, "products:read");
+  if (authorized.response) return authorized.response;
   if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
-    return unavailable();
+    return productErrorResponse("Admin Supabase is not configured.", 503, "PRODUCT_DATA_UNAVAILABLE", false);
   }
 
   const url = new URL(request.url);
-  const limit = Math.min(Number(url.searchParams.get("limit")) || 100, 500);
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 100, 1), 500);
   const offset = Math.max(Number(url.searchParams.get("offset")) || 0, 0);
-
   const { data, count, error } = await supabase
     .from("products")
     .select("*", { count: "exact" })
@@ -40,98 +63,89 @@ export async function GET(request: NextRequest) {
     .range(offset, offset + limit - 1);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return productErrorResponse("Product data is temporarily unavailable.", 503, "PRODUCT_DATA_UNAVAILABLE", false);
   }
 
-  const productRows = (data || []) as Product[];
-  const productIds = productRows.map((product) => Number(product.id)).filter(Number.isFinite);
-  const procurementByProduct = new Map<number, Record<string, unknown>>();
-  if (productIds.length > 0) {
-    const { data: variants, error: variantsError } = await (supabase as any)
-      .from("product_variants")
-      .select("product_id, size, supplier_sku, cost_price, reorder_level")
-      .in("product_id", productIds);
-    if (variantsError) return NextResponse.json({ error: variantsError.message }, { status: 500 });
-    for (const variant of variants || []) {
-      const productId = Number(variant.product_id);
-      const size = String(variant.size || "ONE SIZE").trim().toUpperCase();
-      const current = procurementByProduct.get(productId) || {};
-      current[size] = {
-        supplier_sku: String(variant.supplier_sku || ""),
-        cost_price: variant.cost_price === null ? null : Number(variant.cost_price),
-        reorder_level: variant.reorder_level === null ? null : Number(variant.reorder_level),
-      };
-      procurementByProduct.set(productId, current);
-    }
+  try {
+    const products = await loadProductSnapshots(supabase as any, (data || []) as Product[]);
+    return NextResponse.json({ products, total: count || 0, limit, offset });
+  } catch (error) {
+    console.error("[products] failed to load authoritative Variant inventory", {
+      message: String((error as { message?: unknown } | null)?.message || ""),
+      code: String((error as { code?: unknown } | null)?.code || ""),
+    });
+    return productErrorResponse("Product inventory data is temporarily unavailable.", 503, "PRODUCT_DATA_UNAVAILABLE", false);
   }
-
-  return NextResponse.json({
-    products: productRows.map((product) => ({
-      ...productForForm(product),
-      variant_procurement: procurementByProduct.get(Number(product.id)) || {},
-    })),
-    total: count || 0,
-    limit,
-    offset,
-  });
 }
 
 export async function POST(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "products:write"))) {
-    return unauthorized();
+  const authorized = await authorize(request, "products:write");
+  if (authorized.response) return authorized.response;
+  if (!(await isFeatureEnabledUncached("product_management"))) return featureDisabledResponse("product_management");
+  if (process.env.USE_PRODUCT_RPC !== "true") return productRpcRequired();
+
+  const parsedBody = await readProductRequestBody(request);
+  if (parsedBody.response) return parsedBody.response;
+  const parsed = parseCreateProductMutation(parsedBody.payload!);
+  if (!parsed.mutation) {
+    return productErrorResponse(parsed.error || "Invalid product.", 400, "INVALID_ARGUMENT", true);
   }
-  if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
-    return unavailable();
+    return productErrorResponse("Admin Supabase is not configured.", 503, "PRODUCT_RPC_UNAVAILABLE", false);
   }
 
-  const payload = await request.json();
-  const { errors, mutation } = validateProductPayload(payload);
-  const variantProcurement = parseVariantProcurement(payload.variant_procurement);
-
-  if (!mutation) {
-    return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
-  }
-
-  const { data, error } = await supabase
-    .from("products")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .insert(mutation as any)
-    .select("*")
-    .single();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  let erpSyncWarning: string | undefined;
+  let rpcData: unknown;
   try {
-    const productId = Number((data as Product).id);
-    if (!Number.isFinite(productId)) {
-      throw new Error("Invalid product ID for ERP inventory sync.");
-    }
-
-    await syncProductInventoryFromLegacy({
-      productId,
-      reason: "新增商品初始化库存",
-      sourceType: "admin_create",
-      sourceId: productId,
-      movementType: "manual_adjustment",
-      idempotencyKey: `admin_create:${productId}:${Date.now()}`,
-      createdBy: "admin",
-      variantProcurement,
+    const { data, error } = await (supabase as any).rpc("product_create_rpc", {
+      p_client_request_id: parsed.mutation.clientRequestId,
+      p_metadata: parsed.mutation.metadata,
+      p_variants: parsed.mutation.variants,
+      p_actor: adminActorFromContext(authorized.authContext!),
+      p_source: "admin_products",
     });
-  } catch (syncError) {
-    erpSyncWarning =
-      syncError instanceof Error ? syncError.message : "ERP inventory sync failed.";
+    if (error) return productRpcFailure(error);
+    rpcData = data;
+  } catch (error) {
+    return productRpcFailure(error);
   }
 
-  invalidateProductsCache((data as Product).sku);
+  const productId = productIdFromRpcResult(rpcData);
+  if (!productId) {
+    return productErrorResponse(
+      "Product transaction committed with an unreadable result. Reuse the same operation ID to reconcile.",
+      503,
+      "PRODUCT_RPC_RESULT_UNKNOWN",
+      false,
+    );
+  }
 
+  let product = productSnapshotFromRpcResult(rpcData);
+  if (!product) {
+    try {
+      product = await loadProductSnapshot(supabase as any, productId);
+    } catch {
+      return productErrorResponse(
+        "Product transaction result could not be reloaded. Reuse the same operation ID to reconcile.",
+        503,
+        "PRODUCT_RESULT_UNAVAILABLE",
+        false,
+      );
+    }
+  }
+  if (!product) {
+    return productErrorResponse(
+      "Product transaction result could not be found. Reuse the same operation ID to reconcile.",
+      503,
+      "PRODUCT_RESULT_UNAVAILABLE",
+      false,
+    );
+  }
+
+  const finalized = await finalizeCommittedProductMutation(product, () => invalidateProductsCache(product.sku));
   return NextResponse.json(
-    { product: productForForm(data as Product), erpSyncWarning },
-    { status: 201 },
+    { product: finalized.value, cacheWarning: finalized.cacheWarning },
+    { status: productRpcWasReplay(rpcData) ? 200 : 201 },
   );
 }
