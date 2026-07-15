@@ -75,6 +75,7 @@ begin
   foreach signature in array array[
     'public.product_create_rpc(text,jsonb,jsonb,text,text)',
     'public.product_update_rpc(text,bigint,bigint,bigint,jsonb,jsonb,text,text)',
+    'public.product_bulk_status_rpc(text,jsonb,text,text)',
     'public.product_runtime_health_rpc()',
     'public.product_reconciliation_rpc()'
   ] loop

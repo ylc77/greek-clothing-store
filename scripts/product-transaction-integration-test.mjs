@@ -44,6 +44,25 @@ function sql(statement) {
   ], { input: statement });
 }
 
+function sqlAsync(statement) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("docker", [
+      "exec", "-i", DB_CONTAINER,
+      "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-At",
+    ], { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+    child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve(stdout.trim());
+      else reject(new Error(`${stderr || stdout || `psql exited with ${code}`}`.trim()));
+    });
+    child.stdin.end(statement);
+  });
+}
+
 function readLocalEnvironment() {
   const output = process.platform === "win32"
     ? command("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "npx supabase status -o env"])
@@ -693,6 +712,62 @@ try {
     assert.equal((await variantsForProduct(product.id)).length, 1);
     assert.equal((await operationsForProduct(product.id)).length, 1);
     await assertProjection(product.id);
+  });
+
+  await runCase("reversed cross-product Variant identities serialize without a unique-index deadlock", async () => {
+    const sharedA = auditSku("SHARED-VARIANT-A");
+    const sharedB = auditSku("SHARED-VARIANT-B");
+    const first = productPayload("CROSS-VARIANT-FIRST", [
+      { size: "S", quantity: 0, variant_sku: sharedA },
+      { size: "M", quantity: 0, variant_sku: sharedB },
+    ]);
+    const second = productPayload("CROSS-VARIANT-SECOND", [
+      { size: "S", quantity: 0, variant_sku: sharedB },
+      { size: "M", quantity: 0, variant_sku: sharedA },
+    ]);
+
+    sql(`
+      create schema if not exists audit_product_test;
+      create or replace function audit_product_test.pause_shared_variant() returns trigger
+      language plpgsql set search_path = pg_catalog, public as $$
+      begin
+        if new.variant_sku in (${quote(sharedA)}, ${quote(sharedB)}) then
+          perform pg_catalog.pg_sleep(2);
+        end if;
+        return new;
+      end;
+      $$;
+      create trigger audit_product_pause_shared_variant
+      after insert on public.product_variants
+      for each row execute function audit_product_test.pause_shared_variant();
+    `);
+    try {
+      const createStatement = (payload, requestId) => `
+        select public.product_create_rpc(
+          ${quote(requestId)},
+          ${quote(JSON.stringify(flatProduct(payload)))}::jsonb,
+          ${quote(JSON.stringify(payload.variants))}::jsonb,
+          ${quote(`owner:${CREATED_BY}`)},
+          'product_cross_identity_test'
+        );
+      `;
+      const outcomes = await Promise.allSettled([
+        sqlAsync(createStatement(first, auditId("CROSS-VARIANT-FIRST"))),
+        sqlAsync(createStatement(second, auditId("CROSS-VARIANT-SECOND"))),
+      ]);
+      assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1, JSON.stringify(outcomes));
+      assert.equal(outcomes.filter((outcome) => outcome.status === "rejected").length, 1, JSON.stringify(outcomes));
+      const rejected = outcomes.find((outcome) => outcome.status === "rejected");
+      const failure = rejected?.status === "rejected" ? String(rejected.reason?.message || rejected.reason) : "";
+      assert.doesNotMatch(failure, /deadlock detected|40P01/i, failure);
+      assert.match(failure, /duplicate key|unique constraint|PRODUCT_VARIANT/i, failure);
+      assert.equal(Number(sql(`select count(*) from public.products where sku in (${quote(first.sku)}, ${quote(second.sku)});`)), 1);
+    } finally {
+      sql(`
+        drop trigger if exists audit_product_pause_shared_variant on public.product_variants;
+        drop function if exists audit_product_test.pause_shared_variant();
+      `);
+    }
   });
 
   await runCase("20 concurrent replays of one create ID return one business result", async () => {
