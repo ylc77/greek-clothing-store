@@ -113,11 +113,18 @@ alter table products add column if not exists new_field text;
 ```
 
 ### 新客户初始化 → client-init.sql
-新客户直接执行 `supabase/client-init.sql`。
+新客户执行 `supabase/client-init.sql` 后，developer credential 保持未初始化。维护者在自己的电脑运行：
+
+```powershell
+npm run developer:status -- --project-ref 客户项目ref
+npm run developer:bootstrap -- --project-ref 客户项目ref
+```
+
+密码只显示一次并保存到密码管理器，不写入 PostgreSQL、Vercel、Git 或浏览器存储。已有客户应用凭据 hardening migration 后必须运行 `npm run developer:rotate -- --project-ref 客户项目ref`；旧密码和旧 Cookie 在轮换前均不能使用。
 
 ### 每次数据库改动必须同时做
 1. 新增 `supabase/patches/YYYY-MM-DD-描述.sql`
-2. 同步更新 `supabase/client-init.sql`（CREATE TABLE + seed）
+2. 运行 `scripts/build-client-init.ps1` 重新生成 `supabase/client-init.sql`；不得手工添加共享凭据 seed
 3. 涉及演示数据 → 更新 `supabase/demo-products.sql`
 4. 更新相关文档（本文档和 client-guide-zh.md）
 5. 运行 `npm run build`

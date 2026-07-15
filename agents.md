@@ -166,3 +166,18 @@ Quick Sell is an owner-only inventory shortcut and intentionally does not create
 
 Product create/edit and CSV import still contain historical inventory compatibility writes outside this RPC boundary. Do not describe those paths as transactionally hardened or silently migrate them while working on inventory adjustment / Quick Sell. They need a separately scoped review and regression suite.
 
+
+\---
+
+
+\## 14. Per-customer developer credential boundary
+
+
+Clean installations must leave `public.developer_access` empty. Never seed a developer plaintext password or reusable fixed hash in a migration, client-init snapshot, test, example, or document. A maintainer initializes each customer with `npm run developer:bootstrap -- --project-ref ...` using a local server-only Supabase service/secret key; rotation and recovery use the corresponding CLI, never a public web endpoint.
+
+
+Every pre-existing developer credential is treated as potentially shared and must remain `must_rotate=true` until CLI rotation. Store Settings, Legal Settings, and Feature Settings must fail closed when the row is absent, invalid, or requires rotation. Developer session signatures bind the current hash, password version, and random credential version so any rotation invalidates every old Cookie.
+
+
+The CLI-generated migration timestamp originally sorted before the repository's future-dated POS migrations. `20260715110000_harden_developer_credentials.sql` is intentionally later than `20260714234237_transactional_inventory_operations.sql`, `20260715100000_harden_pos_checkout_rpc.sql`, and `20260715100001_reconcile_pos_void_rpc.sql`. Keep this monotonic order for all later migrations and verify clean reset, client-init, legacy shared credential, and existing unique credential upgrades.
+
