@@ -1,104 +1,119 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import {
+  createDeveloperSessionTokenForCredential,
+  parseDeveloperPasswordHash,
+  verifyDeveloperPasswordHash,
+  verifyDeveloperSessionTokenForCredential,
+  type DeveloperSessionCredential,
+} from "./developer-credentials";
 import { getSupabaseAdminClient } from "./supabase";
 
 export const developerSessionCookieName = "clothing_developer_settings";
 export const developerSessionLifetimeSeconds = 2 * 60 * 60;
+export const developerSessionCookiePath = "/api/admin";
 
-type ScryptCredential = {
-  cost: number;
-  blockSize: number;
-  parallelization: number;
-  salt: Buffer;
-  expected: Buffer;
+type DeveloperCredentialRecord = DeveloperSessionCredential & {
+  initializedAt: string;
+  rotatedAt: string | null;
 };
 
-function parseScryptCredential(value: string): ScryptCredential | null {
-  const [scheme, cost, blockSize, parallelization, salt, expected] = value.split("$");
-  if (scheme !== "scrypt" || !cost || !blockSize || !parallelization || !salt || !expected) return null;
+type DeveloperCredentialLoadResult =
+  | { kind: "active"; record: DeveloperCredentialRecord }
+  | { kind: "must_rotate"; record: DeveloperCredentialRecord }
+  | { kind: "uninitialized" }
+  | { kind: "unavailable" };
 
-  const parsed = {
-    cost: Number(cost),
-    blockSize: Number(blockSize),
-    parallelization: Number(parallelization),
-    salt: Buffer.from(salt, "base64"),
-    expected: Buffer.from(expected, "base64"),
-  };
-  if (!Number.isInteger(parsed.cost) || !Number.isInteger(parsed.blockSize) || !Number.isInteger(parsed.parallelization)) return null;
-  if (parsed.cost < 16384 || parsed.blockSize < 8 || parsed.parallelization < 1 || parsed.salt.length < 16 || parsed.expected.length < 32) return null;
-  return parsed;
+export type DeveloperPasswordVerification = "ok" | "invalid" | "uninitialized" | "must_rotate" | "unavailable";
+
+function validUuid(value: unknown) {
+  return typeof value === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-async function getDeveloperPasswordHash() {
+async function loadDeveloperCredential(): Promise<DeveloperCredentialLoadResult> {
   const supabase = getSupabaseAdminClient();
-  if (!supabase) return null;
+  if (!supabase) return { kind: "unavailable" };
 
   const { data, error } = await (supabase as any)
     .from("developer_access")
-    .select("password_hash")
+    .select("password_hash, password_version, credential_version, initialized_at, rotated_at, must_rotate")
     .eq("id", 1)
     .maybeSingle();
 
-  if (error || typeof data?.password_hash !== "string") {
-    if (error) console.error("Failed to read developer access credential", error.message);
-    return null;
-  }
-  return data.password_hash as string;
+  if (error) return { kind: "unavailable" };
+  if (!data) return { kind: "uninitialized" };
+  if (
+    parseDeveloperPasswordHash(data.password_hash) === null
+    || !Number.isInteger(data.password_version)
+    || data.password_version < 1
+    || !validUuid(data.credential_version)
+    || typeof data.initialized_at !== "string"
+  ) return { kind: "unavailable" };
+
+  const record: DeveloperCredentialRecord = {
+    passwordHash: data.password_hash,
+    passwordVersion: data.password_version,
+    credentialVersion: data.credential_version,
+    mustRotate: data.must_rotate === true,
+    initializedAt: data.initialized_at,
+    rotatedAt: typeof data.rotated_at === "string" ? data.rotated_at : null,
+  };
+  return record.mustRotate ? { kind: "must_rotate", record } : { kind: "active", record };
 }
 
-function safeEqual(left: Buffer, right: Buffer) {
-  return left.length === right.length && timingSafeEqual(left, right);
-}
-
-export async function verifyDeveloperPassword(password: unknown) {
-  if (typeof password !== "string" || !password.trim()) return false;
-  const stored = await getDeveloperPasswordHash();
-  if (!stored) return false;
-  const credential = parseScryptCredential(stored);
-  if (!credential) return false;
-
-  const actual = scryptSync(password.trim(), credential.salt, credential.expected.length, {
-    N: credential.cost,
-    r: credential.blockSize,
-    p: credential.parallelization,
-    maxmem: 64 * 1024 * 1024,
-  });
-  return safeEqual(actual, credential.expected);
-}
-
-function sessionSignature(payload: string, passwordHash: string) {
-  return createHmac("sha256", passwordHash).update(payload).digest("base64url");
-}
-
-export async function createDeveloperSessionToken() {
-  const passwordHash = await getDeveloperPasswordHash();
-  if (!passwordHash) return null;
-  const expiresAt = Math.floor(Date.now() / 1000) + developerSessionLifetimeSeconds;
-  const payload = `${expiresAt}.${randomBytes(18).toString("base64url")}`;
-  return `${payload}.${sessionSignature(payload, passwordHash)}`;
-}
-
-function cookieValue(request: Request, name: string) {
+function cookieValues(request: Request, name: string) {
+  const values: string[] = [];
   const cookieHeader = request.headers.get("cookie") || "";
   for (const part of cookieHeader.split(";")) {
     const separator = part.indexOf("=");
     if (separator < 0) continue;
     const key = part.slice(0, separator).trim();
     if (key !== name) continue;
-    return decodeURIComponent(part.slice(separator + 1).trim());
+    try {
+      values.push(decodeURIComponent(part.slice(separator + 1).trim()));
+    } catch {
+      // A malformed cookie never authorizes a request.
+    }
   }
-  return "";
+  return values;
+}
+
+export async function getDeveloperSessionStatus(request: Request) {
+  const state = await loadDeveloperCredential();
+  if (state.kind === "uninitialized") {
+    return { initialized: false, mustRotate: false, sessionValid: false };
+  }
+  if (state.kind === "unavailable") {
+    return { initialized: false, mustRotate: false, sessionValid: false };
+  }
+  const sessionValid = state.kind === "active"
+    && cookieValues(request, developerSessionCookieName)
+      .some((token) => verifyDeveloperSessionTokenForCredential(token, state.record));
+  return {
+    initialized: true,
+    mustRotate: state.kind === "must_rotate",
+    sessionValid,
+  };
+}
+
+export async function verifyDeveloperPassword(password: unknown): Promise<DeveloperPasswordVerification> {
+  const state = await loadDeveloperCredential();
+  if (state.kind === "uninitialized") return "uninitialized";
+  if (state.kind === "must_rotate") return "must_rotate";
+  if (state.kind === "unavailable") return "unavailable";
+  return verifyDeveloperPasswordHash(password, state.record.passwordHash) ? "ok" : "invalid";
+}
+
+export async function createDeveloperSessionToken() {
+  const state = await loadDeveloperCredential();
+  if (state.kind !== "active") return null;
+  return createDeveloperSessionTokenForCredential(state.record, {
+    lifetimeSeconds: developerSessionLifetimeSeconds,
+  });
 }
 
 export async function developerRequestIsAuthorized(request: Request) {
-  const token = cookieValue(request, developerSessionCookieName);
-  const [expiresAt, nonce, providedSignature] = token.split(".");
-  if (!expiresAt || !nonce || !providedSignature) return false;
-
-  const expiresAtNumber = Number(expiresAt);
-  if (!Number.isInteger(expiresAtNumber) || expiresAtNumber <= Math.floor(Date.now() / 1000)) return false;
-
-  const passwordHash = await getDeveloperPasswordHash();
-  if (!passwordHash) return false;
-  const expectedSignature = sessionSignature(`${expiresAt}.${nonce}`, passwordHash);
-  return safeEqual(Buffer.from(providedSignature), Buffer.from(expectedSignature));
+  const state = await loadDeveloperCredential();
+  if (state.kind !== "active") return false;
+  return cookieValues(request, developerSessionCookieName)
+    .some((token) => verifyDeveloperSessionTokenForCredential(token, state.record));
 }
