@@ -31,7 +31,7 @@ strict
 set search_path = ''
 as $$
   select
-    pg_catalog.length(p_password_hash) between 140 and 512
+    pg_catalog.length(p_password_hash) between 128 and 512
     and p_password_hash ~ '^scrypt\$16384\$8\$1\$[A-Za-z0-9+/]+={0,2}\$[A-Za-z0-9+/]{86}==$'
     and pg_catalog.length(pg_catalog.split_part(p_password_hash, '$', 5)) between 24 and 88
     and pg_catalog.length(pg_catalog.split_part(p_password_hash, '$', 5)) % 4 = 0
