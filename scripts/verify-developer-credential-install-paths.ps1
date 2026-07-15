@@ -116,10 +116,13 @@ end;
 }
 
 $allMigrations = Get-ChildItem -LiteralPath $migrationsDirectory -Filter "*.sql" -File | Sort-Object Name
-if ($allMigrations[-1].Name -ne $hardeningMigration) {
-  throw "Developer credential hardening migration must sort after every existing migration"
+$migrationNames = [string[]]$allMigrations.Name
+$schemaMigrationIndex = [array]::IndexOf($migrationNames, $schemaMigration)
+$hardeningMigrationIndex = [array]::IndexOf($migrationNames, $hardeningMigration)
+if ($schemaMigrationIndex -lt 0 -or $hardeningMigrationIndex -lt 0 -or $hardeningMigrationIndex -le $schemaMigrationIndex) {
+  throw "Developer credential hardening migration must sort after its developer_access schema dependency"
 }
-if ([array]::IndexOf([string[]]$allMigrations.Name, "20260715102000_transactional_inventory_operations.sql") -lt [array]::IndexOf([string[]]$allMigrations.Name, "20260715100001_reconcile_pos_void_rpc.sql")) {
+if ([array]::IndexOf($migrationNames, "20260715102000_transactional_inventory_operations.sql") -lt [array]::IndexOf($migrationNames, "20260715100001_reconcile_pos_void_rpc.sql")) {
   throw "Transactional inventory migration must sort after POS checkout and void hardening"
 }
 

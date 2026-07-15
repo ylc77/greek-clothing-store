@@ -20,6 +20,7 @@ const AUDIT_PREFIX = "AUDIT-PRODUCT-";
 const CREATED_BY = "product-transaction-integration-test";
 const PRODUCT_CREATE_SIGNATURE = "public.product_create_rpc(text,jsonb,jsonb,text,text)";
 const PRODUCT_UPDATE_SIGNATURE = "public.product_update_rpc(text,bigint,bigint,bigint,jsonb,jsonb,text,text)";
+const PRODUCT_BULK_STATUS_SIGNATURE = "public.product_bulk_status_rpc(text,jsonb,text,text)";
 const results = [];
 
 function command(name, args, options = {}) {
@@ -187,6 +188,7 @@ async function api(path, body, options = {}) {
     method: options.method || (body === undefined ? "GET" : "POST"),
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: options.signal,
   });
   const data = await response.json().catch(() => ({}));
   return { status: response.status, data };
@@ -208,7 +210,23 @@ async function updateProduct(product, requestId, changes = {}, variantsMarker = 
   return api(`/api/admin/products/${product.id}`, body, { ...options, method: "PUT" });
 }
 
-async function adjust(variantId, requestId, quantity, role = "owner") {
+function bulkStatusItem(product, isActive) {
+  return {
+    productId: Number(product.id),
+    expectedMetadataVersion: Number(product.metadata_version),
+    expectedStructureVersion: Number(product.structure_version),
+    isActive,
+  };
+}
+
+async function bulkStatus(items, requestId, options = { role: "owner" }) {
+  return api("/api/admin/products/bulk", {
+    clientRequestId: requestId,
+    items,
+  }, { ...options, method: "PUT" });
+}
+
+async function adjust(variantId, requestId, quantity, role = "owner", signal = undefined) {
   return api("/api/admin/inventory/adjust", {
     variantId,
     mode: "adjust_by",
@@ -216,7 +234,7 @@ async function adjust(variantId, requestId, quantity, role = "owner") {
     reason: "Product transaction integration adjustment",
     operationType: "manual",
     clientRequestId: requestId,
-  }, { role });
+  }, { role, signal });
 }
 
 function responseProduct(response) {
@@ -604,6 +622,7 @@ try {
     assert.equal(data?.ready, true, JSON.stringify(data));
     assert.equal(data?.create_rpc_ready, true, JSON.stringify(data));
     assert.equal(data?.update_rpc_ready, true, JSON.stringify(data));
+    assert.equal(data?.bulk_status_rpc_ready, true, JSON.stringify(data));
   });
 
   await runCase("multi-size create commits product variants balances movements and projections", async () => {
@@ -807,6 +826,28 @@ try {
     assert.equal(Number((await balancesForProduct(product.id))[0].quantity_on_hand), 2);
   });
 
+  await runCase("structure edit racing inventory adjustment is deadlock-free and never loses stock", async () => {
+    const payload = productPayload("STRUCTURE-INVENTORY-RACE", [{ size: "S", quantity: 1 }]);
+    const { product } = await createProductOrThrow(payload);
+    const variant = variantBySize(product, "S");
+    const targetVariants = authoritativeVariants(product).map((item) => ({ ...item, quantity: 5 }));
+    const signal = AbortSignal.timeout(15_000);
+
+    const [structure, inventory] = await Promise.all([
+      updateProduct(product, auditId("STRUCTURE-INVENTORY-RACE-UPDATE"), {}, targetVariants, { role: "owner", signal }),
+      adjust(variant.id, auditId("STRUCTURE-INVENTORY-RACE-ADJUST"), 1, "owner", signal),
+    ]);
+    assert.equal(inventory.status, 200, JSON.stringify({ structure, inventory }));
+    assert.ok([200, 409].includes(structure.status), JSON.stringify({ structure, inventory }));
+    if (structure.status === 409) {
+      assert.equal(structure.data.code, "PRODUCT_STOCK_CONFLICT");
+    }
+
+    const finalQuantity = Number((await balancesForProduct(product.id))[0].quantity_on_hand);
+    assert.equal(finalQuantity, structure.status === 200 ? 6 : 2);
+    await assertProjection(product.id);
+  });
+
   await runCase("missing update RPC execute permission fails closed", async () => {
     const payload = productPayload("UPDATE-REVOKE", [{ size: "S", quantity: 1 }]);
     const { product } = await createProductOrThrow(payload);
@@ -818,6 +859,171 @@ try {
       assert.deepEqual(await stateForProduct(product.id), before);
     } finally {
       setRpcExecute(PRODUCT_UPDATE_SIGNATURE, true);
+    }
+  });
+
+  await runCase("bulk status commits every product atomically without changing Variant lifecycle", async () => {
+    const first = (await createProductOrThrow(productPayload("BULK-SUCCESS-A", [{ size: "S", quantity: 0 }]))).product;
+    const second = (await createProductOrThrow(productPayload("BULK-SUCCESS-B", [{ size: "M", quantity: 0 }]))).product;
+    const beforeFirstVariants = await variantsForProduct(first.id);
+    const beforeSecondVariants = await variantsForProduct(second.id);
+    const requestId = auditId("BULK-SUCCESS");
+
+    const response = await bulkStatus([
+      bulkStatusItem(first, false),
+      bulkStatusItem(second, false),
+    ], requestId);
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.updated_count, 2, JSON.stringify(response.data));
+    assert.equal(response.data.replayed, false, JSON.stringify(response.data));
+
+    const afterFirst = await databaseProduct(first.sku);
+    const afterSecond = await databaseProduct(second.sku);
+    assert.equal(afterFirst.is_active, false);
+    assert.equal(afterSecond.is_active, false);
+    assert.equal(Number(afterFirst.metadata_version), Number(first.metadata_version) + 1);
+    assert.equal(Number(afterSecond.metadata_version), Number(second.metadata_version) + 1);
+    assert.equal(Number(afterFirst.structure_version), Number(first.structure_version));
+    assert.equal(Number(afterSecond.structure_version), Number(second.structure_version));
+    assert.deepEqual(await variantsForProduct(first.id), beforeFirstVariants);
+    assert.deepEqual(await variantsForProduct(second.id), beforeSecondVariants);
+    const operations = await operationsForRequest(requestId);
+    assert.equal(operations.length, 1);
+    assert.equal(operations[0].operation_type, "bulk_status");
+    assert.equal(operations[0].product_id, null);
+  });
+
+  await runCase("bulk status replay is idempotent and the same ID rejects different payload", async () => {
+    const first = (await createProductOrThrow(productPayload("BULK-REPLAY-A", [{ size: "S", quantity: 0 }]))).product;
+    const second = (await createProductOrThrow(productPayload("BULK-REPLAY-B", [{ size: "M", quantity: 0 }]))).product;
+    const requestId = auditId("BULK-REPLAY");
+    const items = [bulkStatusItem(first, false), bulkStatusItem(second, false)];
+
+    const initial = await bulkStatus(items, requestId);
+    assert.equal(initial.status, 200, JSON.stringify(initial.data));
+    const afterInitialFirst = await stateForProduct(first.id);
+    const afterInitialSecond = await stateForProduct(second.id);
+
+    const replay = await bulkStatus([...items].reverse(), requestId);
+    assert.equal(replay.status, 200, JSON.stringify(replay.data));
+    assert.equal(replay.data.replayed, true, JSON.stringify(replay.data));
+    assert.deepEqual(await stateForProduct(first.id), afterInitialFirst);
+    assert.deepEqual(await stateForProduct(second.id), afterInitialSecond);
+    assert.equal((await operationsForRequest(requestId)).length, 1);
+
+    const changedPayload = items.map((item, index) => index === 0 ? { ...item, isActive: true } : item);
+    const conflict = await bulkStatus(changedPayload, requestId);
+    assert.equal(conflict.status, 409, JSON.stringify(conflict.data));
+    assert.equal(conflict.data.code, "PRODUCT_OPERATION_CONFLICT");
+    assert.deepEqual(await stateForProduct(first.id), afterInitialFirst);
+    assert.deepEqual(await stateForProduct(second.id), afterInitialSecond);
+  });
+
+  await runCase("one stale bulk item rolls the complete batch back without partial status changes", async () => {
+    const first = (await createProductOrThrow(productPayload("BULK-STALE-A", [{ size: "S", quantity: 0 }]))).product;
+    const second = (await createProductOrThrow(productPayload("BULK-STALE-B", [{ size: "M", quantity: 0 }]))).product;
+    const secondUpdate = await updateProduct(second, auditId("BULK-STALE-B-UPDATE"), { name_en: "Concurrent writer" });
+    assert.equal(secondUpdate.status, 200, JSON.stringify(secondUpdate.data));
+    const beforeFirst = await stateForProduct(first.id);
+    const beforeSecond = await stateForProduct(second.id);
+    const requestId = auditId("BULK-STALE");
+
+    const response = await bulkStatus([
+      bulkStatusItem(first, false),
+      bulkStatusItem(second, false),
+    ], requestId);
+    assert.equal(response.status, 409, JSON.stringify(response.data));
+    assert.equal(response.data.code, "PRODUCT_VERSION_CONFLICT");
+    assert.deepEqual(await stateForProduct(first.id), beforeFirst);
+    assert.deepEqual(await stateForProduct(second.id), beforeSecond);
+    assert.equal((await operationsForRequest(requestId)).length, 0);
+  });
+
+  await runCase("overlapping reversed bulk batches avoid deadlock and expose one honest version winner", async () => {
+    const first = (await createProductOrThrow(productPayload("BULK-RACE-A", [{ size: "S", quantity: 0 }]))).product;
+    const second = (await createProductOrThrow(productPayload("BULK-RACE-B", [{ size: "M", quantity: 0 }]))).product;
+    const deactivateId = auditId("BULK-RACE-DEACTIVATE");
+    const activateId = auditId("BULK-RACE-ACTIVATE");
+    const signal = AbortSignal.timeout(15_000);
+
+    const [deactivate, activate] = await Promise.all([
+      bulkStatus([
+        bulkStatusItem(first, false),
+        bulkStatusItem(second, false),
+      ], deactivateId, { role: "owner", signal }),
+      bulkStatus([
+        bulkStatusItem(second, true),
+        bulkStatusItem(first, true),
+      ], activateId, { role: "owner", signal }),
+    ]);
+    assert.deepEqual(
+      [deactivate.status, activate.status].sort((left, right) => left - right),
+      [200, 409],
+      JSON.stringify({ deactivate, activate }),
+    );
+    const winnerActive = activate.status === 200;
+    const afterFirst = await databaseProduct(first.sku);
+    const afterSecond = await databaseProduct(second.sku);
+    assert.equal(afterFirst.is_active, winnerActive);
+    assert.equal(afterSecond.is_active, winnerActive);
+    assert.equal(Number(afterFirst.metadata_version), Number(first.metadata_version) + 1);
+    assert.equal(Number(afterSecond.metadata_version), Number(second.metadata_version) + 1);
+    assert.equal(Number(afterFirst.structure_version), Number(first.structure_version));
+    assert.equal(Number(afterSecond.structure_version), Number(second.structure_version));
+    assert.equal((await operationsForRequest(winnerActive ? activateId : deactivateId)).length, 1);
+    assert.equal((await operationsForRequest(winnerActive ? deactivateId : activateId)).length, 0);
+  });
+
+  await runCase("normal metadata update and bulk status share one deadlock-free product lock order", async () => {
+    const product = (await createProductOrThrow(productPayload("BULK-NORMAL-RACE", [{ size: "S", quantity: 0 }]))).product;
+    const normalId = auditId("BULK-NORMAL-RACE-UPDATE");
+    const bulkId = auditId("BULK-NORMAL-RACE-BULK");
+    const signal = AbortSignal.timeout(15_000);
+
+    const [normal, bulk] = await Promise.all([
+      updateProduct(product, normalId, { name_en: "Normal writer won" }, undefined, { role: "owner", signal }),
+      bulkStatus([bulkStatusItem(product, false)], bulkId, { role: "owner", signal }),
+    ]);
+    assert.deepEqual(
+      [normal.status, bulk.status].sort((left, right) => left - right),
+      [200, 409],
+      JSON.stringify({ normal, bulk }),
+    );
+
+    const after = await databaseProduct(product.sku);
+    assert.equal(Number(after.metadata_version), Number(product.metadata_version) + 1);
+    assert.equal(Number(after.structure_version), Number(product.structure_version));
+    if (normal.status === 200) {
+      assert.equal(after.name_en, "Normal writer won");
+      assert.equal(after.is_active, true);
+      assert.equal((await operationsForRequest(normalId)).length, 1);
+      assert.equal((await operationsForRequest(bulkId)).length, 0);
+    } else {
+      assert.equal(after.name_en, product.name_en);
+      assert.equal(after.is_active, false);
+      assert.equal((await operationsForRequest(normalId)).length, 0);
+      assert.equal((await operationsForRequest(bulkId)).length, 1);
+    }
+  });
+
+  await runCase("missing bulk status RPC execute permission fails closed without writes", async () => {
+    const first = (await createProductOrThrow(productPayload("BULK-REVOKE-A", [{ size: "S", quantity: 0 }]))).product;
+    const second = (await createProductOrThrow(productPayload("BULK-REVOKE-B", [{ size: "M", quantity: 0 }]))).product;
+    const beforeFirst = await stateForProduct(first.id);
+    const beforeSecond = await stateForProduct(second.id);
+    const requestId = auditId("BULK-REVOKE");
+    setRpcExecute(PRODUCT_BULK_STATUS_SIGNATURE, false);
+    try {
+      const response = await bulkStatus([
+        bulkStatusItem(first, false),
+        bulkStatusItem(second, false),
+      ], requestId);
+      assert.equal(response.status, 503, JSON.stringify(response.data));
+      assert.deepEqual(await stateForProduct(first.id), beforeFirst);
+      assert.deepEqual(await stateForProduct(second.id), beforeSecond);
+      assert.equal((await operationsForRequest(requestId)).length, 0);
+    } finally {
+      setRpcExecute(PRODUCT_BULK_STATUS_SIGNATURE, true);
     }
   });
 
@@ -1001,6 +1207,7 @@ try {
   try { uninstallFaultHarness(); } catch {}
   try { setRpcExecute(PRODUCT_CREATE_SIGNATURE, true); } catch {}
   try { setRpcExecute(PRODUCT_UPDATE_SIGNATURE, true); } catch {}
+  try { setRpcExecute(PRODUCT_BULK_STATUS_SIGNATURE, true); } catch {}
   try { await cleanupAuditData(); } catch (error) {
     results.push({ name: "final audit cleanup", ok: false, error });
   }

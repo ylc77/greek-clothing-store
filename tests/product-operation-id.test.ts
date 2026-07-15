@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 // @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
-import {
-  ProductOperationIdStore,
-  ProductOperationStateError,
-  createProductOperationFingerprint,
-  type ProductOperationStorage,
-} from "../lib/product-operation-id.ts";
+import { ProductOperationIdStore, ProductOperationStateError, createProductOperationFingerprint, type ProductOperationStorage } from "../lib/product-operation-id.ts";
 
 class MemoryStorage implements ProductOperationStorage {
   readonly values = new Map<string, string>();
