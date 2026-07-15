@@ -158,7 +158,9 @@ $$;
 
 function Add-LegacyFixture([string]$Container) {
   $fixture = @'
-select public.product_create_rpc(
+do $fixture$
+begin
+  perform public.product_create_rpc(
   'AUDIT-CSV-LEGACY-CREATE-001',
   '{
     "sku":"AUDIT-CSV-LEGACY-001",
@@ -187,8 +189,10 @@ select public.product_create_rpc(
     "sort_order":0
   }]'::jsonb,
   'owner:csv-install-path',
-  'csv_legacy_fixture'
-);
+    'csv_legacy_fixture'
+  );
+end;
+$fixture$;
 '@
   Invoke-SqlText $Container $fixture "P1 and P2 4A legacy fixture"
 }
