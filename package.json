@@ -20,6 +20,9 @@
     "test:developer-install-paths": "powershell -ExecutionPolicy Bypass -File scripts/verify-developer-credential-install-paths.ps1",
     "test:developer-secrets": "node scripts/scan-developer-secrets.mjs",
     "test:developer": "npm run test:developer-credentials && npm run test:developer-integration && npm run test:developer-secrets",
+    "developer:bootstrap": "node --experimental-strip-types scripts/developer-credentials.ts bootstrap",
+    "developer:rotate": "node --experimental-strip-types scripts/developer-credentials.ts rotate",
+    "developer:status": "node --experimental-strip-types scripts/developer-credentials.ts status",
     "check:site": "node scripts/site-smoke-check.js",
     "check:skroutz": "node scripts/site-smoke-check.js --strict-feed"
   },
