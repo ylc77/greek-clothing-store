@@ -137,7 +137,7 @@ assert.equal(
 );
 assert.match(
   bulkRoute,
-  /bulkProductResultFromRpcResult\(rpcData/,
+  /bulkProductResultFromRpcResult\(\s*rpcData/,
   "bulk product status must validate the committed RPC result envelope before returning success",
 );
 assert.doesNotMatch(

@@ -77,7 +77,17 @@ async function executeUpdate(
     return { response: productRpcFailure(error) };
   }
 
-  const resultProductId = productIdFromRpcResult(rpcData) || productId;
+  const resultProductId = productIdFromRpcResult(rpcData);
+  if (resultProductId !== productId) {
+    return {
+      response: productErrorResponse(
+        "Product transaction returned an unreadable or mismatched result. Reuse the same operation ID to reconcile.",
+        503,
+        "PRODUCT_RPC_RESULT_UNKNOWN",
+        false,
+      ),
+    };
+  }
   let product = productSnapshotFromRpcResult(rpcData);
   if (!product) {
     try {

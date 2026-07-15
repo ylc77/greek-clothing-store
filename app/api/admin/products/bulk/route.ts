@@ -8,6 +8,7 @@ import { invalidateProductsCache } from "@/lib/cache";
 import { featureDisabledResponse, isFeatureEnabledUncached } from "@/lib/features";
 import { finalizeCommittedProductMutation } from "@/lib/product-cache-policy";
 import {
+  bulkProductResultFromRpcResult,
   productErrorResponse,
   productRpcFailure,
   readProductRequestBody,
@@ -115,12 +116,21 @@ export async function PUT(request: NextRequest) {
     return productRpcFailure(error);
   }
 
-  const finalized = await finalizeCommittedProductMutation(rpcData, () => invalidateProductsCache());
-  const result = finalized.value && typeof finalized.value === "object"
-    ? finalized.value as Record<string, unknown>
-    : {};
+  const result = bulkProductResultFromRpcResult(
+    rpcData,
+    parsed.items.map((item) => item.product_id),
+  );
+  if (!result) {
+    return productErrorResponse(
+      "Bulk product transaction returned an unreadable result. Reuse the same operation ID to reconcile.",
+      503,
+      "PRODUCT_RPC_RESULT_UNKNOWN",
+      false,
+    );
+  }
+  const finalized = await finalizeCommittedProductMutation(result, () => invalidateProductsCache());
   return NextResponse.json({
-    ...result,
+    ...finalized.value,
     ok: true,
     cacheWarning: finalized.cacheWarning,
   });

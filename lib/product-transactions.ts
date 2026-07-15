@@ -493,6 +493,36 @@ export function productSnapshotFromRpcResult(value: unknown) {
   return shapeProductSnapshot(product as unknown as Product, variants);
 }
 
+export function bulkProductResultFromRpcResult(value: unknown, expectedProductIds: number[]) {
+  const result = resultObject(value);
+  if (!Array.isArray(result.products) || !Array.isArray(result.items)) return null;
+  const updatedCount = Number(result.updated_count);
+  if (!Number.isSafeInteger(updatedCount) || updatedCount !== expectedProductIds.length) return null;
+  if (result.products.length !== updatedCount || result.items.length !== updatedCount) return null;
+  if (typeof result.replayed !== "boolean") return null;
+
+  const productIds = result.products.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const productId = Number((entry as JsonObject).id);
+    return Number.isSafeInteger(productId) && productId > 0 ? productId : null;
+  });
+  const itemIds = result.items.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const productId = Number((entry as JsonObject).product_id);
+    return Number.isSafeInteger(productId) && productId > 0 ? productId : null;
+  });
+  if (productIds.some((productId) => productId === null) || itemIds.some((productId) => productId === null)) return null;
+
+  const expected = [...expectedProductIds].sort((left, right) => left - right);
+  const returnedProducts = (productIds as number[]).sort((left, right) => left - right);
+  const returnedItems = (itemIds as number[]).sort((left, right) => left - right);
+  if (expected.some((productId, index) => productId !== returnedProducts[index] || productId !== returnedItems[index])) {
+    return null;
+  }
+
+  return result;
+}
+
 type ProductVariantSnapshot = JsonObject & {
   product_id: number | string;
   id: string;
