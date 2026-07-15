@@ -7,6 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 const ROOT = process.cwd();
 const DB_CONTAINER = "supabase_db_clothing_web";
 const REST_CONTAINER = "supabase_rest_clothing_web";
+const KONG_CONTAINER = "supabase_kong_clothing_web";
 const API_PORT = 55321;
 const DB_PORT = 55322;
 const APP_PORT = 3311;
@@ -277,7 +278,7 @@ function installFaultHarness() {
     create schema audit_inventory_test;
     create table audit_inventory_test.config(stage text not null, operation_key text not null);
     create function audit_inventory_test.fail_selected_stage() returns trigger
-    language plpgsql set search_path = pg_catalog, public, audit_inventory_test as $$
+    language plpgsql security definer set search_path = pg_catalog, public, audit_inventory_test as $$
     declare c audit_inventory_test.config%rowtype;
     begin
       select * into c from audit_inventory_test.config limit 1;
@@ -323,6 +324,20 @@ function setRpcExecute(granted) {
   const verb = granted ? "grant" : "revoke";
   const connector = granted ? "to" : "from";
   sql(`${verb} execute on function public.inventory_apply_rpc(text,uuid,text,integer,text,text,text,boolean) ${connector} service_role;`);
+}
+
+async function waitForRest() {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${local.API_URL}/rest/v1/`, {
+        headers: { apikey: local.SERVICE_ROLE_KEY, authorization: `Bearer ${local.SERVICE_ROLE_KEY}` },
+      });
+      if (response.status < 500) return;
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error("Local PostgREST did not recover after the transport test.");
 }
 
 async function createOwnerAccount() {
@@ -622,7 +637,8 @@ try {
       assert.equal(response.status, 503, JSON.stringify(response.data));
     } finally {
       command("docker", ["start", REST_CONTAINER]);
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      command("docker", ["restart", KONG_CONTAINER]);
+      await waitForRest();
     }
     await assertNoOperationWrites(fixture, "inventory", requestId, before);
   });
@@ -656,7 +672,11 @@ try {
   await stopApp(server);
   try { uninstallFaultHarness(); } catch {}
   try { setRpcExecute(true); } catch {}
-  try { command("docker", ["start", REST_CONTAINER]); } catch {}
+  try {
+    command("docker", ["start", REST_CONTAINER]);
+    command("docker", ["restart", KONG_CONTAINER]);
+    await waitForRest();
+  } catch {}
   try { await cleanupAuditData(); } catch {}
   if (ownerAccount?.userId) {
     try { await supabase.auth.admin.deleteUser(ownerAccount.userId); } catch {}

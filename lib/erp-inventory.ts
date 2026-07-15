@@ -166,6 +166,51 @@ export type InventoryReconciliationResult = {
     quantity_on_hand: number;
   }>;
   blankMovementReasons: Array<{ movement_id: string; variant_id: string; movement_type: string }>;
+  negativeBalances: Array<{
+    balance_id: string;
+    variant_id: string;
+    location_id: string;
+    quantity_on_hand: number;
+    quantity_reserved: number;
+  }>;
+  duplicateOperationKeys: Array<{ operation_key: string; duplicate_count: number }>;
+  movementDeltaMismatches: Array<{
+    movement_id: string;
+    variant_id: string;
+    location_id: string;
+    quantity_before: number;
+    quantity_after: number;
+    quantity_delta: number;
+  }>;
+  movementContinuityMismatches: Array<{
+    variant_id: string;
+    location_id: string;
+    previous_movement_id: string;
+    previous_quantity_after: number;
+    movement_id: string;
+    quantity_before: number;
+  }>;
+  balanceVsLatestMovementMismatches: Array<{
+    balance_id: string;
+    variant_id: string;
+    location_id: string;
+    balance_quantity_on_hand: number;
+    latest_movement_id: string;
+    latest_quantity_after: number;
+  }>;
+  balancesWithoutMovements: Array<{
+    balance_id: string;
+    variant_id: string;
+    location_id: string;
+    quantity_on_hand: number;
+  }>;
+  runtimeHealth: {
+    ready: boolean;
+    version: string | null;
+    apply_deployed: boolean;
+    apply_executable: boolean;
+    operations_table_deployed: boolean;
+  };
 };
 
 export type AdjustInventoryVariantInput = {
@@ -808,7 +853,7 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
 
   const { data: balances, error: balancesError } = await supabase
     .from("inventory_balances")
-    .select("id, variant_id, quantity_on_hand, quantity_reserved");
+    .select("id, variant_id, location_id, quantity_on_hand, quantity_reserved");
 
   if (balancesError) {
     throw new Error(`Failed to load balances for reconciliation: ${balancesError.message}`);
@@ -827,13 +872,129 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
       quantity_on_hand: numberQuantity(balance.quantity_on_hand),
     }));
 
-  const { data: movementReasons, error: movementsError } = await supabase
+  const negativeBalances = (balances || [])
+    .filter((balance: Record<string, unknown>) => {
+      const onHand = Number(balance.quantity_on_hand);
+      const reserved = Number(balance.quantity_reserved);
+      return !Number.isFinite(onHand) || !Number.isFinite(reserved) || onHand < 0 || reserved < 0;
+    })
+    .map((balance: Record<string, unknown>) => ({
+      balance_id: String(balance.id || ""),
+      variant_id: String(balance.variant_id || ""),
+      location_id: String(balance.location_id || ""),
+      quantity_on_hand: Number(balance.quantity_on_hand),
+      quantity_reserved: Number(balance.quantity_reserved),
+    }));
+
+  const { data: movements, error: movementsError } = await supabase
     .from("stock_movements")
-    .select("id, variant_id, movement_type, reason");
+    .select("id, variant_id, location_id, movement_type, quantity_before, quantity_after, quantity_delta, reason, created_at")
+    .order("created_at", { ascending: true });
 
   if (movementsError) {
-    throw new Error(`Failed to load movement reasons for reconciliation: ${movementsError.message}`);
+    throw new Error(`Failed to load movements for reconciliation: ${movementsError.message}`);
   }
+
+  const movementDeltaMismatches: InventoryReconciliationResult["movementDeltaMismatches"] = [];
+  const movementContinuityMismatches: InventoryReconciliationResult["movementContinuityMismatches"] = [];
+  const movementGroups = new Map<string, Array<Record<string, unknown>>>();
+  for (const movement of movements || []) {
+    const before = Number(movement.quantity_before);
+    const after = Number(movement.quantity_after);
+    const delta = Number(movement.quantity_delta);
+    if (!Number.isFinite(before) || !Number.isFinite(after) || !Number.isFinite(delta) || after - before !== delta) {
+      movementDeltaMismatches.push({
+        movement_id: String(movement.id || ""),
+        variant_id: String(movement.variant_id || ""),
+        location_id: String(movement.location_id || ""),
+        quantity_before: before,
+        quantity_after: after,
+        quantity_delta: delta,
+      });
+    }
+    const groupKey = `${String(movement.variant_id || "")}:${String(movement.location_id || "")}`;
+    const group = movementGroups.get(groupKey) || [];
+    group.push(movement as Record<string, unknown>);
+    movementGroups.set(groupKey, group);
+  }
+
+  for (const group of movementGroups.values()) {
+    for (let index = 1; index < group.length; index += 1) {
+      const previous = group[index - 1];
+      const current = group[index];
+      const previousAfter = Number(previous.quantity_after);
+      const currentBefore = Number(current.quantity_before);
+      if (previousAfter !== currentBefore) {
+        movementContinuityMismatches.push({
+          variant_id: String(current.variant_id || ""),
+          location_id: String(current.location_id || ""),
+          previous_movement_id: String(previous.id || ""),
+          previous_quantity_after: previousAfter,
+          movement_id: String(current.id || ""),
+          quantity_before: currentBefore,
+        });
+      }
+    }
+  }
+
+  const balanceVsLatestMovementMismatches: InventoryReconciliationResult["balanceVsLatestMovementMismatches"] = [];
+  const balancesWithoutMovements: InventoryReconciliationResult["balancesWithoutMovements"] = [];
+  for (const balance of balances || []) {
+    const groupKey = `${String(balance.variant_id || "")}:${String(balance.location_id || "")}`;
+    const group = movementGroups.get(groupKey) || [];
+    const balanceQuantity = Number(balance.quantity_on_hand);
+    const latest = group.at(-1);
+    if (!latest) {
+      if (balanceQuantity !== 0) {
+        balancesWithoutMovements.push({
+          balance_id: String(balance.id || ""),
+          variant_id: String(balance.variant_id || ""),
+          location_id: String(balance.location_id || ""),
+          quantity_on_hand: balanceQuantity,
+        });
+      }
+      continue;
+    }
+    const latestAfter = Number(latest.quantity_after);
+    if (latestAfter !== balanceQuantity) {
+      balanceVsLatestMovementMismatches.push({
+        balance_id: String(balance.id || ""),
+        variant_id: String(balance.variant_id || ""),
+        location_id: String(balance.location_id || ""),
+        balance_quantity_on_hand: balanceQuantity,
+        latest_movement_id: String(latest.id || ""),
+        latest_quantity_after: latestAfter,
+      });
+    }
+  }
+
+  const { data: operations, error: operationsError } = await supabase
+    .from("inventory_operations")
+    .select("operation_key");
+  if (operationsError) {
+    throw new Error(`Failed to load inventory operation keys for reconciliation: ${operationsError.message}`);
+  }
+  const operationCounts = new Map<string, number>();
+  for (const operation of operations || []) {
+    const key = String(operation.operation_key || "");
+    operationCounts.set(key, (operationCounts.get(key) || 0) + 1);
+  }
+  const duplicateOperationKeys = Array.from(operationCounts.entries())
+    .filter(([, duplicateCount]) => duplicateCount > 1)
+    .map(([operation_key, duplicate_count]) => ({ operation_key, duplicate_count }));
+
+  const { data: runtimeHealthData, error: runtimeHealthError } = await supabase.rpc("inventory_runtime_health_rpc");
+  if (runtimeHealthError) {
+    throw new Error(`Failed to load inventory RPC health: ${runtimeHealthError.message}`);
+  }
+  const health = (runtimeHealthData || {}) as Record<string, unknown>;
+  const runtimeHealth = {
+    ready: health.ready === true,
+    version: typeof health.version === "string" ? health.version : null,
+    apply_deployed: health.apply_deployed === true,
+    apply_executable: health.apply_executable === true,
+    operations_table_deployed: health.operations_table_deployed === true,
+  };
 
   return {
     stockVsBalanceMismatches,
@@ -843,13 +1004,20 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
     duplicateVariantSkus,
     duplicateBarcodes,
     reservedExceedsOnHand,
-    blankMovementReasons: (movementReasons || [])
+    blankMovementReasons: (movements || [])
       .filter((movement: Record<string, unknown>) => !String(movement.reason || "").trim())
       .map((movement: Record<string, unknown>) => ({
         movement_id: String(movement.id || ""),
         variant_id: String(movement.variant_id || ""),
         movement_type: String(movement.movement_type || ""),
       })),
+    negativeBalances,
+    duplicateOperationKeys,
+    movementDeltaMismatches,
+    movementContinuityMismatches,
+    balanceVsLatestMovementMismatches,
+    balancesWithoutMovements,
+    runtimeHealth,
   };
 }
 
