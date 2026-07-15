@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
 import { createClient } from "@supabase/supabase-js";
 
@@ -499,6 +501,10 @@ let server;
 try {
   await cleanupAuditData();
   config = await prepareConfig();
+  // A previous integration process may have persisted a disabled feature
+  // snapshot in Next's disk cache. The database fixture above is authoritative
+  // for this isolated run, so clear only this repository's cache before boot.
+  fs.rmSync(path.join(ROOT, ".next", "cache"), { recursive: true, force: true });
 
   server = await startApp(false);
   await runCase("checkout fails closed when USE_POS_RPC is false", async () => {
