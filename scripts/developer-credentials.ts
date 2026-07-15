@@ -28,9 +28,10 @@ type DeveloperCredentialRow = {
   must_rotate: boolean;
 };
 
+class DeveloperCredentialCliError extends Error {}
+
 function fail(message: string): never {
-  process.stderr.write(`Developer credential command failed: ${message}\n`);
-  process.exit(1);
+  throw new DeveloperCredentialCliError(message);
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -195,6 +196,10 @@ async function main() {
 }
 
 main().catch((error) => {
-  if (error instanceof Error && error.name === "DeveloperPasswordPolicyError") fail(error.message);
-  fail("unexpected failure; no credential material was printed.");
+  const message = error instanceof DeveloperCredentialCliError
+    || (error instanceof Error && error.name === "DeveloperPasswordPolicyError")
+    ? error.message
+    : "unexpected failure; no credential material was printed.";
+  process.stderr.write(`Developer credential command failed: ${message}\n`);
+  process.exitCode = 1;
 });
