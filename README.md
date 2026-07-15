@@ -82,6 +82,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=你的-publishable-或-anon-key
 SUPABASE_SERVICE_ROLE_KEY=你的-service-role-key
 ADMIN_PASSWORD=设置一个强密码
 USE_POS_RPC=true
+USE_PRODUCT_RPC=true
 ```
 
 POS 使用前必须确认数据库已包含以下事务 RPC migrations（新客户的 `client-init.sql` 已自动包含）：
@@ -93,6 +94,10 @@ POS 使用前必须确认数据库已包含以下事务 RPC migrations（新客�
 `USE_POS_RPC=true` 是正式运行的必需配置。若配置不是 `true`、migration 未部署、函数缺失或 `service_role` 无执行权限，后台会显示红色阻断提示，checkout / void API 返回 503，并且不会创建订单、付款、库存变化或库存流水。系统不会自动回退到非事务 JavaScript 多步写入。
 
 库存调整和“快速售出”还必须包含 `20260715102000_transactional_inventory_operations.sql`。这两个正式写入入口只调用 `inventory_apply_rpc`：库存余额、库存流水、幂等记录和兼容的 `products.stock` / `products.size_stock` 投影在同一个数据库事务内完成。RPC 缺失、不可执行或不可用时 API 返回 503，不会回退到前端或服务端多步写入。
+
+商品新增和编辑还必须包含 `20260715143949_transactional_product_operations.sql`，并设置 `USE_PRODUCT_RPC=true`。正式商品写入只允许调用事务 RPC；配置不是 `true`、migration 未部署、函数无执行权限或 RPC 不可用时，商品 API 返回 503，不会创建或部分修改商品、Variant、库存余额、库存流水。系统不会回退到历史 JavaScript 多步双写。
+
+`inventory_balances` 是库存数量的权威来源；`products.stock` 和 `products.size_stock` 只是在同一数据库事务内更新的旧页面兼容投影，不能作为独立库存写入入口。本批事务边界不包含 CSV 导入、商品图片上传/删除或商品永久删除，这些路径不得被描述为已经完成事务加固。
 
 “快速售出”是仅限 owner 的快速扣库存工具，适合店主临时登记一件已售商品；它不会创建 POS 订单、订单明细或付款记录，也不能代替正常 POS 扫码结账。店员应使用 POS 扫码流程，不能直接调用快速售出 API。
 
@@ -208,6 +213,8 @@ npm run developer:rotate -- --project-ref abcdefgh
 - POS checkout / void 正式写入只允许调用事务 RPC；`USE_POS_RPC=false` 仅作为阻断 POS 写入的紧急开关，不是非事务 fallback。
 - 库存调整和快速售出正式写入只允许调用 `inventory_apply_rpc`；每次用户操作必须保留同一个业务 ID，超时或响应丢失后的重试必须复用该 ID。
 - 快速售出是 owner-only 的库存工具，不产生 POS 订单或付款；需要销售记录时必须使用 POS 扫码结账。
+- 商品新增和编辑正式写入只允许调用商品事务 RPC，并要求 `USE_PRODUCT_RPC=true`；RPC 不可用时必须返回 503，不能恢复 Node.js 多步写入。
+- 商品库存以 `inventory_balances` 为权威，`products.stock` / `products.size_stock` 只允许作为事务内兼容投影。CSV、图片操作和永久删除仍在本批事务边界之外。
 - `public.developer_access` 空表表示未初始化；有记录时只保存 scrypt hash、随机 credential version、整数 password version 和轮换时间，不保存明文。
 - 新客户运行 `npm run developer:bootstrap -- --project-ref ...`；已有客户升级后统一进入 `must_rotate`，运行 `npm run developer:rotate -- --project-ref ...` 才能重新访问受保护设置。
 - 店铺设置和法律设置不能改回普通 owner/员工权限；相关 API 必须继续要求开发者会话。
