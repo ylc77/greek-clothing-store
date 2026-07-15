@@ -772,6 +772,41 @@ try {
     assert.equal(after.product.name_en, "Metadata only changed");
   });
 
+  await runCase("base price changes require authoritative Variants and update POS-facing prices atomically", async () => {
+    const payload = productPayload("PRICE-PROJECTION", [
+      { size: "S", quantity: 2, price: 19.9 },
+      { size: "M", quantity: 1, price: 24.9 },
+    ], { price: 19.9 });
+    const { product } = await createProductOrThrow(payload);
+    const before = await stateForProduct(product.id);
+
+    const missingVariants = await updateProduct(product, auditId("PRICE-WITHOUT-VARIANTS"), { price: 29.9 });
+    assert.equal(missingVariants.status, 400, JSON.stringify(missingVariants.data));
+    assert.equal(missingVariants.data.code, "PRODUCT_VARIANTS_REQUIRED");
+    assert.deepEqual(await stateForProduct(product.id), before);
+
+    const variants = authoritativeVariants(product).map((variant) => ({
+      ...variant,
+      price: Number(variant.price) === Number(product.price) ? 29.9 : Number(variant.price),
+    }));
+    const updatedResponse = await updateProduct(
+      product,
+      auditId("PRICE-WITH-VARIANTS"),
+      { price: 29.9 },
+      variants,
+    );
+    assert.equal(updatedResponse.status, 200, JSON.stringify(updatedResponse.data));
+    const updated = responseProduct(updatedResponse);
+    assert.equal(Number(updated.price), 29.9);
+    assert.equal(Number(variantBySize(updated, "S").price), 29.9, "inherited Variant price must follow the base price");
+    assert.equal(Number(variantBySize(updated, "M").price), 24.9, "explicit Variant override must remain unchanged");
+    const after = await assertProjection(product.id);
+    assert.equal(Number(after.product.price), 29.9);
+    assert.equal(Number(after.variants.find((variant) => normalizedSize(variant.size) === "S").price), 29.9);
+    assert.equal(Number(after.variants.find((variant) => normalizedSize(variant.size) === "M").price), 24.9);
+    assert.deepEqual(inventorySlice(after), inventorySlice(before), "a price edit must not change inventory or movements");
+  });
+
   await runCase("stale metadata and structure versions return 409 without partial writes", async () => {
     const payload = productPayload("VERSIONS", [{ size: "S", quantity: 0 }]);
     const { product } = await createProductOrThrow(payload);

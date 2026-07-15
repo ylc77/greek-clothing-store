@@ -69,6 +69,16 @@ assert.match(createRoute, /rpc\(\s*["']product_create_rpc["']/, "product POST ro
 assert.match(updateRoute, /rpc\(\s*["']product_update_rpc["']/, "product update route must use product_update_rpc");
 assert.match(putHandler, /executeUpdate\(/, "product PUT must use the shared transactional update executor");
 assert.match(deleteHandler, /executeUpdate\(/, "product DELETE must use the shared transactional update executor");
+assert.doesNotMatch(
+  updateRoute,
+  /productIdFromRpcResult\(rpcData\)\s*\|\|\s*productId/,
+  "product update must not turn an unreadable RPC result into success by reloading the requested product",
+);
+assert.match(
+  updateRoute,
+  /resultProductId\s*!==\s*productId/,
+  "product update must require the RPC result to identify the requested product",
+);
 
 for (const [label, source] of [["POST", postHandler], ["PUT", putHandler], ["DELETE", deleteHandler]]) {
   assert.match(source, /USE_PRODUCT_RPC/, `${label} must enforce USE_PRODUCT_RPC`);
@@ -125,6 +135,16 @@ assert.equal(
   1,
   "bulk product status must invoke exactly one database RPC",
 );
+assert.match(
+  bulkRoute,
+  /bulkProductResultFromRpcResult\(rpcData/,
+  "bulk product status must validate the committed RPC result envelope before returning success",
+);
+assert.doesNotMatch(
+  bulkRoute,
+  /finalized\.value\s*&&\s*typeof finalized\.value === ["']object["'][\s\S]{0,100}:\s*\{\}/,
+  "bulk product status must not coerce an unreadable RPC result into an empty success",
+);
 
 function sourceBetween(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -161,6 +181,26 @@ assert.match(
 assert.match(editorSave, /clientRequestId:\s*operationId/, "ordinary product writes must send their stable operation ID");
 assert.match(quickAdd, /clientRequestId:\s*operationId/, "quick photo creation must send its stable operation ID");
 assert.match(bulkStatus, /clientRequestId:\s*operationId/, "bulk status must send its stable operation ID");
+
+assert.ok(
+  metadataSave.indexOf("try {") < metadataSave.indexOf("productOperationIds().getOrCreate("),
+  "metadata/AI saves must catch operation-state failures so reconciliation reset remains available",
+);
+assert.match(
+  editorSave,
+  /productBasePriceChanged/,
+  "ordinary edits must detect a base-price change and include POS-facing Variant price updates",
+);
+assert.match(
+  editorSave,
+  /if \(!r\.ok\)/,
+  "ordinary create must report a top-level image upload HTTP failure after the product commits",
+);
+assert.match(
+  quickAdd,
+  /results\.some\(.*!.*\.ok/s,
+  "quick photo create must report per-file image failures even when the upload endpoint returns HTTP 200",
+);
 
 assert.match(envExample, /^USE_PRODUCT_RPC=true$/m, ".env.example must enable transactional product RPCs by default");
 
