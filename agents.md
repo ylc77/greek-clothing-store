@@ -181,3 +181,5 @@ Every pre-existing developer credential is treated as potentially shared and mus
 
 The CLI-generated migration timestamp originally sorted before the repository's future-dated POS migrations. `20260715110000_harden_developer_credentials.sql` is intentionally later than `20260714234237_transactional_inventory_operations.sql`, `20260715100000_harden_pos_checkout_rpc.sql`, and `20260715100001_reconcile_pos_void_rpc.sql`. Keep this monotonic order for all later migrations and verify clean reset, client-init, legacy shared credential, and existing unique credential upgrades.
 
+Batch 2's `20260714234237_transactional_inventory_operations.sql` predates the Batch 1 POS hardening migrations even though it was added later. A database that already records the `20260715100000_*` migrations but lacks `20260714234237` will make a normal `db push` fail closed. Do not rewrite migration history or run `client-init.sql`; inspect `db push --dry-run --include-all` and use `--include-all` only when the listed missing migrations are exactly expected. All new migrations must remain later than `20260715110000`.
+

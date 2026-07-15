@@ -1,7 +1,7 @@
 # 新客户部署说明
 
 > **新客户**：从头部署，使用 `client-init.sql` 一键初始化。
-> **老客户升级**：不要执行 `client-init.sql`！已有真实数据会被覆盖。使用 `supabase/patches/` 下的升级补丁。
+> **老客户升级**：不要执行 `client-init.sql`！已有真实数据会被覆盖。使用尚未应用的 `supabase/migrations`；只有具体升级说明明确要求时才使用专用 patch。
 
 ## 1. 新建 Supabase 项目
 1. 登录 [supabase.com](https://supabase.com)

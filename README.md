@@ -178,7 +178,21 @@ Supabase Storage：
 
 ### 可以对已有客户执行 client-init.sql 吗？
 
-不可以。已有客户升级只能执行尚未应用的 migration 或专用 patch，避免破坏数据。
+不可以。`supabase/migrations` 是已有客户升级的权威来源；只有部署说明明确指定时才使用专用 patch，避免破坏数据。
+
+批次 2 的 `20260714234237_transactional_inventory_operations.sql` 时间戳早于批次 1 的 `20260715100000_*` / `20260715100001_*`。如果某个测试或客户数据库已经记录了较新的 POS migration、却还没有这份库存 migration，普通 `db push --dry-run` 会安全拒绝插入较早版本。此时不要修补 migration history，也不要执行 `client-init.sql`，而应由维护者先确认已连接正确客户并检查计划：
+
+```powershell
+npx supabase db push --dry-run --include-all
+```
+
+只有输出明确包含预期缺失的 `20260714234237_transactional_inventory_operations.sql` 和本次计划部署的后续 migrations 时，才执行：
+
+```powershell
+npx supabase db push --include-all
+```
+
+若列表出现无法解释的 migration，立即停止并先核对 `supabase_migrations.schema_migrations` 与客户备份。全新客户的 `client-init.sql` 和从零 migration reset 不受这个历史顺序问题影响。
 
 ### 图片上传失败怎么办？
 
