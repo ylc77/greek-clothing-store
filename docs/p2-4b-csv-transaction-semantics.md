@@ -111,4 +111,3 @@ Every text cell written to product exports, failed-row downloads, or import-erro
 - Unauthenticated requests return 401; authenticated-but-insufficient roles return 403; disabled Features return 403 with `FEATURE_DISABLED`.
 - Job tables have RLS enabled and no anon/authenticated table access or policy. Only service-role server code and service-role-only SECURITY DEFINER RPCs can operate them.
 - Missing configuration, migration, execute privilege, or RPC availability returns 503 before a business write. There is no direct-table or Node.js multi-step fallback.
-
