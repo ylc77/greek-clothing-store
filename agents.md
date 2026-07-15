@@ -181,3 +181,6 @@ Every pre-existing developer credential is treated as potentially shared and mus
 
 The unpublished P1 migrations are intentionally ordered as `20260715100000_harden_pos_checkout_rpc.sql`, `20260715100001_reconcile_pos_void_rpc.sql`, `20260715102000_transactional_inventory_operations.sql`, and `20260715110000_harden_developer_credentials.sql`. Keep this monotonic order for all later migrations and verify clean reset, client-init, POS/inventory legacy upgrades, legacy shared credential, and existing unique credential upgrades.
 
+
+The standalone Supabase Postgres image used by installation-path tests may finish assigning the `storage` schema to `supabase_storage_admin` before the fixture runs, especially on Ubuntu GitHub runners. The `postgres` role then has no CREATE privilege on that schema even though the same test can pass during a different Windows startup window. Create the fixture `storage.buckets` table through `supabase_storage_admin` and explicitly grant the test `postgres` role the required DML privileges; do not rely on startup timing or change the production migration for this test-only ownership boundary.
+

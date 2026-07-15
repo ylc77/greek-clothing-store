@@ -36,6 +36,8 @@ function Start-TestContainer([string]$Name) {
       Start-Sleep -Seconds 6
       docker exec $Name pg_isready -U postgres 2>$null | Out-Null
       if ($LASTEXITCODE -ne 0) { continue }
+      docker exec -e PGPASSWORD=postgres $Name pg_isready -h 127.0.0.1 -U supabase_storage_admin -d postgres 2>$null | Out-Null
+      if ($LASTEXITCODE -ne 0) { continue }
       $storageFixture = @'
 create schema if not exists storage;
 create table if not exists storage.buckets (
@@ -46,7 +48,7 @@ create table if not exists storage.buckets (
 grant select, insert, update, delete on storage.buckets to postgres;
 '@
       $storageFixture | docker exec -i -e PGPASSWORD=postgres $Name psql -q -X -h 127.0.0.1 -U supabase_storage_admin -d postgres -v ON_ERROR_STOP=1
-      if ($LASTEXITCODE -ne 0) { throw "Failed to initialize Storage fixture in $Name" }
+      if ($LASTEXITCODE -ne 0) { continue }
       return
     }
   } while ((Get-Date) -lt $deadline)
