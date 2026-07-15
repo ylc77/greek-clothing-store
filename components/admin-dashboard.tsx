@@ -23,10 +23,24 @@ import { featurePlanPresets, type FeatureFlags, type FeatureKey } from "@/lib/fe
 import { getSupabaseBrowserAuthClient } from "@/lib/supabase";
 import { skroutzReadinessIssues } from "@/lib/skroutz-readiness";
 import { PosOperationIdStore } from "@/lib/pos-operation-id";
+import { InventoryOperationIdStore, InventoryOperationStateError } from "@/lib/inventory-operation-id";
 
 /* ── Types ───────────────────────────────────────────────── */
 type AdminProduct = ProductFormData & { id: string; size_stock?: Record<string, number> | null; variant_procurement?: Record<string, VariantProcurement> };
 type ApiResult = { rowNumber?: number; fileName?: string; sku: string; ok: boolean; message: string; imageUrl?: string; translated?: boolean; translateError?: string };
+class AdminApiError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly operationSafeToDiscard: boolean;
+
+  constructor(message: string, status: number, data: Record<string, unknown>) {
+    super(message);
+    this.name = "AdminApiError";
+    this.status = status;
+    this.code = typeof data.code === "string" ? data.code : "REQUEST_FAILED";
+    this.operationSafeToDiscard = data.operationSafeToDiscard === true;
+  }
+}
 type CsvRow = Record<string, string | number>;
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
@@ -102,6 +116,19 @@ type InventoryReconciliation = {
   duplicateBarcodes: unknown[];
   reservedExceedsOnHand: unknown[];
   blankMovementReasons: unknown[];
+  negativeBalances: unknown[];
+  duplicateOperationKeys: unknown[];
+  movementDeltaMismatches: unknown[];
+  movementContinuityMismatches: unknown[];
+  balanceVsLatestMovementMismatches: unknown[];
+  balancesWithoutMovements: unknown[];
+  runtimeHealth: {
+    ready: boolean;
+    version: string | null;
+    apply_deployed: boolean;
+    apply_executable: boolean;
+    operations_table_deployed: boolean;
+  };
 };
 type InventoryAdjustState = {
   item: InventoryItem | null;
@@ -420,7 +447,11 @@ function stockTotal(stock: Record<string, number>) {
 }
 function inventoryIssueCount(data: InventoryReconciliation | null) {
   if (!data) return 0;
-  return Object.values(data).reduce((sum, value) => sum + (Array.isArray(value) ? value.length : 0), 0);
+  const reconciliationIssues = Object.values(data).reduce(
+    (sum, value) => sum + (Array.isArray(value) ? value.length : 0),
+    0,
+  );
+  return reconciliationIssues + (data.runtimeHealth.ready ? 0 : 1);
 }
 function formatAdminDate(value: string) {
   if (!value) return "-";
@@ -785,6 +816,8 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const [movementSourceType, setMovementSourceType] = useState("");
   const [movementLimit, setMovementLimit] = useState(50);
   const [adjustInventory, setAdjustInventory] = useState<InventoryAdjustState>({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" });
+  const inventoryOperationIdsRef = useRef<InventoryOperationIdStore | null>(null);
+  const quickSellOperationIdsRef = useRef<InventoryOperationIdStore | null>(null);
   const [labelSearch, setLabelSearch] = useState("");
   const [labelCategory, setLabelCategory] = useState("");
   const [labelSubcategory, setLabelSubcategory] = useState("");
@@ -1282,10 +1315,10 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     return activePassword ? { "x-admin-password": activePassword } : {};
   }
 
-  async function api(path: string, init: RequestInit = {}) {
+  async function api(path: string, init: RequestInit = {}): Promise<any> {
     const r = await fetch(path, { ...init, headers: { "Content-Type": "application/json", ...adminAuthHeaders(), ...(init.headers || {}) } });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || "Request failed");
+    const d = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!r.ok) throw new AdminApiError(typeof d.error === "string" ? d.error : "Request failed", r.status, d);
     return d;
   }
   async function readJson(r: Response, fallback: string) { const ct = r.headers.get("Content-Type")||""; if (ct.includes("json")) return r.json(); const t = await r.text(); throw new Error(t ? `${fallback}: ${t.slice(0, 160)}` : fallback); }
@@ -1315,6 +1348,50 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       posOperationIdsRef.current = new PosOperationIdStore(window.sessionStorage);
     }
     return posOperationIdsRef.current;
+  }
+
+  function inventoryOperationIds() {
+    if (!inventoryOperationIdsRef.current) {
+      inventoryOperationIdsRef.current = new InventoryOperationIdStore("inventory", window.sessionStorage);
+    }
+    return inventoryOperationIdsRef.current;
+  }
+
+  function quickSellOperationIds() {
+    if (!quickSellOperationIdsRef.current) {
+      quickSellOperationIdsRef.current = new InventoryOperationIdStore("quick-sell", window.sessionStorage);
+    }
+    return quickSellOperationIdsRef.current;
+  }
+
+  function handleInventoryOperationFailure(
+    store: InventoryOperationIdStore,
+    scope: string,
+    operationId: string,
+    error: unknown,
+  ) {
+    if (error instanceof AdminApiError && error.operationSafeToDiscard) {
+      try { store.discardKnownNoWrite(scope, operationId); } catch {}
+      return;
+    }
+    if (error instanceof InventoryOperationStateError && error.code !== "OPERATION_STORAGE_UNAVAILABLE") {
+      setConfirm({
+        open: true,
+        title: "重置未确认的库存操作？",
+        desc: `${error.message} 只有确认已核对库存流水后，才应重置并生成新的业务 ID。`,
+        confirmText: "我已核对，重置操作",
+        variant: "danger",
+        action: () => {
+          try {
+            store.cancel(scope);
+            toast("未确认的业务 ID 已由你主动重置，请重新提交。", "ok");
+          } catch (resetError) {
+            toast(resetError instanceof Error ? resetError.message : "无法重置操作状态", "err");
+          }
+          setConfirm(current => ({ ...current, open: false }));
+        },
+      });
+    }
   }
 
   function posCheckoutFingerprint() {
@@ -1783,20 +1860,30 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     const reference = stockOperationReference.trim();
     const reason = reference ? `${option.reason}；备注/单据号：${reference}` : option.reason;
 
+    const mode = stockOperationMode === "stocktake" ? "set_to" : "adjust_by";
+    const operationScope = `stock-operation:${item.variant_id}:${stockOperationMode}`;
+    const fingerprint = JSON.stringify({ variantId: item.variant_id, mode, quantity, reason, operationType: stockOperationMode });
+    let operationId = "";
+
     setStockOperationSubmitting(true);
     setStockOperationError("");
     try {
+      operationId = inventoryOperationIds().getOrCreate(operationScope, fingerprint);
+      inventoryOperationIds().markAttempt(operationScope, operationId);
       const result = await api("/api/admin/inventory/adjust", {
         method: "POST",
         body: JSON.stringify({
           variantId: item.variant_id,
-          mode: stockOperationMode === "stocktake" ? "set_to" : "adjust_by",
+          mode,
           quantity,
           reason,
           operationType: stockOperationMode,
-          clientRequestId: crypto.randomUUID(),
+          clientRequestId: operationId,
         }),
       });
+      try { inventoryOperationIds().complete(operationScope, operationId); } catch (storageError) {
+        toast(storageError instanceof Error ? storageError.message : "操作成功，但本地业务 ID 清理失败。", "err");
+      }
       const before = Number(result.quantityBefore ?? item.quantity_on_hand);
       const after = Number(result.quantityAfter ?? before);
       const actionMessage = result.noChange
@@ -1827,6 +1914,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       window.setTimeout(() => stockOperationInputRef.current?.focus(), 60);
     } catch (error) {
       const message = error instanceof Error ? error.message : `${option.label}失败`;
+      if (operationId) handleInventoryOperationFailure(inventoryOperationIds(), operationScope, operationId, error);
       setStockOperationError(message);
       toast(message, "err");
     } finally {
@@ -2037,25 +2125,43 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   function openInventoryAdjust(item: InventoryItem) {
     setAdjustInventory({ item, mode: "set_to", quantity: String(item.quantity_on_hand), reason: "", submitting: false, message: "" });
   }
+  function closeInventoryAdjustment() {
+    const item = adjustInventory.item;
+    if (item) {
+      try { inventoryOperationIds().cancel(`inventory-adjust:${item.variant_id}`); } catch (error) {
+        toast(error instanceof Error ? error.message : "无法清除库存操作状态", "err");
+        return;
+      }
+    }
+    setAdjustInventory({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" });
+  }
   async function executeInventoryAdjustment() {
     const item = adjustInventory.item;
     if (!item) return;
     const quantity = Number(adjustInventory.quantity);
+    const reason = adjustInventory.reason.trim();
+    const operationScope = `inventory-adjust:${item.variant_id}`;
+    const fingerprint = JSON.stringify({ variantId: item.variant_id, mode: adjustInventory.mode, quantity, reason, operationType: "manual" });
+    let operationId = "";
     setAdjustInventory(prev => ({ ...prev, submitting: true, message: "" }));
     try {
+      operationId = inventoryOperationIds().getOrCreate(operationScope, fingerprint);
+      inventoryOperationIds().markAttempt(operationScope, operationId);
       const result = await api("/api/admin/inventory/adjust", {
         method: "POST",
         body: JSON.stringify({
           variantId: item.variant_id,
           mode: adjustInventory.mode,
           quantity,
-          reason: adjustInventory.reason.trim(),
-          clientRequestId: crypto.randomUUID(),
+          reason,
+          clientRequestId: operationId,
         }),
       });
+      try { inventoryOperationIds().complete(operationScope, operationId); } catch (storageError) {
+        toast(storageError instanceof Error ? storageError.message : "操作成功，但本地业务 ID 清理失败。", "err");
+      }
       const before = Number(result.quantityBefore ?? item.quantity_on_hand);
       const after = Number(result.quantityAfter ?? before);
-      const reason = adjustInventory.reason.trim();
       const note = result.alreadyProcessed
         ? `这次调整已经处理过，没有重复写入。库存 ${before} → ${after}。`
         : result.noChange
@@ -2068,6 +2174,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       await loadProducts();
     } catch (error) {
       const message = error instanceof Error ? error.message : "库存调整失败";
+      if (operationId) handleInventoryOperationFailure(inventoryOperationIds(), operationScope, operationId, error);
       setAdjustInventory(prev => ({ ...prev, submitting: false, message }));
       toast(message, "err");
     }
@@ -2507,16 +2614,21 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   }
 
   async function sellOne(product: AdminProduct, size?: string) {
-    setSellingSku(`${product.sku}:${size || ""}`);
+    const sellingKey = `${product.sku}:${size || ""}`;
+    const operationScope = `quick-sell:${product.sku}:${size || "ONE SIZE"}`;
+    const fingerprint = JSON.stringify({ sku: product.sku, size: size || null, quantity: 1, autoDeactivate: true });
+    let operationId = "";
+    setSellingSku(sellingKey);
     try {
-      const clientRequestId =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `quick-sale-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      operationId = quickSellOperationIds().getOrCreate(operationScope, fingerprint);
+      quickSellOperationIds().markAttempt(operationScope, operationId);
       const result = await api("/api/admin/products/sell", {
         method: "POST",
-        body: JSON.stringify({ sku: product.sku, size, quantity: 1, autoDeactivate: true, clientRequestId }),
+        body: JSON.stringify({ sku: product.sku, size, quantity: 1, autoDeactivate: true, clientRequestId: operationId }),
       });
+      try { quickSellOperationIds().complete(operationScope, operationId); } catch (storageError) {
+        toast(storageError instanceof Error ? storageError.message : "售出成功，但本地业务 ID 清理失败。", "err");
+      }
       if (result.erpSyncWarning) {
         toast(`旧库存已更新，但 ERP 库存同步需要检查：${result.erpSyncWarning}`, "err");
       } else if (result.alreadyProcessed) {
@@ -2526,6 +2638,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       await loadProducts();
     } catch (er) {
       toast(er instanceof Error ? er.message : "减库存失败", "err");
+      if (operationId) handleInventoryOperationFailure(quickSellOperationIds(), operationScope, operationId, er);
     } finally {
       setSellingSku(null);
     }
@@ -3857,6 +3970,13 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       ["重复 barcode", inventoryReconciliation.duplicateBarcodes.length],
                       ["预留异常", inventoryReconciliation.reservedExceedsOnHand.length],
                       ["流水原因为空", inventoryReconciliation.blankMovementReasons.length],
+                      ["负库存", inventoryReconciliation.negativeBalances.length],
+                      ["重复业务 ID", inventoryReconciliation.duplicateOperationKeys.length],
+                      ["流水数量计算异常", inventoryReconciliation.movementDeltaMismatches.length],
+                      ["流水前后断链", inventoryReconciliation.movementContinuityMismatches.length],
+                      ["余额与最新流水不一致", inventoryReconciliation.balanceVsLatestMovementMismatches.length],
+                      ["有余额但无流水", inventoryReconciliation.balancesWithoutMovements.length],
+                      ["事务 RPC 未就绪", inventoryReconciliation.runtimeHealth.ready ? 0 : 1],
                     ].map(([label, count]) => (
                       <div className="rounded-xl bg-white/70 px-3 py-2" key={String(label)}>
                         <p className="font-black">{count}</p>
@@ -3877,6 +3997,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       ["重复 barcode", inventoryReconciliation.duplicateBarcodes],
                       ["预留异常", inventoryReconciliation.reservedExceedsOnHand],
                       ["流水原因为空", inventoryReconciliation.blankMovementReasons],
+                      ["负库存", inventoryReconciliation.negativeBalances],
+                      ["重复业务 ID", inventoryReconciliation.duplicateOperationKeys],
+                      ["流水数量计算异常", inventoryReconciliation.movementDeltaMismatches],
+                      ["流水前后断链", inventoryReconciliation.movementContinuityMismatches],
+                      ["余额与最新流水不一致", inventoryReconciliation.balanceVsLatestMovementMismatches],
+                      ["有余额但无流水", inventoryReconciliation.balancesWithoutMovements],
                     ].filter(([, rows]) => Array.isArray(rows) && rows.length > 0).slice(0, 4).map(([label, rows]) => (
                       <div className="mt-2" key={String(label)}>
                         <p className="font-bold">{String(label)}：{Array.isArray(rows) ? rows.length : 0} 项</p>
@@ -4148,7 +4274,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <h3 className="text-lg font-black text-ink">调整库存</h3>
                       <p className="mt-1 text-xs text-stone-500">{adjustInventory.item.product_name || "-"} / {adjustInventory.item.variant_sku}</p>
                     </div>
-                    <button className="rounded-full border border-stone-200 px-3 py-1.5 text-xs font-black text-stone-500 hover:bg-stone-50" onClick={() => setAdjustInventory({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" })} type="button">关闭</button>
+                    <button className="rounded-full border border-stone-200 px-3 py-1.5 text-xs font-black text-stone-500 hover:bg-stone-50" onClick={closeInventoryAdjustment} type="button">关闭</button>
                   </div>
                   <div className="grid grid-cols-3 gap-2 rounded-2xl bg-stone-50 p-3 text-center">
                     <div><p className="text-lg font-black text-ink">{adjustInventory.item.quantity_on_hand}</p><p className="text-[11px] font-bold text-stone-400">当前</p></div>
@@ -4162,7 +4288,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   </div>
                   {adjustInventory.message ? <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{adjustInventory.message}</p> : null}
                   <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                    <button className="min-h-11 rounded-xl border border-stone-200 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50" onClick={() => setAdjustInventory({ item: null, mode: "set_to", quantity: "", reason: "", submitting: false, message: "" })} type="button">取消</button>
+                    <button className="min-h-11 rounded-xl border border-stone-200 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50" onClick={closeInventoryAdjustment} type="button">取消</button>
                     <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={adjustInventory.submitting} onClick={submitInventoryAdjustment} type="button">{adjustInventory.submitting ? "提交中..." : "提交调整"}</button>
                   </div>
                 </div>

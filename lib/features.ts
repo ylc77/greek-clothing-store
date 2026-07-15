@@ -100,7 +100,7 @@ export async function isFeatureEnabledUncached(key: FeatureKey): Promise<boolean
 
 export function featureDisabledResponse(key: FeatureKey) {
   return NextResponse.json(
-    { error: "当前客户版本未启用该功能。", code: "FEATURE_DISABLED", feature: key },
+    { error: "当前客户版本未启用该功能。", code: "FEATURE_DISABLED", feature: key, operationSafeToDiscard: true },
     { status: 403 },
   );
 }
