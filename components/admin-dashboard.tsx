@@ -122,6 +122,7 @@ type InventoryReconciliation = {
   movementContinuityMismatches: unknown[];
   balanceVsLatestMovementMismatches: unknown[];
   balancesWithoutMovements: unknown[];
+  operationsMissingMovements: unknown[];
   runtimeHealth: {
     ready: boolean;
     version: string | null;
@@ -3976,6 +3977,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       ["流水前后断链", inventoryReconciliation.movementContinuityMismatches.length],
                       ["余额与最新流水不一致", inventoryReconciliation.balanceVsLatestMovementMismatches.length],
                       ["有余额但无流水", inventoryReconciliation.balancesWithoutMovements.length],
+                      ["库存操作缺少流水", inventoryReconciliation.operationsMissingMovements.length],
                       ["事务 RPC 未就绪", inventoryReconciliation.runtimeHealth.ready ? 0 : 1],
                     ].map(([label, count]) => (
                       <div className="rounded-xl bg-white/70 px-3 py-2" key={String(label)}>
@@ -4003,6 +4005,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       ["流水前后断链", inventoryReconciliation.movementContinuityMismatches],
                       ["余额与最新流水不一致", inventoryReconciliation.balanceVsLatestMovementMismatches],
                       ["有余额但无流水", inventoryReconciliation.balancesWithoutMovements],
+                      ["库存操作缺少流水", inventoryReconciliation.operationsMissingMovements],
                     ].filter(([, rows]) => Array.isArray(rows) && rows.length > 0).slice(0, 4).map(([label, rows]) => (
                       <div className="mt-2" key={String(label)}>
                         <p className="font-bold">{String(label)}：{Array.isArray(rows) ? rows.length : 0} 项</p>

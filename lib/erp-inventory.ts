@@ -204,6 +204,15 @@ export type InventoryReconciliationResult = {
     location_id: string;
     quantity_on_hand: number;
   }>;
+  operationsMissingMovements: Array<{
+    operation_key: string;
+    operation_type: string;
+    variant_id: string;
+    location_id: string;
+    quantity_before: number;
+    quantity_after: number;
+    quantity_delta: number;
+  }>;
   runtimeHealth: {
     ready: boolean;
     version: string | null;
@@ -888,7 +897,7 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
 
   const { data: movements, error: movementsError } = await supabase
     .from("stock_movements")
-    .select("id, variant_id, location_id, movement_type, quantity_before, quantity_after, quantity_delta, reason, created_at")
+    .select("id, variant_id, location_id, movement_type, quantity_before, quantity_after, quantity_delta, reason, source_type, idempotency_key, created_at")
     .order("created_at", { ascending: true });
 
   if (movementsError) {
@@ -970,7 +979,7 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
 
   const { data: operations, error: operationsError } = await supabase
     .from("inventory_operations")
-    .select("operation_key");
+    .select("operation_key, operation_type, variant_id, location_id, quantity_before, quantity_after, quantity_delta");
   if (operationsError) {
     throw new Error(`Failed to load inventory operation keys for reconciliation: ${operationsError.message}`);
   }
@@ -982,6 +991,25 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
   const duplicateOperationKeys = Array.from(operationCounts.entries())
     .filter(([, duplicateCount]) => duplicateCount > 1)
     .map(([operation_key, duplicate_count]) => ({ operation_key, duplicate_count }));
+  const movementOperationKeys = new Set(
+    (movements || [])
+      .map((movement: Record<string, unknown>) => String(movement.idempotency_key || ""))
+      .filter(Boolean),
+  );
+  const operationsMissingMovements = (operations || [])
+    .filter((operation: Record<string, unknown>) => (
+      Number(operation.quantity_delta) !== 0
+      && !movementOperationKeys.has(String(operation.operation_key || ""))
+    ))
+    .map((operation: Record<string, unknown>) => ({
+      operation_key: String(operation.operation_key || ""),
+      operation_type: String(operation.operation_type || ""),
+      variant_id: String(operation.variant_id || ""),
+      location_id: String(operation.location_id || ""),
+      quantity_before: Number(operation.quantity_before),
+      quantity_after: Number(operation.quantity_after),
+      quantity_delta: Number(operation.quantity_delta),
+    }));
 
   const { data: runtimeHealthData, error: runtimeHealthError } = await supabase.rpc("inventory_runtime_health_rpc");
   if (runtimeHealthError) {
@@ -1017,6 +1045,7 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
     movementContinuityMismatches,
     balanceVsLatestMovementMismatches,
     balancesWithoutMovements,
+    operationsMissingMovements,
     runtimeHealth,
   };
 }

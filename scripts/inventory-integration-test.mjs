@@ -646,6 +646,15 @@ try {
   await runCase("reconciliation detects movement arithmetic and latest-balance mismatches", async () => {
     const fixture = await createFixture("RECONCILIATION", [2]);
     const variant = fixture.variants[0];
+    const missingMovementId = auditId("MISSING-MOVEMENT");
+    const adjustment = await adjust(fixture, missingMovementId, { quantity: 1 });
+    assert.equal(adjustment.status, 200, JSON.stringify(adjustment.data));
+    const missingMovementKey = operationKey("inventory", missingMovementId);
+    const { error: deleteMovementError } = await supabase
+      .from("stock_movements")
+      .delete()
+      .eq("idempotency_key", missingMovementKey);
+    if (deleteMovementError) throw deleteMovementError;
     const key = auditId("BAD-MOVEMENT");
     const { error } = await supabase.from("stock_movements").insert({
       variant_id: variant.id,
@@ -667,6 +676,7 @@ try {
     assert.ok(response.data.balanceVsLatestMovementMismatches.some((item) => item.variant_id === variant.id));
     assert.ok(Array.isArray(response.data.duplicateOperationKeys));
     assert.ok(Array.isArray(response.data.negativeBalances));
+    assert.ok(response.data.operationsMissingMovements.some((item) => item.operation_key === missingMovementKey));
   });
 } finally {
   await stopApp(server);
