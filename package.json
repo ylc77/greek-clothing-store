@@ -15,6 +15,11 @@
     "test:inventory-integration": "node scripts/inventory-integration-test.mjs",
     "test:inventory": "npm run test:inventory-operation-ids && npm run test:inventory-integration",
     "test:inventory-install-paths": "powershell -ExecutionPolicy Bypass -File scripts/verify-inventory-install-paths.ps1",
+    "test:developer-credentials": "node --experimental-strip-types --test tests/developer-credentials.test.ts",
+    "test:developer-integration": "node scripts/developer-credential-integration-test.mjs",
+    "test:developer-install-paths": "powershell -ExecutionPolicy Bypass -File scripts/verify-developer-credential-install-paths.ps1",
+    "test:developer-secrets": "node scripts/scan-developer-secrets.mjs",
+    "test:developer": "npm run test:developer-credentials && npm run test:developer-integration && npm run test:developer-secrets",
     "check:site": "node scripts/site-smoke-check.js",
     "check:skroutz": "node scripts/site-smoke-check.js --strict-feed"
   },
