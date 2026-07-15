@@ -44,8 +44,28 @@ NEXT_PUBLIC_SUPABASE_URL=https://你的项目.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=你的anon key
 ADMIN_PASSWORD=设置一个密码
 SUPABASE_SERVICE_ROLE_KEY=你的service_role_key
-DEEPSEEK_API_KEY=你的DeepSeek API Key
+USE_POS_RPC=true
+USE_PRODUCT_RPC=true
+USE_CSV_IMPORT_RPC=true
+DEEPSEEK_API_KEY=
 ```
+
+`USE_CSV_IMPORT_RPC=true` 需要数据库已包含 `20260716100000_transactional_csv_import_jobs.sql`。若配置或 RPC 不可用，CSV 写入会返回 503 并安全停止，不会回退到直接写表。DeepSeek 只用于可选的提交前翻译预览，没有配置也可以导入已填写完整语言内容的 CSV。
+
+### 已有客户升级（仅维护者）
+
+不要执行 `client-init.sql`。先备份并确认当前目录、Git 状态和目标 Supabase project ref，然后在包含 `supabase/migrations` 的客户项目根目录执行：
+
+```powershell
+pwd
+git status
+Get-ChildItem supabase/migrations
+npx supabase link --project-ref 客户项目ref
+npx supabase db push --dry-run
+npx supabase db push
+```
+
+`dry-run` 必须只显示预期的未应用 migrations，其中 4B 为 `20260716100000_transactional_csv_import_jobs.sql`。如出现未知版本或项目 ref 不符，立即停止。数据库升级成功后再把 Vercel 的 `USE_PRODUCT_RPC` 和 `USE_CSV_IMPORT_RPC` 设为 `true` 并重新部署。
 
 ## 6. 配置店铺信息
 1. 访问 `https://你的域名.vercel.app/admin`
@@ -61,6 +81,11 @@ DEEPSEEK_API_KEY=你的DeepSeek API Key
 ## 8. 导入商品
 1. 进入「新增/编辑」手动添加
 2. 或进入「CSV 导入」下载模板，批量导入
+3. 上传后先完成服务端预检；有错误时整份文件不会写入
+4. 选择商品模式：`create_only`（默认，仅新增）、`update_existing`（仅更新）或 `upsert`（新增或更新）
+5. 选择库存模式：`metadata_only`（不改库存）或 `set_inventory`（明确设置库存）
+6. 如需翻译，先查看最终翻译预览，再确认提交；提交阶段不会调用外部 AI
+7. 导入结果保存为 Job。刷新或网络中断后恢复原 Job，下载失败行并只重试失败行
 
 ## 9. 检查 feed.xml
 1. 访问 `https://你的域名.vercel.app/feed.xml`
@@ -82,7 +107,8 @@ Vercel → Settings → Domains → 添加自定义域名
 - [ ] 商家 owner/staff/inventory/readonly 无法修改 Store/Legal/Feature Settings
 - [ ] 可新增/编辑/下架商品
 - [ ] 图片上传正常
-- [ ] CSV 导入导出正常
+- [ ] CSV 预检、三种商品模式、两种库存模式、Job 恢复和失败行下载正常
+- [ ] 商品 CSV 导出完整；已确认它不是数据库灾难恢复备份
 - [ ] /feed.xml 可公网访问
 - [ ] 店铺设置已填写完整（名称、联系方式、地址、营业时间）
 - [ ] WhatsApp / Instagram / Google Maps 链接已更新
@@ -107,7 +133,7 @@ Vercel → Settings → Domains → 添加自定义域名
 
 ## 14. 每月维护建议
 - 检查 /feed.xml 是否正常
-- 导出 CSV 备份商品数据
+- 导出 CSV 留存商品资料；数据库与 Storage 另行做完整备份
 - 更新商品库存和价格
 - 新增当季新品
 - 停售商品设为下架
