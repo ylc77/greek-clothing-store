@@ -108,7 +108,8 @@
 | `GET /api/admin/inventory` | 200 | 200 | 200 | 200 |
 | `GET /api/admin/inventory/movements` | 200 | 401 | 200 | 401 |
 | `GET /api/admin/inventory/reconciliation` | 200 | 401 | 200 | 401 |
-| `POST /api/admin/inventory/adjust` | 200 | 401 | 200 | 401 |
+| `POST /api/admin/inventory/adjust` | 200 | 403 | 200 | 403 |
+| `POST /api/admin/products/sell` | 200 | 403 | 403 | 403 |
 | `GET /api/admin/pos/search` | 200 | 200 | 401 | 200 |
 | `POST /api/admin/pos/checkout` | 200 | 200 | 401 | 401 |
 | `GET /api/admin/pos/orders` | 200 | 200 | 401 | 200 |
@@ -123,6 +124,8 @@
 | `POST /api/admin/images` | 200 | 401 | 401 | 401 |
 | `GET /api/admin/backup` | 200 | 401 | 401 | 401 |
 | `PUT /api/admin/settings` | 200 | 401 | 401 | 401 |
+
+`POST /api/admin/products/sell` 是 owner-only 的快速扣库存工具，不创建 POS 订单或付款。关闭 `inventory` 或 `quick_sell` Feature 时，该接口必须返回 403 且不产生任何库存写入。事务 RPC 缺失、无执行权限或不可用时，库存调整与快速售出必须返回 503 且不产生部分写入。
 
 ## 手动 UI 验收
 

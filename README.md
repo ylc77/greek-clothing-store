@@ -78,6 +78,10 @@ POS 使用前必须确认数据库已包含以下事务 RPC migrations（新客�
 
 `USE_POS_RPC=true` 是正式运行的必需配置。若配置不是 `true`、migration 未部署、函数缺失或 `service_role` 无执行权限，后台会显示红色阻断提示，checkout / void API 返回 503，并且不会创建订单、付款、库存变化或库存流水。系统不会自动回退到非事务 JavaScript 多步写入。
 
+库存调整和“快速售出”还必须包含 `20260714234237_transactional_inventory_operations.sql`。这两个正式写入入口只调用 `inventory_apply_rpc`：库存余额、库存流水、幂等记录和兼容的 `products.stock` / `products.size_stock` 投影在同一个数据库事务内完成。RPC 缺失、不可执行或不可用时 API 返回 503，不会回退到前端或服务端多步写入。
+
+“快速售出”是仅限 owner 的快速扣库存工具，适合店主临时登记一件已售商品；它不会创建 POS 订单、订单明细或付款记录，也不能代替正常 POS 扫码结账。店员应使用 POS 扫码流程，不能直接调用快速售出 API。
+
 `ADMIN_PASSWORD` 是仅供维护者使用的服务器端紧急 owner 密码，每个客户建议设置不同值，不要告诉购买系统的商家。商家日常使用通过 Supabase Auth 创建的员工账号，不使用这个环境变量密码。
 
 店铺设置和法律设置另有独立的开发者密码。`client-init.sql` 已把该密码的加盐哈希写入私有表，新客户部署时不需要再增加一个明文环境变量；只有维护者保留并输入原始密码。数据库、Git、README 和 Vercel 环境变量中都不保存该明文。
@@ -172,6 +176,8 @@ Supabase Storage：
 - `supabase/migrations` 是数据库开发和升级的权威来源。
 - `supabase/client-init.sql` 是根据 migrations 生成的新客户空库部署快照。
 - POS checkout / void 正式写入只允许调用事务 RPC；`USE_POS_RPC=false` 仅作为阻断 POS 写入的紧急开关，不是非事务 fallback。
+- 库存调整和快速售出正式写入只允许调用 `inventory_apply_rpc`；每次用户操作必须保留同一个业务 ID，超时或响应丢失后的重试必须复用该 ID。
+- 快速售出是 owner-only 的库存工具，不产生 POS 订单或付款；需要销售记录时必须使用 POS 扫码结账。
 - `public.developer_access` 只保存开发者密码的加盐哈希；`anon` 和 `authenticated` 无权读取或修改，应用只通过服务器端 `service_role` 校验。
 - 店铺设置和法律设置不能改回普通 owner/员工权限；相关 API 必须继续要求开发者会话。
 - 新增或修改 migration 后，运行：
@@ -193,6 +199,8 @@ npm run dev -- --port 3010
 npm run typecheck
 npm run build
 npm run test:pos
+npm run test:inventory
+npm run test:inventory-install-paths
 npm run check:site
 npm run check:skroutz
 ```
