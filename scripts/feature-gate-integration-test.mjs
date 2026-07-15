@@ -199,6 +199,7 @@ try {
       .eq("id", 1);
     if (error) console.error("Failed to restore feature settings after feature gate tests.");
   }
+  fs.rmSync(path.join(ROOT, ".next", "cache"), { recursive: true, force: true });
 }
 
 const failures = results.filter((result) => !result.ok);
