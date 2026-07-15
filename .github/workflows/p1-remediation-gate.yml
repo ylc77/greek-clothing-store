@@ -1,0 +1,188 @@
+name: P1 remediation gate
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p1-remediation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  NEXT_TELEMETRY_DISABLED: "1"
+  SUPABASE_TELEMETRY_DISABLED: "1"
+
+jobs:
+  static-quality:
+    name: Static quality and dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check changed-line whitespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          if [ -n "$BASE_SHA" ]; then
+            git diff --check "$BASE_SHA"...HEAD
+          else
+            git diff --check HEAD^...HEAD
+          fi
+
+      - name: Verify migrations, generated snapshot, feature gates, and tracked env files
+        run: npm run check:p1-static
+
+      - name: Regenerate client snapshot and require zero drift
+        run: |
+          npm run db:snapshot
+          git diff --exit-code -- supabase/client-init.sql
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Production build with local-only public placeholders
+        env:
+          NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3314
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:55321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-public-placeholder
+          USE_POS_RPC: "true"
+        run: npm run build
+
+      - name: Scan source and browser bundle for credentials
+        run: npm run test:developer-secrets
+
+      - name: Dependency audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm audit --json > "$RUNNER_TEMP/npm-audit.json" || true
+          node scripts/check-npm-audit.mjs "$RUNNER_TEMP/npm-audit.json"
+
+      - name: Upload dependency audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: ${{ runner.temp }}/npm-audit.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  unit-tests:
+    name: P1 unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run operation ID, credential, and Feature Gate unit tests
+        run: npm run test:p1-unit
+
+  local-supabase-integration:
+    name: Local Supabase integration and security
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+
+      - name: Start isolated local Supabase
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! supabase start -x studio,meta,analytics,vector,realtime,inbucket,imgproxy,edge-runtime,functions > "$RUNNER_TEMP/supabase-start.log" 2>&1; then
+            echo "::error::Local Supabase failed to start. Credential-bearing startup output is intentionally not printed or uploaded."
+            exit 1
+          fi
+
+      - name: Reset migration chain from zero
+        run: supabase db reset --local --no-seed
+
+      - name: Run POS, inventory, developer credential, permission, and Feature Gate integration tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:p1-integration 2>&1 | tee "$RUNNER_TEMP/p1-integration.log"
+
+      - name: Verify RPC grants, RLS, and SECURITY DEFINER search paths
+        run: npm run check:p1-db-security
+
+      - name: Run local database advisors
+        run: supabase db advisors --local
+
+      - name: Verify reconciliation and test cleanup
+        run: npm run check:p1-cleanup
+
+      - name: Upload sanitized integration output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1-integration-failure
+          path: ${{ runner.temp }}/p1-integration.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Stop isolated local Supabase
+        if: always()
+        shell: bash
+        run: |
+          supabase stop --no-backup >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/supabase-start.log"
+
+  installation-paths:
+    name: Clean, client-init, and legacy upgrade paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify POS, inventory, and developer credential install paths
+        run: npm run test:p1-install-paths
+      - name: Verify ordered migration snapshot
+        run: npm run check:p1-static
