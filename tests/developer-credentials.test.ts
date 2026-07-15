@@ -2,16 +2,7 @@ import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import test from "node:test";
 // @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
-import {
-  DeveloperPasswordPolicyError,
-  createDeveloperPasswordHash,
-  createDeveloperSessionTokenForCredential,
-  parseDeveloperPasswordHash,
-  validateDeveloperPassword,
-  verifyDeveloperPasswordHash,
-  verifyDeveloperSessionTokenForCredential,
-  type DeveloperSessionCredential,
-} from "../lib/developer-credentials.ts";
+import { DeveloperPasswordPolicyError, createDeveloperPasswordHash, createDeveloperSessionTokenForCredential, parseDeveloperPasswordHash, validateDeveloperPassword, verifyDeveloperPasswordHash, verifyDeveloperSessionTokenForCredential, type DeveloperSessionCredential } from "../lib/developer-credentials.ts";
 
 function strongPassword() {
   return `${randomBytes(24).toString("base64url")}!Aa9`;
