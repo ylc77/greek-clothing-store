@@ -3926,6 +3926,15 @@ begin
     raise exception using errcode = 'P0001', message = 'PRODUCT_VERSION_CONFLICT: product metadata or structure has changed; reload before retrying';
   end if;
 
+  -- POS prefers product_variants.price over products.price. A base-price change
+  -- must therefore carry the authoritative Variant list so inherited prices are
+  -- updated in this same transaction while explicit Variant overrides survive.
+  if p_metadata ? 'price'
+     and (p_metadata ->> 'price')::numeric <> v_product.price
+     and p_variants is null then
+    raise exception using errcode = 'P0001', message = 'PRODUCT_VARIANTS_REQUIRED: changing product price requires the authoritative Variant list';
+  end if;
+
   if p_metadata ? 'sku'
      and pg_catalog.btrim(coalesce(p_metadata ->> 'sku', '')) <> v_product.sku then
     raise exception using errcode = 'P0001', message = 'PRODUCT_SKU_IMMUTABLE: product sku cannot be changed after creation';
