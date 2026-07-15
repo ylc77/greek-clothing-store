@@ -17,6 +17,7 @@ env:
   NEXT_TELEMETRY_DISABLED: "1"
   SUPABASE_TELEMETRY_DISABLED: "1"
   USE_PRODUCT_RPC: "true"
+  USE_CSV_IMPORT_RPC: "true"
 
 jobs:
   static-quality:
@@ -53,6 +54,7 @@ jobs:
         run: |
           npm run check:p1-static
           npm run check:product-static
+          npm run check:csv-static
 
       - name: Regenerate client snapshot and require zero drift
         run: |
@@ -69,6 +71,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-public-placeholder
           USE_POS_RPC: "true"
           USE_PRODUCT_RPC: "true"
+          USE_CSV_IMPORT_RPC: "true"
         run: npm run build
 
       - name: Scan source and browser bundle for credentials
@@ -108,6 +111,7 @@ jobs:
         run: |
           npm run test:p1-unit
           npm run test:product-unit
+          npm run test:csv-unit
 
   local-supabase-integration:
     name: Local Supabase integration and security
@@ -144,33 +148,23 @@ jobs:
         run: supabase db reset --local --no-seed
 
       - name: Run POS, inventory, developer credential, Feature Gate, and product integration tests
-        shell: bash
         run: |
-          set -o pipefail
-          {
-            npm run test:p1-integration
-            npm run test:product-integration
-          } 2>&1 | tee "$RUNNER_TEMP/p1-integration.log"
+          npm run test:p1-integration
+          npm run test:product-integration
+          npm run test:csv-integration
+          npm run test:csv-routes
 
       - name: Verify RPC grants, RLS, and SECURITY DEFINER search paths
         run: |
           npm run check:p1-db-security
           npm run check:product-db-security
+          npm run check:csv-db-security
 
       - name: Run local database advisors
         run: supabase db advisors --local
 
       - name: Verify reconciliation and test cleanup
         run: npm run check:p1-cleanup
-
-      - name: Upload sanitized integration output on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: p1-integration-failure
-          path: ${{ runner.temp }}/p1-integration.log
-          if-no-files-found: ignore
-          retention-days: 7
 
       - name: Stop isolated local Supabase
         if: always()
@@ -197,7 +191,9 @@ jobs:
         run: |
           npm run test:p1-install-paths
           npm run test:product-install-paths
+          npm run test:csv-install-paths
       - name: Verify ordered migration snapshot
         run: |
           npm run check:p1-static
           npm run check:product-static
+          npm run check:csv-static
