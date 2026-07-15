@@ -151,3 +151,18 @@ Formal POS checkout and void writes are RPC-only. `USE_POS_RPC=true` is required
 
 Checkout legal versions and actor identity are written inside the checkout transaction. Void completion must reconcile every order Variant against `pos_void` movement quantities; an inconsistent or indeterminate ledger must return `POS_VOID_RECONCILIATION_REQUIRED` instead of reporting success. Preserve the browser business operation ID across timeouts and response loss so retries reuse the same database idempotency key.
 
+
+\---
+
+
+\## 13. Inventory transaction safety boundary
+
+
+Inventory adjustment and Quick Sell writes are RPC-only through `public.inventory_apply_rpc`. The operation record, locked inventory balance, stock movement, and legacy `products.stock` / `products.size_stock` projection must commit or roll back together. Missing migrations, execute privilege, PostgREST, or RPC availability must fail closed with HTTP 503; never add a Supabase JS multi-step fallback.
+
+
+Quick Sell is an owner-only inventory shortcut and intentionally does not create a POS order, payment, or receipt. Staff must use the POS checkout flow. Both inventory adjustment and Quick Sell must preserve one browser business operation ID across double clicks, timeouts, response loss, and refreshes; an uncertain expired/corrupt ID requires explicit reconciliation before reset.
+
+
+Product create/edit and CSV import still contain historical inventory compatibility writes outside this RPC boundary. Do not describe those paths as transactionally hardened or silently migrate them while working on inventory adjustment / Quick Sell. They need a separately scoped review and regression suite.
+
