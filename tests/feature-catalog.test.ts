@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  featureKeys,
-  featurePlanPresets,
-  normalizeFeatureFlags,
-  toggleFeatureWithDependencies,
-} from "../lib/feature-catalog.ts";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
+import { featureKeys, featurePlanPresets, normalizeFeatureFlags, toggleFeatureWithDependencies } from "../lib/feature-catalog.ts";
 
 test("basic plan fails closed for premium features", () => {
   const basic = featurePlanPresets.basic;

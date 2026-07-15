@@ -1691,7 +1691,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
         method: "POST",
         body: JSON.stringify({
           reason,
-          clientRequestId: crypto.randomUUID(),
+          clientRequestId: operationId,
         }),
       });
 

@@ -56,6 +56,7 @@ const voidRoute = read("app/api/admin/pos/orders/[id]/void/route.ts");
 const inventoryAdjust = read("app/api/admin/inventory/adjust/route.ts");
 const quickSell = read("app/api/admin/products/sell/route.ts");
 const inventoryLibrary = read("lib/erp-inventory.ts");
+const adminDashboard = read("components/admin-dashboard.tsx");
 
 assert.match(checkout, /rpc\("pos_checkout_rpc"/);
 assert.doesNotMatch(checkout, /\.from\("(?:sales_orders|sales_order_items|payments|stock_movements)"\)/);
@@ -67,6 +68,16 @@ for (const route of [inventoryAdjust, quickSell]) {
   assert.doesNotMatch(route, /\.from\("(?:inventory_balances|stock_movements|inventory_operations)"\)/);
 }
 assert.doesNotMatch(inventoryLibrary, /adjustInventoryVariant|syncLegacyStockFromErp/);
+assert.match(
+  adminDashboard,
+  /const operationScope = `void:\$\{order\.id\}`;[\s\S]*?clientRequestId: operationId,/,
+  "POS void requests must reuse the persisted business operation ID",
+);
+assert.doesNotMatch(
+  adminDashboard,
+  /\/api\/admin\/pos\/orders\/\$\{order\.id\}\/void[\s\S]{0,300}clientRequestId: crypto\.randomUUID\(\)/,
+  "POS void requests must not replace the persisted operation ID",
+);
 
 const gateChecks = [
   ["app/api/admin/pos/checkout/route.ts", /isFeatureEnabled\("pos_checkout"\)/],
