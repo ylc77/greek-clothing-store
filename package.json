@@ -38,6 +38,7 @@
     "check:storage-static": "node scripts/verify-storage-static-gates.mjs",
     "check:storage-db-security": "node scripts/verify-storage-database-security.mjs",
     "test:storage-security": "npm run test:storage-unit && npm run check:storage-static && npm run check:storage-db-security && npm run test:storage-integration",
+    "test:ai-auth-unit": "node --experimental-strip-types --test tests/request-security.test.ts tests/admin-password-security.test.ts tests/ai-security.test.ts tests/admin-session-lifecycle.test.ts",
     "storage:reconcile": "node --experimental-strip-types scripts/storage-maintenance.ts reconcile",
     "storage:recover": "node --experimental-strip-types scripts/storage-maintenance.ts recover",
     "test:developer-credentials": "node --experimental-strip-types --test tests/developer-credentials.test.ts",
