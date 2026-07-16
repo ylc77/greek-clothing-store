@@ -214,9 +214,9 @@ export default async function ProductPage({
         </div>
 
         {/* Main layout */}
-        <div className="grid gap-6 lg:grid-cols-[58fr_42fr] lg:gap-12">
+        <div className="grid min-w-0 gap-6 lg:grid-cols-[58fr_42fr] lg:gap-12">
           {/* Left: image gallery */}
-          <div>
+          <div className="min-w-0">
             <ProductImageGallery
               images={images}
               alt={productName(product, language)}
@@ -225,14 +225,14 @@ export default async function ProductPage({
           </div>
 
           {/* Right: info */}
-          <div className="flex flex-col rounded-3xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5 sm:p-7 lg:sticky lg:top-28 lg:self-start">
+          <div className="flex min-w-0 flex-col rounded-3xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5 sm:p-7 lg:sticky lg:top-28 lg:self-start">
             {/* SKU */}
-            <p className="text-xs font-bold uppercase tracking-[0.15em] text-olive">
+            <p className="break-all text-xs font-bold uppercase tracking-[0.15em] text-olive">
               {product.sku}
             </p>
 
             {/* Name */}
-            <h1 className="mt-3 text-2xl font-black leading-tight tracking-tight text-ink sm:text-3xl lg:text-4xl">
+            <h1 className="mt-3 [overflow-wrap:anywhere] text-2xl font-black leading-tight tracking-tight text-ink sm:text-3xl lg:text-4xl">
               {productName(product, language)}
             </h1>
 
@@ -243,7 +243,7 @@ export default async function ProductPage({
 
             {/* Description (short) */}
             {description ? (
-              <p className="mt-4 text-sm leading-relaxed text-stone-500 sm:text-base">
+              <p className="mt-4 [overflow-wrap:anywhere] text-sm leading-relaxed text-stone-500 sm:text-base">
                 {description}
               </p>
             ) : null}
@@ -286,7 +286,7 @@ export default async function ProductPage({
                   {detailItems.map((d) => (
                     <p key={d.label} className="flex items-start justify-between gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs sm:bg-transparent sm:px-0 sm:py-0 sm:text-sm">
                       <span className="shrink-0 text-stone-400">{d.label}</span>
-                      <span className="min-w-0 text-right font-bold text-stone-700">{d.value}</span>
+                      <span className="min-w-0 [overflow-wrap:anywhere] text-right font-bold text-stone-700">{d.value}</span>
                     </p>
                   ))}
                 </div>

@@ -40,6 +40,16 @@ assert.doesNotMatch(
   /dangerouslySetInnerHTML\s*=\s*\{\{[\s\S]{0,300}?__html:\s*JSON\.stringify/,
   "JSON-LD must not insert raw JSON.stringify output into an HTML script",
 );
+assert.match(
+  productPage,
+  /<h1 className="[^"]*\[overflow-wrap:anywhere\][^"]*"/,
+  "untrusted product names must wrap even when they contain no normal break points",
+);
+assert.match(
+  productPage,
+  /className="flex min-w-0 flex-col rounded-3xl/,
+  "the product information grid item must allow shrinking on narrow viewports",
+);
 
 const publicBoundary = read("lib/product-data-boundary.ts");
 for (const exportName of [
