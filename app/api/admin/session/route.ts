@@ -1,15 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getAdminAuthContextFromRequest } from "@/lib/admin-auth";
+import { adminPrivateJson } from "@/lib/admin-response";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const context = await getAdminAuthContextFromRequest(request);
   if (!context) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return adminPrivateJson({ error: "Unauthorized", code: "UNAUTHORIZED" }, { status: 401 });
   }
 
-  return NextResponse.json({
+  return adminPrivateJson({
     ok: true,
     role: context.role,
     permissions: context.permissions,

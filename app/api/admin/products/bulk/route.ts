@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import {
   adminActorFromContext,
   adminHasPermission,
@@ -14,6 +14,7 @@ import {
   readProductRequestBody,
 } from "@/lib/product-transactions";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { adminPrivateJson, applyAdminPrivateCache } from "@/lib/admin-response";
 
 const MAX_BULK_ITEMS = 100;
 const MAX_CLIENT_REQUEST_ID_LENGTH = 128;
@@ -80,7 +81,9 @@ export async function PUT(request: NextRequest) {
   if (!adminHasPermission(authContext, "products:write")) {
     return productErrorResponse("Forbidden", 403, "FORBIDDEN", true);
   }
-  if (!(await isFeatureEnabledUncached("product_management"))) return featureDisabledResponse("product_management");
+  if (!(await isFeatureEnabledUncached("product_management"))) {
+    return applyAdminPrivateCache(featureDisabledResponse("product_management"));
+  }
   if (process.env.USE_PRODUCT_RPC !== "true") {
     return productErrorResponse(
       "Transactional product RPC is required before bulk product writes can be used.",
@@ -129,7 +132,7 @@ export async function PUT(request: NextRequest) {
     );
   }
   const finalized = await finalizeCommittedProductMutation(result, () => invalidateProductsCache());
-  return NextResponse.json({
+  return adminPrivateJson({
     ...finalized.value,
     ok: true,
     cacheWarning: finalized.cacheWarning,

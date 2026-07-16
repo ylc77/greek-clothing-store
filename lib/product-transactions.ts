@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { productForForm, validateProductPayload } from "@/lib/admin-products";
 import type { Product } from "@/lib/types";
+import { adminPrivateJson } from "@/lib/admin-response";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_CLIENT_REQUEST_ID_LENGTH = 128;
@@ -42,7 +43,7 @@ export function productErrorResponse(
   code: string,
   operationSafeToDiscard: boolean,
 ) {
-  return NextResponse.json({ error, code, operationSafeToDiscard }, { status });
+  return adminPrivateJson({ error, code, operationSafeToDiscard }, { status });
 }
 
 export async function readProductRequestBody(request: NextRequest) {

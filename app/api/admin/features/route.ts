@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { revalidateTag } from "next/cache";
 import { getAdminAuthContextFromRequest } from "@/lib/admin-auth";
 import { cacheTags } from "@/lib/cache-tags";
@@ -11,16 +11,19 @@ import {
   type FeaturePlan,
 } from "@/lib/features";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { adminPrivateJson } from "@/lib/admin-response";
+
+export const dynamic = "force-dynamic";
 
 function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return adminPrivateJson({ error: "Unauthorized", code: "UNAUTHORIZED" }, { status: 401 });
 }
 
 export async function GET(request: NextRequest) {
   const admin = await getAdminAuthContextFromRequest(request);
   if (!admin && !(await developerRequestIsAuthorized(request))) return unauthorized();
 
-  return NextResponse.json({ ok: true, settings: await getFeatureSettingsUncached() });
+  return adminPrivateJson({ ok: true, settings: await getFeatureSettingsUncached() });
 }
 
 export async function PUT(request: NextRequest) {
@@ -28,19 +31,19 @@ export async function PUT(request: NextRequest) {
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
-    return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 500 });
+    return adminPrivateJson({ error: "Feature settings are unavailable.", code: "FEATURE_SETTINGS_UNAVAILABLE" }, { status: 503 });
   }
 
   let payload: Record<string, unknown>;
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    return adminPrivateJson({ error: "Invalid JSON body.", code: "INVALID_ARGUMENT" }, { status: 400 });
   }
 
   if (!isFeaturePlan(payload.plan)) {
-    return NextResponse.json(
-      { error: "plan must be basic, standard, advanced, or custom." },
+    return adminPrivateJson(
+      { error: "plan must be basic, standard, advanced, or custom.", code: "INVALID_ARGUMENT" },
       { status: 400 },
     );
   }
@@ -62,12 +65,12 @@ export async function PUT(request: NextRequest) {
 
   if (error) {
     console.error("Failed to save feature settings", error);
-    return NextResponse.json(
-      { error: "Failed to save feature settings. Confirm the feature_settings migration has been applied." },
-      { status: 500 },
+    return adminPrivateJson(
+      { error: "Feature settings are unavailable.", code: "FEATURE_SETTINGS_UNAVAILABLE" },
+      { status: 503 },
     );
   }
 
   revalidateTag(cacheTags.features);
-  return NextResponse.json({ ok: true, settings: await getFeatureSettingsUncached() });
+  return adminPrivateJson({ ok: true, settings: await getFeatureSettingsUncached() });
 }

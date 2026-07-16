@@ -43,10 +43,10 @@ type AdminProductVariant = {
   size: string | null;
   color: string | null;
   price: number | null;
-  cost_price: number | null;
-  supplier_id: string | null;
-  supplier_sku: string | null;
-  reorder_level: number | null;
+  cost_price?: number | null;
+  supplier_id?: string | null;
+  supplier_sku?: string | null;
+  reorder_level?: number | null;
   active: boolean;
   sort_order: number;
   quantity_on_hand: number;
@@ -179,11 +179,11 @@ type InventoryItem = {
   size: string | null;
   color: string | null;
   barcode: string | null;
-  supplier_sku: string | null;
-  supplier_name: string | null;
-  supplier_style_code: string | null;
-  cost_price: number | null;
-  reorder_level: number | null;
+  supplier_sku?: string | null;
+  supplier_name?: string | null;
+  supplier_style_code?: string | null;
+  cost_price?: number | null;
+  reorder_level?: number | null;
   price: number;
   active: boolean;
   quantity_on_hand: number;
@@ -992,6 +992,8 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const [mobileProductLimit, setMobileProductLimit] = useState(12);
   const hasPermission = (permission: AdminPermission) => Boolean(adminSession?.permissions.includes(permission));
   const isOwner = adminSession?.role === "owner";
+  const canReadProcurement = hasPermission("procurement:read");
+  const canReadProcurementCost = hasPermission("procurement:cost");
   const adminCategoryOptions: Array<Record<string, unknown>> = dbCats.length > 0
     ? dbCats
     : categories.map(category => ({ id: category.slug, slug: category.slug, name_cn: fallbackCategoryNamesCn[category.slug] || category.slug }));
@@ -1401,11 +1403,8 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       "size",
       "color",
       "barcode",
-      "supplier_name",
-      "supplier_style_code",
-      "supplier_sku",
-      "cost_price",
-      "reorder_level",
+      ...(canReadProcurement ? ["supplier_name", "supplier_style_code", "supplier_sku", "reorder_level"] : []),
+      ...(canReadProcurementCost ? ["cost_price"] : []),
       "active",
       "quantity_on_hand",
       "quantity_reserved",
@@ -1422,11 +1421,13 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       item.size || "",
       item.color || "",
       item.barcode || "",
-      item.supplier_name || "",
-      item.supplier_style_code || "",
-      item.supplier_sku || "",
-      item.cost_price === null ? "" : String(item.cost_price),
-      item.reorder_level === null ? "" : String(item.reorder_level),
+      ...(canReadProcurement ? [
+        item.supplier_name || "",
+        item.supplier_style_code || "",
+        item.supplier_sku || "",
+        item.reorder_level == null ? "" : String(item.reorder_level),
+      ] : []),
+      ...(canReadProcurementCost ? [item.cost_price == null ? "" : String(item.cost_price)] : []),
       item.active ? "TRUE" : "FALSE",
       String(item.quantity_on_hand),
       String(item.quantity_reserved),
@@ -5101,8 +5102,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <th className="w-[17%] px-4 py-3 text-xs font-black">商品</th>
                       <th className="w-[18%] px-4 py-3 text-xs font-black">规格与编码</th>
                       <th className="w-[10%] px-4 py-3 text-xs font-black">条码</th>
-                      <th className="w-[14%] px-4 py-3 text-xs font-black">供货信息</th>
-                      <th className="w-[10%] px-4 py-3 text-xs font-black">成本 / 补货</th>
+                      {canReadProcurement ? <th className="w-[14%] px-4 py-3 text-xs font-black">供货信息</th> : null}
+                      {canReadProcurementCost ? <th className="w-[10%] px-4 py-3 text-xs font-black">成本 / 补货</th> : canReadProcurement ? <th className="w-[10%] px-4 py-3 text-xs font-black">补货线</th> : null}
                       <th className="w-[12%] px-4 py-3 text-xs font-black">库存</th>
                       <th className="w-[9%] px-4 py-3 text-xs font-black">状态</th>
                       <th className="w-[10%] px-4 py-3 text-right text-xs font-black">操作</th>
@@ -5123,12 +5124,19 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                             <p className="mt-2 break-all font-mono text-[11px] font-bold text-stone-500">{item.variant_sku || "-"}</p>
                           </td>
                           <td className="px-4 py-4"><p className="break-all font-mono text-[11px] font-bold text-stone-600">{item.barcode || "未生成"}</p></td>
-                          <td className="px-4 py-4 text-xs">
-                            <p className="font-black text-ink">{item.supplier_name || "未填写"}</p>
-                            {item.supplier_style_code ? <p className="mt-1 font-mono text-[11px] text-stone-500">款号 {item.supplier_style_code}</p> : null}
-                            {item.supplier_sku ? <p className="mt-1 break-all font-mono text-[11px] text-stone-500">SKU {item.supplier_sku}</p> : null}
-                          </td>
-                          <td className="px-4 py-4 text-xs"><p className="font-black text-ink">{item.cost_price === null ? "未填写" : formatEuro(item.cost_price)}</p><p className="mt-1 text-stone-400">补货线 ≤ {item.reorder_level ?? lowStockThreshold}</p></td>
+                          {canReadProcurement ? (
+                            <td className="px-4 py-4 text-xs">
+                              <p className="font-black text-ink">{item.supplier_name || "未填写"}</p>
+                              {item.supplier_style_code ? <p className="mt-1 font-mono text-[11px] text-stone-500">款号 {item.supplier_style_code}</p> : null}
+                              {item.supplier_sku ? <p className="mt-1 break-all font-mono text-[11px] text-stone-500">SKU {item.supplier_sku}</p> : null}
+                            </td>
+                          ) : null}
+                          {canReadProcurement ? (
+                            <td className="px-4 py-4 text-xs">
+                              {canReadProcurementCost ? <p className="font-black text-ink">{item.cost_price == null ? "未填写" : formatEuro(item.cost_price)}</p> : null}
+                              <p className={canReadProcurementCost ? "mt-1 text-stone-400" : "font-black text-ink"}>补货线 ≤ {item.reorder_level ?? lowStockThreshold}</p>
+                            </td>
+                          ) : null}
                           <td className="px-4 py-4">
                             <div className="grid grid-cols-3 gap-1 text-center">
                               <div><p className="text-sm font-black text-ink">{item.quantity_on_hand}</p><p className="text-[10px] font-bold text-stone-400">现有</p></div>
@@ -5180,10 +5188,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                         <div className="rounded-xl border border-stone-100 p-2"><p className="text-lg font-black text-stone-500">{item.quantity_reserved}</p><p className="text-[10px] font-bold text-stone-400">预留</p></div>
                         <div className="rounded-xl border border-stone-100 p-2"><p className={`text-lg font-black ${item.quantity_available <= 0 ? "text-red-600" : item.quantity_available <= (item.reorder_level ?? lowStockThreshold) ? "text-amber-600" : "text-emerald-700"}`}>{item.quantity_available}</p><p className="text-[10px] font-bold text-stone-400">可用</p></div>
                       </div>
-                      {(item.supplier_name || item.supplier_sku || item.cost_price !== null) ? (
+                      {canReadProcurement && (item.supplier_name || item.supplier_sku || item.reorder_level != null) ? (
                         <div className="mt-3 grid gap-1 rounded-xl border border-stone-100 px-3 py-2 text-[11px] text-stone-500 sm:grid-cols-2">
                           <p><span className="font-black text-stone-700">供货：</span>{item.supplier_name || item.supplier_sku || "未填写"}</p>
-                          <p><span className="font-black text-stone-700">成本：</span>{item.cost_price === null ? "未填写" : formatEuro(item.cost_price)} · 补货线 ≤ {item.reorder_level ?? lowStockThreshold}</p>
+                          <p>{canReadProcurementCost ? <><span className="font-black text-stone-700">成本：</span>{item.cost_price == null ? "未填写" : formatEuro(item.cost_price)} · </> : null}<span className="font-black text-stone-700">补货线：</span>≤ {item.reorder_level ?? lowStockThreshold}</p>
                         </div>
                       ) : null}
                       <div className="mt-4 grid grid-cols-2 gap-2">

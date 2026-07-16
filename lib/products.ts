@@ -1,6 +1,10 @@
 import { unstable_cache } from "next/cache";
 import { cacheTags } from "@/lib/cache-tags";
 import { getTotalStock } from "@/lib/product-stock";
+import {
+  PUBLIC_PRODUCT_DETAIL_SELECT,
+  PUBLIC_PRODUCT_LIST_SELECT,
+} from "@/lib/product-data-boundary";
 import { getSupabaseClient } from "./supabase";
 import { isProductSubcategory, type Product, type ProductCategory } from "./types";
 
@@ -11,75 +15,6 @@ export type ProductsResult = {
 
 /** @deprecated Use getTotalStock from lib/product-stock.ts instead */
 export const effectiveStock = getTotalStock;
-
-const PRODUCT_LIST_SELECT = [
-  "id",
-  "sku",
-  "name_cn",
-  "name_gr",
-  "name_en",
-  "category",
-  "subcategory",
-  "price",
-  "stock",
-  "sizes",
-  "size_system",
-  "size_stock",
-  "image_url",
-  "image_urls",
-  "is_active",
-  "created_at",
-].join(",");
-
-const PRODUCT_DETAIL_SELECT = [
-  "id",
-  "sku",
-  "name_cn",
-  "name_gr",
-  "name_en",
-  "description_cn",
-  "description_gr",
-  "description_en",
-  "category",
-  "subcategory",
-  "price",
-  "stock",
-  "sizes",
-  "size_system",
-  "size_stock",
-  "image_url",
-  "image_urls",
-  "brand",
-  "barcode",
-  "ean",
-  "vat",
-  "color",
-  "additional_image_urls",
-  "skroutz_url",
-  "material",
-  "fiber_composition_gr",
-  "fiber_composition_en",
-  "care_instructions_gr",
-  "care_instructions_en",
-  "country_of_origin",
-  "manufacturer_name",
-  "manufacturer_contact",
-  "eu_responsible_person",
-  "product_safety_notes_gr",
-  "product_safety_notes_en",
-  "fit",
-  "season",
-  "mpn",
-  "availability",
-  "category_path_en",
-  "category_path_gr",
-  "size_chart",
-  "fit_type",
-  "material_verified",
-  "is_active",
-  "updated_at",
-  "created_at",
-].join(",");
 
 function normalizeSlug(value: string) {
   return value.trim().toLowerCase();
@@ -118,7 +53,7 @@ async function getLatestProductsRaw(limit = 8): Promise<ProductsResult> {
 
   const { data, error } = await supabase
     .from("products")
-    .select(PRODUCT_LIST_SELECT)
+    .select(PUBLIC_PRODUCT_LIST_SELECT)
     .or("is_active.is.null,is_active.eq.true")
     .gte("stock", 0)
     .order("created_at", { ascending: false })
@@ -161,7 +96,7 @@ async function getProductsByCategoryRaw(
 
   let query = supabase
     .from("products")
-    .select(PRODUCT_LIST_SELECT)
+    .select(PUBLIC_PRODUCT_LIST_SELECT)
     .ilike("category", normalizedCategory)
     .or("is_active.is.null,is_active.eq.true")
     .gte("stock", 0)
@@ -208,7 +143,7 @@ async function getProductBySkuRaw(sku: string): Promise<{ product: Product | nul
 
   const { data, error } = await supabase
     .from("products")
-    .select(PRODUCT_DETAIL_SELECT)
+    .select(PUBLIC_PRODUCT_DETAIL_SELECT)
     .eq("sku", sku)
     .or("is_active.is.null,is_active.eq.true")
     .maybeSingle();

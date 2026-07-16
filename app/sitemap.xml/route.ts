@@ -1,6 +1,7 @@
 import { getSupabaseClient } from "@/lib/supabase";
 import { siteUrl } from "@/lib/site";
 import { categories } from "@/lib/types";
+import { SITEMAP_PRODUCT_SELECT } from "@/lib/product-data-boundary";
 
 export const dynamic = "force-dynamic";
 
@@ -88,13 +89,18 @@ export async function GET() {
   if (supabase) {
     const { data } = await supabase
       .from("products")
-      .select("sku, created_at, updated_at")
+      .select(SITEMAP_PRODUCT_SELECT)
       .or("is_active.is.null,is_active.eq.true")
       .gte("stock", 0)
       .order("created_at", { ascending: false });
 
     if (data) {
-      for (const product of data) {
+      const products = data as unknown as Array<{
+        sku: string;
+        created_at: string | null;
+        updated_at: string | null;
+      }>;
+      for (const product of products) {
         if (!isPublicSku(product.sku)) continue;
         const productUrl = `${base}/product/${encodeURIComponent(product.sku)}`;
         const lastmod = (product.updated_at || product.created_at)

@@ -1,14 +1,37 @@
-import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { NextRequest } from "next/server";
+import {
+  adminHasPermission,
+  getAdminAuthContextFromRequest,
+  type AdminPermission,
+} from "@/lib/admin-auth";
+import { shapeSupplierForRole, shapeSuppliersForRole } from "@/lib/admin-data-boundary";
+import { adminPrivateJson, applyAdminPrivateCache } from "@/lib/admin-response";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
+export const dynamic = "force-dynamic";
+
+const SUPPLIER_PRIVATE_SELECT = [
+  "id",
+  "code",
+  "name",
+  "vat_number",
+  "contact_name",
+  "phone",
+  "email",
+  "address",
+  "country",
+  "notes",
+  "active",
+  "created_at",
+  "updated_at",
+].join(",");
 
 function unavailable() {
-  return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 500 });
+  return adminPrivateJson(
+    { error: "Supplier data is temporarily unavailable.", code: "SUPPLIER_DATA_UNAVAILABLE" },
+    { status: 503 },
+  );
 }
 
 function text(value: unknown) {
@@ -30,70 +53,102 @@ function supplierPayload(value: Record<string, unknown>) {
   };
 }
 
-async function allowed(request: NextRequest, write = false) {
-  const permission = write ? "products:write" : "products:read";
-  return adminRequestHasPermissionAsync(request, permission);
+async function authorize(request: NextRequest, permission: AdminPermission) {
+  const context = await getAdminAuthContextFromRequest(request);
+  if (!context) {
+    return { response: adminPrivateJson({ error: "Unauthorized", code: "UNAUTHORIZED" }, { status: 401 }) };
+  }
+  if (!adminHasPermission(context, permission)) {
+    return { response: adminPrivateJson({ error: "Forbidden", code: "FORBIDDEN" }, { status: 403 }) };
+  }
+  return { context };
+}
+
+async function requireFeature() {
+  if (await isFeatureEnabled("product_management")) return null;
+  return applyAdminPrivateCache(featureDisabledResponse("product_management"));
 }
 
 export async function GET(request: NextRequest) {
-  if (!(await allowed(request))) return unauthorized();
-  if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
+  const authorized = await authorize(request, "procurement:read");
+  if (authorized.response) return authorized.response;
+  const disabled = await requireFeature();
+  if (disabled) return disabled;
+
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();
   const { data, error } = await (supabase as any)
     .from("suppliers")
-    .select("*")
+    .select(SUPPLIER_PRIVATE_SELECT)
     .order("active", { ascending: false })
     .order("name", { ascending: true });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ suppliers: data || [] });
+  if (error) return unavailable();
+  return adminPrivateJson({
+    suppliers: shapeSuppliersForRole(data || [], authorized.context!.role),
+  });
 }
 
 export async function POST(request: NextRequest) {
-  if (!(await allowed(request, true))) return unauthorized();
-  if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
+  const authorized = await authorize(request, "procurement:write");
+  if (authorized.response) return authorized.response;
+  const disabled = await requireFeature();
+  if (disabled) return disabled;
+
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();
-  const body = (await request.json()) as Record<string, unknown>;
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const payload = supplierPayload(body);
   if (!payload.code || !payload.name) {
-    return NextResponse.json({ error: "供货商编号和名称必填。" }, { status: 400 });
+    return adminPrivateJson({ error: "供货商编号和名称必填。", code: "INVALID_ARGUMENT" }, { status: 400 });
   }
-  const { data, error } = await (supabase as any).from("suppliers").insert(payload).select("*").single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ supplier: data }, { status: 201 });
+  const { data, error } = await (supabase as any)
+    .from("suppliers")
+    .insert(payload)
+    .select(SUPPLIER_PRIVATE_SELECT)
+    .single();
+  if (error) return unavailable();
+  return adminPrivateJson({ supplier: shapeSupplierForRole(data, authorized.context!.role) }, { status: 201 });
 }
 
 export async function PUT(request: NextRequest) {
-  if (!(await allowed(request, true))) return unauthorized();
-  if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
+  const authorized = await authorize(request, "procurement:write");
+  if (authorized.response) return authorized.response;
+  const disabled = await requireFeature();
+  if (disabled) return disabled;
+
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();
-  const body = (await request.json()) as Record<string, unknown>;
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const id = text(body.id);
   const payload = supplierPayload(body);
   if (!id || !payload.code || !payload.name) {
-    return NextResponse.json({ error: "供货商 ID、编号和名称必填。" }, { status: 400 });
+    return adminPrivateJson(
+      { error: "供货商 ID、编号和名称必填。", code: "INVALID_ARGUMENT" },
+      { status: 400 },
+    );
   }
   const { data, error } = await (supabase as any)
     .from("suppliers")
     .update(payload)
     .eq("id", id)
-    .select("*")
+    .select(SUPPLIER_PRIVATE_SELECT)
     .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ supplier: data });
+  if (error) return unavailable();
+  return adminPrivateJson({ supplier: shapeSupplierForRole(data, authorized.context!.role) });
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!(await allowed(request, true))) return unauthorized();
-  if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
+  const authorized = await authorize(request, "procurement:write");
+  if (authorized.response) return authorized.response;
+  const disabled = await requireFeature();
+  if (disabled) return disabled;
+
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();
-  const body = (await request.json()) as Record<string, unknown>;
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const id = text(body.id);
-  if (!id) return NextResponse.json({ error: "供货商 ID 必填。" }, { status: 400 });
+  if (!id) return adminPrivateJson({ error: "供货商 ID 必填。", code: "INVALID_ARGUMENT" }, { status: 400 });
   const { error } = await (supabase as any).from("suppliers").update({ active: false }).eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ ok: true });
+  if (error) return unavailable();
+  return adminPrivateJson({ ok: true });
 }

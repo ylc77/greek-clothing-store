@@ -16,7 +16,10 @@ export type AdminPermission =
   | "categories:write"
   | "feed:read"
   | "backup:read"
-  | "ai:write";
+  | "ai:write"
+  | "procurement:read"
+  | "procurement:cost"
+  | "procurement:write";
 
 export type AdminAuthContext = {
   role: AdminRole;
@@ -42,9 +45,19 @@ const ROLE_PERMISSIONS: Record<AdminRole, AdminPermission[]> = {
     "feed:read",
     "backup:read",
     "ai:write",
+    "procurement:read",
+    "procurement:cost",
+    "procurement:write",
   ],
   staff: ["products:read", "inventory:read", "pos:read", "pos:checkout", "feed:read"],
-  inventory: ["products:read", "inventory:read", "inventory:write", "labels:write", "feed:read"],
+  inventory: [
+    "products:read",
+    "inventory:read",
+    "inventory:write",
+    "labels:write",
+    "feed:read",
+    "procurement:read",
+  ],
   readonly: ["products:read", "inventory:read", "pos:read", "feed:read"],
 };
 

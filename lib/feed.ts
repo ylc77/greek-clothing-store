@@ -16,6 +16,7 @@ import { siteUrl } from "@/lib/site";
 import { unstable_cache } from "next/cache";
 import { cacheTags } from "@/lib/cache-tags";
 import { normalizeSkroutzSizes, skroutzReadinessIssues } from "@/lib/skroutz-readiness";
+import { SKROUTZ_PRODUCT_SELECT } from "@/lib/product-data-boundary";
 
 /* ── Category paths (English, used in Skroutz feed) ─────────── */
 export const categoryPathEn: Record<ProductCategory, string> = {
@@ -59,11 +60,11 @@ export function productUrl(product: Product) {
 }
 
 export function feedName(product: Product) {
-  return product.name_gr || product.name_en || product.name_cn || product.sku;
+  return product.name_gr || product.name_en || product.sku;
 }
 
 export function feedDescription(product: Product) {
-  return product.description_gr || product.description_en || product.description_cn || feedName(product);
+  return product.description_gr || product.description_en || feedName(product);
 }
 
 export function feedCategory(product: Product) {
@@ -96,47 +97,12 @@ function isAbsoluteHttpUrl(value: string | null | undefined) {
 }
 
 /* ── Data fetching ─────────────────────────────────────────── */
-const FEED_PRODUCT_SELECT = [
-  "id",
-  "sku",
-  "name_cn",
-  "name_gr",
-  "name_en",
-  "description_cn",
-  "description_gr",
-  "description_en",
-  "category",
-  "subcategory",
-  "price",
-  "stock",
-  "size_stock",
-  "sizes",
-  "image_url",
-  "image_urls",
-  "additional_image_urls",
-  "brand",
-  "barcode",
-  "ean",
-  "vat",
-  "color",
-  "mpn",
-  "availability",
-  "material",
-  "fiber_composition_gr",
-  "fiber_composition_en",
-  "country_of_origin",
-  "category_path_en",
-  "category_path_gr",
-  "is_active",
-  "created_at",
-].join(",");
-
 async function getFeedProductsRaw(): Promise<Product[]> {
   const supabase = getSupabaseClient();
   if (!supabase) return [];
   const { data } = await supabase
     .from("products")
-    .select(FEED_PRODUCT_SELECT)
+    .select(SKROUTZ_PRODUCT_SELECT)
     .or("is_active.is.null,is_active.eq.true")
     .gte("stock", 0)
     .order("created_at", { ascending: false });

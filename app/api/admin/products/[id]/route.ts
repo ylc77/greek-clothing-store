@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import {
   adminActorFromContext,
   adminHasPermission,
@@ -19,6 +19,7 @@ import {
   type ParsedProductMutation,
 } from "@/lib/product-transactions";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { adminPrivateJson, applyAdminPrivateCache } from "@/lib/admin-response";
 
 type ProductRouteContext = {
   params: Promise<{ id: string }>;
@@ -121,7 +122,9 @@ async function executeUpdate(
 export async function PUT(request: NextRequest, context: ProductRouteContext) {
   const authorized = await authorizeWrite(request);
   if (authorized.response) return authorized.response;
-  if (!(await isFeatureEnabledUncached("product_management"))) return featureDisabledResponse("product_management");
+  if (!(await isFeatureEnabledUncached("product_management"))) {
+    return applyAdminPrivateCache(featureDisabledResponse("product_management"));
+  }
   if (process.env.USE_PRODUCT_RPC !== "true") return productRpcRequired();
 
   const { id } = await context.params;
@@ -141,13 +144,15 @@ export async function PUT(request: NextRequest, context: ProductRouteContext) {
     adminActorFromContext(authorized.authContext!),
   );
   if (result.response) return result.response;
-  return NextResponse.json({ product: result.product, cacheWarning: result.cacheWarning });
+  return adminPrivateJson({ product: result.product, cacheWarning: result.cacheWarning });
 }
 
 export async function DELETE(request: NextRequest, context: ProductRouteContext) {
   const authorized = await authorizeWrite(request);
   if (authorized.response) return authorized.response;
-  if (!(await isFeatureEnabledUncached("product_management"))) return featureDisabledResponse("product_management");
+  if (!(await isFeatureEnabledUncached("product_management"))) {
+    return applyAdminPrivateCache(featureDisabledResponse("product_management"));
+  }
   if (process.env.USE_PRODUCT_RPC !== "true") return productRpcRequired();
 
   const { id } = await context.params;
@@ -167,5 +172,5 @@ export async function DELETE(request: NextRequest, context: ProductRouteContext)
     adminActorFromContext(authorized.authContext!),
   );
   if (result.response) return result.response;
-  return NextResponse.json({ ok: true, product: result.product, cacheWarning: result.cacheWarning });
+  return adminPrivateJson({ ok: true, product: result.product, cacheWarning: result.cacheWarning });
 }

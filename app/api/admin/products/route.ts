@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import {
   adminActorFromContext,
   adminHasPermission,
@@ -20,6 +20,8 @@ import {
 } from "@/lib/product-transactions";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { Product } from "@/lib/types";
+import { shapeProductsForRole } from "@/lib/admin-data-boundary";
+import { adminPrivateJson, applyAdminPrivateCache } from "@/lib/admin-response";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +48,9 @@ async function authorize(request: NextRequest, permission: "products:read" | "pr
 export async function GET(request: NextRequest) {
   const authorized = await authorize(request, "products:read");
   if (authorized.response) return authorized.response;
-  if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
+  if (!(await isFeatureEnabled("product_management"))) {
+    return applyAdminPrivateCache(featureDisabledResponse("product_management"));
+  }
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
@@ -68,7 +72,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const products = await loadProductSnapshots(supabase as any, (data || []) as Product[]);
-    return NextResponse.json({ products, total: count || 0, limit, offset });
+    return adminPrivateJson({
+      products: shapeProductsForRole(products, authorized.authContext!.role),
+      total: count || 0,
+      limit,
+      offset,
+    });
   } catch (error) {
     console.error("[products] failed to load authoritative Variant inventory", {
       message: String((error as { message?: unknown } | null)?.message || ""),
@@ -81,7 +90,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authorized = await authorize(request, "products:write");
   if (authorized.response) return authorized.response;
-  if (!(await isFeatureEnabledUncached("product_management"))) return featureDisabledResponse("product_management");
+  if (!(await isFeatureEnabledUncached("product_management"))) {
+    return applyAdminPrivateCache(featureDisabledResponse("product_management"));
+  }
   if (process.env.USE_PRODUCT_RPC !== "true") return productRpcRequired();
 
   const parsedBody = await readProductRequestBody(request);
@@ -144,7 +155,7 @@ export async function POST(request: NextRequest) {
   }
 
   const finalized = await finalizeCommittedProductMutation(product, () => invalidateProductsCache(product.sku));
-  return NextResponse.json(
+  return adminPrivateJson(
     { product: finalized.value, cacheWarning: finalized.cacheWarning },
     { status: productRpcWasReplay(rpcData) ? 200 : 201 },
   );
