@@ -66,14 +66,15 @@ for (const [label, source] of [
   ["job retry", retryRoute],
   ["failed-row download", errorsRoute],
 ]) {
-  assert.match(source, /getAdminAuthContextFromRequest/, `${label} route must authenticate`);
-  assert.match(source, /adminHasPermission/, `${label} route must check an explicit permission`);
+  assert.match(source, /authorizeAdminRequest/, `${label} route must use normalized authentication`);
   assert.match(source, /["']products:write["']/, `${label} route must require products:write`);
+  assert.match(source, /adminAuthorizationFailure|decision\.allowed/, `${label} route must fail closed on authorization denial`);
   assert.match(source, /isFeatureEnabledUncached\(["']csv_import["']\)/, `${label} route must enforce csv_import`);
   assert.match(source, /featureDisabledResponse\(["']csv_import["']\)/, `${label} route must return FEATURE_DISABLED`);
 }
-assert.match(exportRoute, /getAdminAuthContextFromRequest/, "product export must authenticate");
+assert.match(exportRoute, /authorizeAdminRequest/, "product export must use normalized authentication");
 assert.match(exportRoute, /["']backup:read["']/, "product export must require backup:read");
+assert.match(exportRoute, /adminAuthorizationFailure/, "product export must fail closed on authorization denial");
 assert.match(exportRoute, /isFeatureEnabled\(["']backup_tools["']\)/, "product export must enforce backup_tools");
 assert.match(exportRoute, /featureDisabledResponse\(["']backup_tools["']\)/, "product export must return FEATURE_DISABLED");
 
