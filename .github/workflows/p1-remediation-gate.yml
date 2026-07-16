@@ -55,6 +55,7 @@ jobs:
           npm run check:p1-static
           npm run check:product-static
           npm run check:csv-static
+          npm run check:public-data-static
 
       - name: Regenerate client snapshot and require zero drift
         run: |
@@ -112,6 +113,7 @@ jobs:
           npm run test:p1-unit
           npm run test:product-unit
           npm run test:csv-unit
+          npm run test:public-data-unit
 
   local-supabase-integration:
     name: Local Supabase integration and security
@@ -153,12 +155,14 @@ jobs:
           npm run test:product-integration
           npm run test:csv-integration
           npm run test:csv-routes
+          npm run test:public-data-integration
 
       - name: Verify RPC grants, RLS, and SECURITY DEFINER search paths
         run: |
           npm run check:p1-db-security
           npm run check:product-db-security
           npm run check:csv-db-security
+          npm run check:public-data-db-security
 
       - name: Run local database advisors
         run: supabase db advisors --local
@@ -192,8 +196,10 @@ jobs:
           npm run test:p1-install-paths
           npm run test:product-install-paths
           npm run test:csv-install-paths
+          npm run test:public-data-install-paths
       - name: Verify ordered migration snapshot
         run: |
           npm run check:p1-static
           npm run check:product-static
           npm run check:csv-static
+          npm run check:public-data-static
