@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase";
+import { AI_PRODUCT_SELECT } from "@/lib/product-data-boundary";
 import { getBusinessSettings } from "@/lib/settings";
 import { isFeatureEnabled } from "@/lib/features";
 
@@ -101,8 +102,6 @@ WHEN CURRENT_PRODUCT IS PROVIDED:
 WHATSAPP MENTION:
 - The chat panel already has a WhatsApp contact footer. Do NOT repeat WhatsApp in your reply unless the user explicitly asks how to contact the store.
 - Keep the size disclaimer short and WhatsApp-free: "This is only a size recommendation. For the most accurate fit, try it in store."`;
-
-const PRODUCT_SELECT = "sku, name_en, name_gr, category, subcategory, price, stock, sizes, size_system, size_stock, size_chart, fit_type, material, material_verified, ai_keywords, image_url, color, brand";
 
 const sizeSystemLabels: Record<string, string> = {
   letter: "Letter sizing (XS-XXXL as stored)",
@@ -267,7 +266,7 @@ export async function POST(request: NextRequest) {
   const { data } = supabase
     ? await (supabase as any)
         .from("products")
-        .select(PRODUCT_SELECT)
+        .select(AI_PRODUCT_SELECT)
         .neq("is_active", false)
         .gte("stock", 0)
         .order("created_at", { ascending: false })
@@ -284,7 +283,7 @@ export async function POST(request: NextRequest) {
   if (supabase && requestedProductSku && !currentProduct) {
     const { data: requestedProduct } = await (supabase as any)
       .from("products")
-      .select(PRODUCT_SELECT)
+      .select(AI_PRODUCT_SELECT)
       .eq("sku", requestedProductSku)
       .neq("is_active", false)
       .maybeSingle();

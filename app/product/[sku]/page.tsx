@@ -20,6 +20,7 @@ import { getTotalStock } from "@/lib/product-stock";
 import { getFeatureSettings } from "@/lib/features";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
+import { serializeJsonForHtmlScript } from "@/lib/serialize-json-for-html-script";
 
 type ProductPageProps = {
   params: Promise<{ sku: string }>;
@@ -299,7 +300,7 @@ export default async function ProductPage({
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
+          __html: serializeJsonForHtmlScript({
             "@context": "https://schema.org",
             "@type": "Product",
             name: productName(product, language),
