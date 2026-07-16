@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  canonicalizeClientIp,
-  getTrustedClientIp,
-  pseudonymizeSecuritySubject,
-} from "../lib/request-security.ts";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
+import { canonicalizeClientIp, getTrustedClientIp, pseudonymizeSecuritySubject } from "../lib/request-security.ts";
 
 test("canonicalizes IPv4, mapped IPv6, bracketed IPv6, and rejects malformed input", () => {
   assert.equal(canonicalizeClientIp("203.0.113.8:443"), "203.0.113.8");

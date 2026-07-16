@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
 import { tokenUpdateForSupabaseAuthEvent } from "../lib/admin-session-lifecycle.ts";
 
 test("initial login and token refresh replace the active bearer token", () => {

@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  AdminPasswordConfigurationError,
-  configuredAdminPasswordRole,
-  timingSafePasswordMatch,
-  validateAdminPasswordEnvironment,
-} from "../lib/admin-password-security.ts";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
+import { AdminPasswordConfigurationError, configuredAdminPasswordRole, timingSafePasswordMatch, validateAdminPasswordEnvironment } from "../lib/admin-password-security.ts";
 
 function password(role: string) {
   return `Audit-${role}-${"7Z!".repeat(8)}`;

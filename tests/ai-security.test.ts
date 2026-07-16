@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  AiSecurityError,
-  parseAiAssistantRequest,
-  parseAndConstrainAiModelOutput,
-} from "../lib/ai-security.ts";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
+import { AiSecurityError, parseAiAssistantRequest, parseAndConstrainAiModelOutput } from "../lib/ai-security.ts";
 
 test("accepts only bounded consented customer input and strips browser product fields", () => {
   const parsed = parseAiAssistantRequest(JSON.stringify({
