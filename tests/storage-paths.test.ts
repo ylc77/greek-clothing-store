@@ -1,14 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  categoryStoragePath,
-  normalizeStorageObjectPath,
-  pathBelongsToProduct,
-  productStoragePath,
-  productStoragePrefix,
-  settingsStoragePath,
-  storagePathFromPublicUrl,
-} from "../lib/storage-images.ts";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
+import { categoryStoragePath, normalizeStorageObjectPath, pathBelongsToProduct, productStoragePath, productStoragePrefix, settingsStoragePath, storagePathFromPublicUrl } from "../lib/storage-images.ts";
 
 const operationId = "11111111-2222-4333-8444-555555555555";
 
@@ -48,4 +41,3 @@ test("storage paths reject traversal, separators, controls, and foreign origins"
   assert.equal(storagePathFromPublicUrl(`https://evil.example/storage/v1/object/public/product-images/${path}`, origin), null);
   assert.equal(storagePathFromPublicUrl(`${origin}/storage/v1/object/public/product-images/products/x/%2e%2e/secret`, origin), null);
 });
-

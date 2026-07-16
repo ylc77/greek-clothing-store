@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  detachAndDeleteStorageObject,
-  uploadAndCommitStorageObject,
-  type StorageLifecycleBackend,
-  type StorageOperationStatus,
-} from "../lib/storage-lifecycle.ts";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
+import { detachAndDeleteStorageObject, uploadAndCommitStorageObject, type StorageLifecycleBackend, type StorageOperationStatus } from "../lib/storage-lifecycle.ts";
 
 function fakeBackend(overrides: Partial<StorageLifecycleBackend> = {}) {
   const events: string[] = [];
@@ -26,7 +22,7 @@ const object = {
   path: "products/42/example/main/11111111-2222-4333-8444-555555555555.webp",
   ownerType: "product",
   ownerKey: "42",
-};
+} as const;
 
 test("Storage upload failure never commits a database reference", async () => {
   let committed = false;
@@ -95,4 +91,3 @@ test("database reference failure never deletes the live object", async () => {
   assert.equal(events.some((event) => event.startsWith("remove:")), false);
   assert.deepEqual(statuses, ["cancelled"]);
 });
-

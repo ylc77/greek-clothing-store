@@ -1,12 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import sharp from "sharp";
-import {
-  ImageValidationError,
-  assertImageDimensions,
-  detectImageFormat,
-  optimizeUploadedImage,
-} from "../lib/image-security.ts";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
+import { ImageValidationError, assertImageDimensions, detectImageFormat, optimizeUploadedImage } from "../lib/image-security.ts";
 
 async function fixture(format: "jpeg" | "png" | "webp") {
   const pipeline = sharp({
@@ -106,4 +102,3 @@ test("byte, width, height, and decompressed pixel limits fail closed", async () 
     (error: unknown) => error instanceof ImageValidationError && error.code === "PIXEL_LIMIT_EXCEEDED",
   );
 });
-

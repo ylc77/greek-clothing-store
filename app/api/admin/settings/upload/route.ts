@@ -1,73 +1,186 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { invalidateCategoriesCache, invalidateSettingsCache } from "@/lib/cache";
 import { developerRequestIsAuthorized } from "@/lib/developer-auth";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
+import { ImageValidationError, optimizeImageFile } from "@/lib/image-security";
+import { getBusinessSettingsUncached } from "@/lib/settings";
+import {
+  categoryStoragePath,
+  configuredStorageOrigin,
+  productImagesBucket,
+  settingsStoragePath,
+  storagePathFromPublicUrl,
+} from "@/lib/storage-images";
+import {
+  StorageLifecycleError,
+  createSupabaseStorageLifecycleBackend,
+  queueStorageObjectDeletion,
+  uploadAndCommitStorageObject,
+} from "@/lib/storage-lifecycle";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
-const bucket = "product-images"; // reuse existing bucket, store under store/ folder
+export const runtime = "nodejs";
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_PIXELS = 40_000_000;
+const MAX_DIMENSION = 12_000;
+const allowedTargets = new Set(["logo", "hero", "category"] as const);
+type UploadTarget = "logo" | "hero" | "category";
+
+function errorResponse(error: unknown) {
+  if (error instanceof ImageValidationError) {
+    return NextResponse.json({ error: error.message, code: error.code }, { status: 400 });
+  }
+  if (error instanceof StorageLifecycleError) {
+    const status = error.code === "TRACKING_UNAVAILABLE" ? 503 : 500;
+    return NextResponse.json({ error: error.message, code: error.code, cleanupPending: error.cleanupPending }, { status });
+  }
+  return NextResponse.json({ error: error instanceof Error ? error.message : "Image upload failed." }, { status: 500 });
+}
+
+async function assertBucketReady(supabase: NonNullable<ReturnType<typeof getSupabaseAdminClient>>) {
+  const { data, error } = await supabase.storage.getBucket(productImagesBucket);
+  if (error || !data) throw new StorageLifecycleError("TRACKING_UNAVAILABLE", "The product-images bucket is not installed.");
+  const allowedMimeTypes = Array.isArray(data.allowed_mime_types) ? data.allowed_mime_types : [];
+  if (
+    data.public !== true
+    || Number(data.file_size_limit || 0) !== MAX_FILE_BYTES
+    || !["image/jpeg", "image/png", "image/webp"].every((mime) => allowedMimeTypes.includes(mime))
+  ) {
+    throw new StorageLifecycleError("TRACKING_UNAVAILABLE", "The product-images bucket security configuration is incomplete.");
+  }
+}
 
 export async function POST(request: NextRequest) {
-  const developerAuthorized = await developerRequestIsAuthorized(request);
-  const catalogAuthorized = developerAuthorized
-    ? false
-    : await adminRequestHasPermissionAsync(request, "categories:write");
-  if (!developerAuthorized && !catalogAuthorized) {
+  const targetValue = request.nextUrl.searchParams.get("target") || "";
+  if (!allowedTargets.has(targetValue as UploadTarget)) {
+    return NextResponse.json({ error: "target must be logo, hero, or category" }, { status: 400 });
+  }
+  const target = targetValue as UploadTarget;
+
+  if (target === "category") {
+    if (!(await adminRequestHasPermissionAsync(request, "categories:write"))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
+  } else if (!(await developerRequestIsAuthorized(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const supabase = getSupabaseAdminClient();
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase admin client not configured" }, { status: 500 });
-  }
+  if (!supabase) return NextResponse.json({ error: "Supabase admin client not configured" }, { status: 500 });
 
-  // Ensure bucket exists and is public
-  const { error: bucketError } = await supabase.storage.getBucket(bucket);
-  if (bucketError) {
-    await supabase.storage.createBucket(bucket, { public: true });
-  } else {
-    await supabase.storage.updateBucket(bucket, { public: true });
-  }
-
-  const formData = await request.formData();
-  const file = formData.get("file") as File | null;
-  const name = formData.get("name") as string | null; // "logo" or "hero"
-
-  if (!file || !name) {
-    return NextResponse.json({ error: "Missing file or name" }, { status: 400 });
-  }
-
-  if (!file.type.startsWith("image/")) {
-    return NextResponse.json({ error: "File is not an image" }, { status: 400 });
-  }
-
-  // Compress to WebP using sharp if available
-  let buffer: Buffer;
-  let contentType = file.type;
   try {
-    const sharp = (await import("sharp")).default;
-    const input = Buffer.from(await file.arrayBuffer());
-    buffer = await sharp(input)
-      .resize(name === "logo" ? { width: 200, height: 80, fit: "inside", withoutEnlargement: true } : { width: 1920, height: 1080, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 80 })
-      .toBuffer();
-    contentType = "image/webp";
-  } catch {
-    // sharp may not be available or file may not be processable — use original
-    buffer = Buffer.from(await file.arrayBuffer());
+    await assertBucketReady(supabase);
+    const formData = await request.formData();
+    if (formData.has("name")) {
+      return NextResponse.json({ error: "name is no longer accepted; use the strict target query parameter" }, { status: 400 });
+    }
+    const file = formData.get("file");
+    if (!(file instanceof File)) return NextResponse.json({ error: "Missing image file" }, { status: 400 });
+
+    const operationId = randomUUID();
+    const categoryId = request.nextUrl.searchParams.get("categoryId") || "";
+    let ownerKey: string;
+    let path: string;
+    let oldUrl = "";
+    let commitReference: (url: string, width: number, height: number) => Promise<void>;
+
+    if (target === "category") {
+      path = categoryStoragePath(categoryId, operationId);
+      ownerKey = categoryId;
+      const { data: category, error } = await (supabase as any)
+        .from("product_categories")
+        .select("id,image_url")
+        .eq("id", categoryId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!category) return NextResponse.json({ error: "Save the category before uploading its image." }, { status: 409 });
+      oldUrl = typeof category.image_url === "string" ? category.image_url : "";
+      commitReference = async (url) => {
+        const { data, error: updateError } = await (supabase as any)
+          .from("product_categories")
+          .update({ image_url: url })
+          .eq("id", categoryId)
+          .select("id")
+          .single();
+        if (updateError || !data) throw new Error(updateError?.message || "Category image reference was not updated.");
+      };
+    } else {
+      const settings = await getBusinessSettingsUncached();
+      path = settingsStoragePath(target, operationId);
+      ownerKey = String(settings.id);
+      oldUrl = target === "logo" ? settings.logo_url : settings.hero_image_url;
+      const field = target === "logo" ? "logo_url" : "hero_image_url";
+      commitReference = async (url) => {
+        const { data, error } = await (supabase as any)
+          .from("business_settings")
+          .update({ [field]: url })
+          .eq("id", settings.id)
+          .select("id")
+          .single();
+        if (error || !data) throw new Error(error?.message || "Store image reference was not updated.");
+      };
+    }
+
+    const optimized = await optimizeImageFile(file, {
+      maxBytes: MAX_FILE_BYTES,
+      maxPixels: MAX_PIXELS,
+      maxWidth: MAX_DIMENSION,
+      maxHeight: MAX_DIMENSION,
+      resize: target === "logo"
+        ? { width: 400, height: 160, fit: "inside" }
+        : target === "hero"
+          ? { width: 1920, height: 1080, fit: "inside" }
+          : { width: 1600, height: 1600, fit: "inside" },
+      quality: 82,
+    });
+
+    const { data: publicUrl } = supabase.storage.from(productImagesBucket).getPublicUrl(path);
+    const url = `${publicUrl.publicUrl}?v=${Date.now()}`;
+    const backend = createSupabaseStorageLifecycleBackend(supabase);
+    await uploadAndCommitStorageObject({
+      backend,
+      object: {
+        operationId,
+        bucket: productImagesBucket,
+        path,
+        ownerType: target === "category" ? "category" : "business_settings",
+        ownerKey,
+        reason: `${target}_image_upload`,
+      },
+      body: optimized.buffer,
+      contentType: "image/webp",
+      commitReference: () => commitReference(url, optimized.width, optimized.height),
+    });
+
+    let cleanupPending = false;
+    const oldPath = storagePathFromPublicUrl(oldUrl, configuredStorageOrigin());
+    if (oldPath && oldPath !== path) {
+      try {
+        const cleanup = await queueStorageObjectDeletion({
+          backend,
+          object: {
+            operationId: randomUUID(),
+            bucket: productImagesBucket,
+            path: oldPath,
+            ownerType: target === "category" ? "category" : "business_settings",
+            ownerKey,
+            reason: `${target}_image_replaced`,
+          },
+        });
+        cleanupPending = cleanup.cleanupPending;
+      } catch {
+        cleanupPending = true;
+      }
+    }
+
+    if (target === "category") invalidateCategoriesCache();
+    else invalidateSettingsCache();
+    return NextResponse.json({ url, width: optimized.width, height: optimized.height, cleanupPending }, { status: 201 });
+  } catch (error) {
+    return errorResponse(error);
   }
-
-  const ts = Date.now();
-  const path = `store/${name}-${ts}.${contentType === "image/webp" ? "webp" : file.name.split(".").pop()}`;
-
-  const { data: uploadData, error: uploadError } = await supabase.storage
-    .from(bucket)
-    .upload(path, buffer, { contentType, cacheControl: "31536000", upsert: true });
-
-  if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 500 });
-  }
-
-  const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(path);
-  const url = publicUrlData.publicUrl;
-
-  return NextResponse.json({ url });
 }

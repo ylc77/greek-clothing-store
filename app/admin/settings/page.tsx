@@ -24,12 +24,11 @@ const emptyFeatureSettings: FeatureSettings = {
   configured: false,
 };
 
-async function uploadStoreImage(file: File, name: string): Promise<string> {
+async function uploadStoreImage(file: File, target: "logo" | "hero"): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("name", name);
 
-  const response = await fetch("/api/admin/settings/upload", {
+  const response = await fetch(`/api/admin/settings/upload?target=${target}`, {
     method: "POST",
     body: formData,
   });
@@ -104,7 +103,7 @@ function UploadButton({
     <label className="inline-flex min-h-11 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-stone-200 bg-white px-4 text-xs font-black text-ink shadow-sm transition hover:border-stone-300 hover:bg-stone-50">
       {uploading ? "上传中..." : label}
       <input
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp"
         className="hidden"
         type="file"
         onChange={async (event) => {

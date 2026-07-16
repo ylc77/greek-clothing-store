@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
 import { reconcileStorageInventory } from "../lib/storage-reconciliation.ts";
 
 test("read-only reconciliation reports orphan objects, missing references, and pending cleanup", () => {
@@ -13,4 +14,3 @@ test("read-only reconciliation reports orphan objects, missing references, and p
   assert.deepEqual(report.pendingCleanupPaths, ["products/2/orphan.webp"]);
   assert.equal(report.mutated, false);
 });
-

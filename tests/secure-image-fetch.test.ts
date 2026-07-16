@@ -1,13 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import sharp from "sharp";
-import {
-  RemoteImageError,
-  downloadRemoteImage,
-  isPublicNetworkAddress,
-  type RemoteImageRequest,
-  type RemoteImageResolver,
-} from "../lib/secure-image-fetch.ts";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
+import { RemoteImageError, downloadRemoteImage, isPublicNetworkAddress, type RemoteImageRequest, type RemoteImageResolver } from "../lib/secure-image-fetch.ts";
 
 const allowedOrigin = "https://customer.supabase.co";
 const allowedUrl = `${allowedOrigin}/storage/v1/object/public/product-images/products/1/a/main.webp`;
@@ -103,6 +98,26 @@ test("redirect targets are revalidated and cannot reach private or foreign hosts
   );
 });
 
+test("DNS resolution is bounded by the request timeout and never reaches the transport after timeout", async () => {
+  let requested = false;
+  const startedAt = Date.now();
+  await assert.rejects(
+    downloadRemoteImage(allowedUrl, {
+      allowedOrigins: [allowedOrigin],
+      storageOrigin: allowedOrigin,
+      timeoutMs: 10,
+      resolver: () => new Promise((resolve) => setTimeout(() => resolve([{ address: "93.184.216.34", family: 4 }]), 250)),
+      request: async () => {
+        requested = true;
+        throw new Error("must not be called");
+      },
+    }),
+    (error: unknown) => error instanceof RemoteImageError && error.code === "DNS_FAILED",
+  );
+  assert.equal(requested, false);
+  assert.ok(Date.now() - startedAt < 200, "DNS timeout should fail without waiting for the resolver");
+});
+
 test("requests are pinned to the validated DNS address and enforce headers and streaming limits", async () => {
   const image = await sharp({ create: { width: 4, height: 4, channels: 3, background: "red" } }).jpeg().toBuffer();
   let pinnedAddress = "";
@@ -143,4 +158,3 @@ test("requests are pinned to the validated DNS address and enforce headers and s
     );
   }
 });
-
