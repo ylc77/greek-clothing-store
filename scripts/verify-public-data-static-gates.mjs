@@ -92,6 +92,17 @@ assert.match(adminAuth, /procurement:read/);
 assert.match(adminAuth, /procurement:cost/);
 assert.match(adminAuth, /procurement:write/);
 
+const ciWorkflow = read(".github/workflows/p1-remediation-gate.yml");
+for (const command of [
+  "npm run test:public-data-unit",
+  "npm run test:public-data-integration",
+  "npm run test:public-data-install-paths",
+  "npm run check:public-data-static",
+  "npm run check:public-data-db-security",
+]) {
+  assert.match(ciWorkflow, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `CI is missing ${command}`);
+}
+
 const headerLines = [
   "-- Clothing Store - new customer Supabase initialization",
   "-- AUTHORITATIVE NEW CUSTOMER DEPLOYMENT SNAPSHOT.",
