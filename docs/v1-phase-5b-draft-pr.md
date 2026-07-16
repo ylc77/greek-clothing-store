@@ -74,4 +74,6 @@ This PR does not implement Phase 5C AI rate limiting/auth abuse protection, Phas
 
 Current conclusion:
 
-> Local integration verified. GitHub CI, isolated Preview, and Production deployment are not yet verified.
+> Local integration, GitHub CI, and isolated Preview acceptance are verified. Production deployment and real hardware are not yet verified.
+
+Preview evidence is recorded in `docs/v1-phase-5b-preview-verification.md`.
