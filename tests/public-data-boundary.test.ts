@@ -3,21 +3,9 @@ import test from "node:test";
 // @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
 import { serializeJsonForHtmlScript } from "../lib/serialize-json-for-html-script.ts";
 // @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
-import {
-  ADMIN_PRIVATE_CACHE_CONTROL,
-  shapeInventoryOverviewForRole,
-  shapeProductForRole,
-  shapeSupplierForRole,
-} from "../lib/admin-data-boundary.ts";
+import { ADMIN_PRIVATE_CACHE_CONTROL, shapeInventoryOverviewForRole, shapeProductForRole, shapeSupplierForRole } from "../lib/admin-data-boundary.ts";
 // @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
-import {
-  AI_PRODUCT_COLUMNS,
-  PUBLIC_PRODUCT_COLUMN_GRANT_COLUMNS,
-  PUBLIC_PRODUCT_DETAIL_COLUMNS,
-  PUBLIC_PRODUCT_LIST_COLUMNS,
-  SKROUTZ_PRODUCT_COLUMNS,
-  SITEMAP_PRODUCT_COLUMNS,
-} from "../lib/product-data-boundary.ts";
+import { AI_PRODUCT_COLUMNS, PUBLIC_PRODUCT_COLUMN_GRANT_COLUMNS, PUBLIC_PRODUCT_DETAIL_COLUMNS, PUBLIC_PRODUCT_LIST_COLUMNS, SKROUTZ_PRODUCT_COLUMNS, SITEMAP_PRODUCT_COLUMNS } from "../lib/product-data-boundary.ts";
 
 test("JSON-LD serialization cannot escape its HTML script boundary and remains valid JSON", () => {
   const payload = {
@@ -155,7 +143,7 @@ test("supplier responses hide contact, tax and notes from inventory and deny imp
 });
 
 test("public consumer column sets are explicit subsets of the database public grant", () => {
-  const publicGrant = new Set(PUBLIC_PRODUCT_COLUMN_GRANT_COLUMNS);
+  const publicGrant = new Set<string>(PUBLIC_PRODUCT_COLUMN_GRANT_COLUMNS);
   const restricted = new Set([
     "name_cn",
     "description_cn",

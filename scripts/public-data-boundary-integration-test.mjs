@@ -11,6 +11,8 @@ const DB_PORT = 55322;
 const APP_PORT = 3316;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 const PREFIX = "AUDIT-PUBLIC-DATA-";
+const XSS_MARKER = "AUDIT_JSONLD_XSS";
+const MALICIOUS_NAME = `Audit </script><script data-audit-xss>${XSS_MARKER}</script>`;
 const PASSWORDS = {
   owner: "public-data-owner",
   staff: "public-data-staff",
@@ -190,8 +192,8 @@ try {
   const { data: product, error: productError } = await service.from("products").insert({
     sku: `${PREFIX}PRODUCT`,
     name_cn: "内部中文名",
-    name_gr: "Δοκιμαστικό προϊόν",
-    name_en: "Audit product",
+    name_gr: MALICIOUS_NAME,
+    name_en: MALICIOUS_NAME,
     description_cn: "内部说明",
     description_gr: "Δημόσια περιγραφή",
     description_en: "Public description",
@@ -244,6 +246,20 @@ try {
       assert.equal(response.status, 401);
       assertPrivateNoStore(response, "unauthorized admin response");
     }
+  });
+
+  await runCase("raw product HTML keeps stored script payload inside parseable JSON-LD", async () => {
+    const response = await fetch(`${APP_URL}/product/${encodeURIComponent(`${PREFIX}PRODUCT`)}?lang=en`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.equal((html.match(/type="application\/ld\+json"/g) || []).length, 1);
+    assert.doesNotMatch(html, /<script data-audit-xss>/i);
+    assert.doesNotMatch(html, new RegExp(`</script><script[^>]*>${XSS_MARKER}`, "i"));
+    const match = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/i);
+    assert.ok(match, "product JSON-LD script was not rendered");
+    const jsonLd = JSON.parse(match[1]);
+    assert.equal(jsonLd.name, MALICIOUS_NAME);
+    assert.equal(jsonLd["@type"], "Product");
   });
 
   await runCase("products API shapes procurement for every role", async () => {
