@@ -248,6 +248,24 @@ try {
     }
   });
 
+  await runCase("admin session permissions are role-shaped and never shared-cacheable", async () => {
+    const expected = {
+      owner: { read: true, cost: true, write: true },
+      inventory: { read: true, cost: false, write: false },
+      staff: { read: false, cost: false, write: false },
+      readonly: { read: false, cost: false, write: false },
+    };
+    for (const [role, permissions] of Object.entries(expected)) {
+      const response = await request("/api/admin/session", { role });
+      assert.equal(response.status, 200, JSON.stringify(response.data));
+      assertPrivateNoStore(response, `${role} admin session`);
+      assert.equal(response.data.role, role);
+      assert.equal(response.data.permissions.includes("procurement:read"), permissions.read);
+      assert.equal(response.data.permissions.includes("procurement:cost"), permissions.cost);
+      assert.equal(response.data.permissions.includes("procurement:write"), permissions.write);
+    }
+  });
+
   await runCase("raw product HTML keeps stored script payload inside parseable JSON-LD", async () => {
     const response = await fetch(`${APP_URL}/product/${encodeURIComponent(`${PREFIX}PRODUCT`)}?lang=en`);
     assert.equal(response.status, 200);
