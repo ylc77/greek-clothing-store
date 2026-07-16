@@ -6468,13 +6468,16 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
 
   async function uploadCategoryImage(idx: number, file: File | null) {
     if (!file) return;
-    const slug = String(cats[idx]?.slug || `category-${idx + 1}`).replace(/[^a-z0-9-]/g, "").toLowerCase() || `category-${idx + 1}`;
+    const categoryId = String(cats[idx]?.id || "");
+    if (!categoryId) {
+      toast("请先保存分类，再上传分类图片。", "err");
+      return;
+    }
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("name", `category-${slug}`);
     setLoading(true);
     try {
-      const r = await fetch("/api/admin/settings/upload", {
+      const r = await fetch(`/api/admin/settings/upload?target=category&categoryId=${encodeURIComponent(categoryId)}`, {
         method: "POST",
         headers: authHeaders(),
         body: formData,
@@ -6482,7 +6485,7 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Category image upload failed");
       updateCat(idx, "image_url", d.url);
-      toast("Category image uploaded. Save categories to publish it.");
+      toast("分类图片已上传并发布。");
     } catch (error) {
       toast(error instanceof Error ? error.message : "Category image upload failed", "err");
     } finally {
@@ -6518,7 +6521,7 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
                   {String(c.image_url || "").trim() ? <img alt="" className="h-16 w-12 rounded-lg bg-stone-100 object-cover" src={String(c.image_url)} /> : <div className="flex h-16 w-12 items-center justify-center rounded-lg bg-stone-100 text-[10px] font-bold text-stone-400">No image</div>}
                   <label className="min-h-10 cursor-pointer rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black hover:bg-stone-50">
                     Upload image
-                    <input accept="image/*" className="hidden" disabled={loading} type="file" onChange={e => { void uploadCategoryImage(i, e.target.files?.[0] || null); e.currentTarget.value = ""; }} />
+                    <input accept="image/jpeg,image/png,image/webp" className="hidden" disabled={loading} type="file" onChange={e => { void uploadCategoryImage(i, e.target.files?.[0] || null); e.currentTarget.value = ""; }} />
                   </label>
                 </div>
                 <label className="block text-xs font-bold text-stone-500 sm:col-span-2">Ελληνικά<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.name_gr||"")} onChange={e => updateCat(i, "name_gr", e.target.value)} /></label>
@@ -6541,7 +6544,7 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
                     <input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base sm:text-xs" placeholder="https://..." value={String(c.image_url||"")} onChange={e => updateCat(i, "image_url", e.target.value)} />
                     <label className="shrink-0 cursor-pointer rounded border border-stone-200 bg-white px-2 py-1 text-xs font-bold hover:bg-stone-50">
                       上传
-                      <input accept="image/*" className="hidden" disabled={loading} type="file" onChange={e => { void uploadCategoryImage(i, e.target.files?.[0] || null); e.currentTarget.value = ""; }} />
+                      <input accept="image/jpeg,image/png,image/webp" className="hidden" disabled={loading} type="file" onChange={e => { void uploadCategoryImage(i, e.target.files?.[0] || null); e.currentTarget.value = ""; }} />
                     </label>
                   </div>
                 </td>

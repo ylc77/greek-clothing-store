@@ -56,6 +56,7 @@ jobs:
           npm run check:product-static
           npm run check:csv-static
           npm run check:public-data-static
+          npm run check:storage-static
 
       - name: Regenerate client snapshot and require zero drift
         run: |
@@ -114,6 +115,7 @@ jobs:
           npm run test:product-unit
           npm run test:csv-unit
           npm run test:public-data-unit
+          npm run test:storage-unit
 
   local-supabase-integration:
     name: Local Supabase integration and security
@@ -156,6 +158,7 @@ jobs:
           npm run test:csv-integration
           npm run test:csv-routes
           npm run test:public-data-integration
+          npm run test:storage-integration
 
       - name: Verify RPC grants, RLS, and SECURITY DEFINER search paths
         run: |
@@ -163,12 +166,20 @@ jobs:
           npm run check:product-db-security
           npm run check:csv-db-security
           npm run check:public-data-db-security
+          npm run check:storage-db-security
 
       - name: Run local database advisors
         run: supabase db advisors --local
 
       - name: Verify reconciliation and test cleanup
-        run: npm run check:p1-cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          eval "$(supabase status -o env 2>/dev/null)"
+          export NEXT_PUBLIC_SUPABASE_URL="$API_URL"
+          export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
+          npm run storage:reconcile -- --project-ref clothing_web --test-local
+          npm run check:p1-cleanup
 
       - name: Stop isolated local Supabase
         if: always()
@@ -197,9 +208,11 @@ jobs:
           npm run test:product-install-paths
           npm run test:csv-install-paths
           npm run test:public-data-install-paths
+          npm run test:storage-install-paths
       - name: Verify ordered migration snapshot
         run: |
           npm run check:p1-static
           npm run check:product-static
           npm run check:csv-static
           npm run check:public-data-static
+          npm run check:storage-static

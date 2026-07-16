@@ -1,6 +1,6 @@
 # v1.0 阶段看板
 
-基线：`49aeb93afd1ea08e41c692af9acbddb6b169a10a`（2026-07-16 的最新 `origin/master`）
+当前 5B 基线：`7d943eae581aeb36569d3b86083415ece985fd55`（5A merge commit；建立 5B 分支时的最新 `origin/master`）
 总原则：每阶段独立分支、独立 PR，测试先行，本地 → CI → 隔离 Preview → 清理 → 单人维护者签核 → merge commit。
 
 ## 当前状态
@@ -8,8 +8,8 @@
 | 阶段 | 分支 | 状态 | 当前出口条件 |
 |---|---|---|---|
 | 风险矩阵/看板 | `codex/hardening-p2-public-data-boundary` | 完成 | 风险均有证据等级、完成证据和停止条件。 |
-| 5A 公开数据边界 | `codex/hardening-p2-public-data-boundary` | 本地门禁完成 | JSON-LD、匿名列权限、角色 DTO、缓存、静态门禁和数据库安装路径已本地通过；仍需 Draft PR、CI、隔离 Preview、清理签核和合并。 |
-| 5B 图片与 Storage | `codex/hardening-p2-storage-image-security` | 等待 5A 合并 | MIME/magic bytes、Sharp、资源限制、Storage 补偿、SSRF、永久删除、orphan 对账通过。 |
+| 5A 公开数据边界 | `codex/hardening-p2-public-data-boundary` | 已完成并合并 | PR #6、CI、隔离 Preview、清理、签核、阶段标签和 merge commit `7d943ea` 均完成。 |
+| 5B 图片与 Storage | `codex/hardening-p2-storage-image-security` | 本地、CI 与隔离 Preview 已通过 | PR #7 四项 required CI 全绿；隔离 Preview 的图片格式/权限/生命周期/永久删除、390/768/1440 浏览器验收和零残留清理均通过；待当前精确 HEAD 复验、签核、标签和合并。 |
 | 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 等待 5B 合并 | 共享限流/预算/并发/超时/PII、登录防爆破、Token 生命周期和状态码矩阵通过。 |
 | 6A 渠道/SEO/法律 | `codex/hardening-p2-channels-seo-legal` | 等待 5C 合并 | Skroutz Validator、EL/EN 原始 HTML、法律双语、安全头和可访问性通过。 |
 | 6B 运营/报表/打印 | `codex/hardening-p2-operations-reporting-print` | 等待 6A 合并 | Athens 时区、对账、审计、容量、打印、备份恢复与硬件状态结论完成。 |
@@ -39,7 +39,22 @@
 - [x] 静态门禁禁止公开 `select("*")` 与未批准危险 HTML helper。
 - [x] 单元、Route、数据库权限矩阵和浏览器原始 HTML 测试。
 - [x] migration/client-init/legacy 安装与安全门禁。
-- [ ] Draft PR、CI、Preview、清理、签核、标签和 merge commit。
+- [x] Draft PR、CI、Preview、清理、签核、标签和 merge commit。
+
+## 5B 工作包
+
+- [x] JPEG/PNG/WebP magic bytes、声明 MIME、字节、像素、宽高、动画/多页和损坏图片校验。
+- [x] Sharp 解码/处理失败 fail closed；所有接受图片统一重新编码为 WebP。
+- [x] Logo/Hero/Category 严格 target enum；商品对象按不可变 product id、SKU hash、用途和 UUID 隔离。
+- [x] 上传/引用/删除状态机、失败补偿、待清理队列和 service-role-only 恢复记录。
+- [x] AI 参考图 exact-origin allowlist、Storage 路径限制、DNS/重定向/IPv4/IPv6/metadata/流式体积与超时保护。
+- [x] 永久删除 RPC 保护订单、库存流水、库存操作、商品操作、导入记录、Variant 余额和旧库存投影。
+- [x] 只读 orphan/missing/pending reconciliation；显式 project ref 的恢复 CLI。
+- [x] 专项 unit、Route/Storage 集成、故障注入、数据库权限和三条安装路径测试。
+- [x] 全量 P1/4A/4B/5A 回归、build、secret scan、database advisors。
+- [x] Draft PR 和四项 required CI。
+- [x] 隔离 Preview 图片/权限/生命周期业务验收、390/768/1440 浏览器验收和零残留清理。
+- [ ] 当前精确 HEAD 复验、签核、Preview 标签和 merge commit。
 
 ## 发布版本判定占位
 

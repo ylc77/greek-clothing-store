@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.tools/
+.vercel/
+.env*
+*.log
+tsconfig.tsbuildinfo
+demo-videos/
+automation-reports/
+backups/
+.codex/
+.claude/
+.agents/
+.tmp-*
+supabase/.temp/
+supabase/.branches/
+scripts/.preview-audit-project/

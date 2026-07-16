@@ -104,7 +104,9 @@ CSV 会先完成整份文件预检，再建立可恢复的持久 Job，并按行
 
 当前按小型服装店和 Vercel 请求边界设置为：最大 1 MiB、500 行、100 列、单 Cell 32 KiB、每商品最多 20 个图片 URL 和 100 个尺码。超过限制会在建立 Job 前明确拒绝，应拆分文件，不会先尝试写入再超时。
 
-`inventory_balances` 是库存数量的权威来源；`products.stock` 和 `products.size_stock` 只是在同一数据库事务内更新的旧页面兼容投影，不能作为独立库存写入入口。商品图片上传/删除和商品永久删除不属于本批事务边界。
+`inventory_balances` 是库存数量的权威来源；`products.stock` 和 `products.size_stock` 只是在同一数据库事务内更新的旧页面兼容投影，不能作为独立库存写入入口。商品图片和永久删除不属于商品新增/编辑 RPC，但由下面独立的 Storage 生命周期边界保护。
+
+图片与 Storage 安全还必须包含 `20260716141423_harden_storage_image_lifecycle.sql`。该 migration 创建私有的对象操作/商品删除恢复记录、限制 `product-images` bucket 为 10 MiB 且仅允许 JPEG、PNG、WebP，并提供受历史订单、库存流水、库存操作、导入记录和非零库存保护的永久删除 RPC。图片写入使用“先登记操作 → 上传 → 提交数据库引用”的可恢复流程；数据库引用失败会补偿删除对象，删除对象失败会进入待清理队列，不会把部分完成谎报为成功。
 
 “快速售出”是仅限 owner 的快速扣库存工具，适合店主临时登记一件已售商品；它不会创建 POS 订单、订单明细或付款记录，也不能代替正常 POS 扫码结账。店员应使用 POS 扫码流程，不能直接调用快速售出 API。
 
@@ -121,9 +123,11 @@ DEEPSEEK_API_KEY=
 DEEPSEEK_TRANSLATION_MODEL=deepseek-chat
 OPENAI_API_KEY=
 OPENAI_IMAGE_MODEL=gpt-image-2
+# 只有经过审查的外部 HTTPS 图片源才填写，多个 exact origin 用逗号分隔；禁止通配符。
+SERVER_IMAGE_FETCH_ALLOWED_ORIGINS=
 ```
 
-AI 模特图默认使用最多两张真实商品参考图，通过 GPT Image 2 生成 `1024×1536` 竖版、`medium` 品质、WebP 85% 压缩的图片。服务端会在上传 Storage 前校验格式和尺寸，不符合标准的结果不会写入商品多图。
+AI 模特图默认使用最多两张真实商品参考图，通过 GPT Image 2 生成 `1024×1536` 竖版、`medium` 品质、WebP 85% 压缩的图片。服务端只允许当前客户 Supabase Storage 或 `SERVER_IMAGE_FETCH_ALLOWED_ORIGINS` 中的精确 HTTPS origin；会重新校验 DNS、重定向、私网/metadata 地址、响应类型、下载体积、magic bytes、像素和尺寸，并重新编码为 WebP。不符合标准的来源或结果不会写入商品多图。
 
 6. 点击 **Deploy**。
 7. 部署完成后打开正式网址。
@@ -174,9 +178,12 @@ POS 模块只负责系统内扫码销售记录和库存同步，不代替真实�
 Supabase Storage：
 
 - [ ] `product-images` bucket 存在。
+- [ ] bucket 限制为 JPEG / PNG / WebP 且单对象不超过 10 MiB。
 - [ ] 前台公开图片可以访问。
 - [ ] 普通访客不能任意上传、修改或删除图片。
 - [ ] 后台服务端可以上传、替换和删除图片。
+- [ ] 伪造 MIME、SVG/脚本、损坏图片、超大字节/像素/宽高均被拒绝且不留下对象。
+- [ ] 运行只读 `storage:reconcile` 后没有孤儿、悬空引用或待清理对象。
 
 ## 常见问题
 
@@ -196,7 +203,21 @@ Supabase Storage：
 
 ### 图片上传失败怎么办？
 
-检查 `product-images` bucket、Vercel 的 `SUPABASE_SERVICE_ROLE_KEY`、文件类型和大小。数据库初始化成功不代表 Storage 上传一定已经验收。
+先确认已部署 `20260716141423_harden_storage_image_lifecycle.sql`，再检查 `product-images` bucket、Vercel 的 `SUPABASE_SERVICE_ROLE_KEY`、原文件是否为真实 JPEG/PNG/WebP，以及字节、像素和宽高是否超过限制。服务端不再在 Sharp 解码失败时保存原始文件；数据库初始化成功也不代表 Storage 上传已经验收。
+
+维护者可在自己的电脑执行只读对账（不会修改数据）：
+
+```powershell
+npm run storage:reconcile -- --project-ref 客户项目ref
+```
+
+若报告存在 `cleanup_pending`，先确认目标 project ref 和引用状态，再执行显式恢复；该命令会要求输入目标 ref，只有可信的本地 service-role CLI 可以处理：
+
+```powershell
+npm run storage:recover -- --project-ref 客户项目ref
+```
+
+永久删除会先检查历史订单、库存流水、库存操作、CSV 导入引用、Variant 余额和旧库存投影；存在任何保护性引用时返回阻断，应使用“停用/下架”，不能绕过数据库保护强删。
 
 ### 开发者密码丢失或需要轮换怎么办？
 
@@ -223,7 +244,9 @@ npm run developer:rotate -- --project-ref abcdefgh
 - 商品新增和编辑正式写入只允许调用商品事务 RPC，并要求 `USE_PRODUCT_RPC=true`；RPC 不可用时必须返回 503，不能恢复 Node.js 多步写入。
 - CSV 导入要求 `USE_CSV_IMPORT_RPC=true` 和 `20260716100000_transactional_csv_import_jobs.sql`；整份文件先预检，行内商品、Variant、余额、流水、兼容投影和结果记录必须一起提交或回滚，RPC 不可用时禁止 fallback。
 - CSV 的 `create_only` / `update_existing` / `upsert` 与 `metadata_only` / `set_inventory` 必须由用户显式选择；外部翻译只在提交前执行，最终 payload 冻结后再计算 fingerprint。
-- 商品库存以 `inventory_balances` 为权威，`products.stock` / `products.size_stock` 只允许作为事务内兼容投影。图片操作和永久删除仍在本批事务边界之外。
+- 商品库存以 `inventory_balances` 为权威，`products.stock` / `products.size_stock` 只允许作为事务内兼容投影。
+- 图片只能由服务端严格校验后写入 `product-images`；对象路径按不可变 product id 和随机 UUID 隔离，旧式或外部 URL 不自动跨商品删除。
+- 图片引用与 Storage 对象通过 `storage_object_operations` 补偿/恢复；永久删除只能调用受历史引用保护的 RPC。`storage:reconcile` 永远只读，`storage:recover` 必须由维护者明确确认目标项目后执行。
 - 后台“导出 CSV”只是完整的商品资料导出，不是 PostgreSQL 灾难恢复备份；数据库备份与恢复仍需单独执行和演练。
 - `public.developer_access` 空表表示未初始化；有记录时只保存 scrypt hash、随机 credential version、整数 password version 和轮换时间，不保存明文。
 - 新客户运行 `npm run developer:bootstrap -- --project-ref ...`；已有客户升级后统一进入 `must_rotate`，运行 `npm run developer:rotate -- --project-ref ...` 才能重新访问受保护设置。

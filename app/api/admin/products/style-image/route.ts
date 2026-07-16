@@ -1,10 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import sharp from "sharp";
 import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { invalidateProductsCache } from "@/lib/cache";
+import { ImageValidationError, optimizeUploadedImage } from "@/lib/image-security";
+import { downloadRemoteImage } from "@/lib/secure-image-fetch";
 import { getSupabaseAdminClient } from "@/lib/supabase";
-import { productImagesBucket, storageSkuSegment } from "@/lib/storage-images";
+import { configuredStorageOrigin, productImagesBucket, productStoragePath } from "@/lib/storage-images";
+import { createSupabaseStorageLifecycleBackend, uploadAndCommitStorageObject } from "@/lib/storage-lifecycle";
 
 export const runtime = "nodejs";
 
@@ -17,6 +20,8 @@ const imageOutputFormat = "webp";
 const imageOutputCompression = 85;
 const maxSourceImages = 2;
 const maxSourceImageBytes = 15 * 1024 * 1024;
+const maxSourcePixels = 40_000_000;
+const maxSourceDimension = 12_000;
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -72,50 +77,53 @@ function buildStyleImagePrompt(product: Record<string, unknown>, modelType: stri
   ].join("\n");
 }
 
+function allowedImageOrigins() {
+  const storageOrigin = configuredStorageOrigin();
+  const explicit = (process.env.SERVER_IMAGE_FETCH_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return { storageOrigin, origins: Array.from(new Set([storageOrigin, ...explicit].filter(Boolean))) };
+}
+
 async function loadSourceImage(url: string, index: number) {
-  const response = await fetch(url, {
-    cache: "no-store",
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!response.ok) {
-    throw new Error(`Reference image ${index + 1} could not be downloaded (${response.status}).`);
-  }
-
-  const declaredBytes = Number(response.headers.get("content-length")) || 0;
-  if (declaredBytes > maxSourceImageBytes) {
-    throw new Error(`Reference image ${index + 1} is larger than 15 MB.`);
-  }
-
-  const source = Buffer.from(await response.arrayBuffer());
-  if (source.length === 0 || source.length > maxSourceImageBytes) {
-    throw new Error(`Reference image ${index + 1} is empty or larger than 15 MB.`);
-  }
-
+  const { storageOrigin, origins } = allowedImageOrigins();
+  if (!storageOrigin || origins.length === 0) throw new Error("Customer Storage origin is not configured.");
   try {
-    const normalized = await sharp(source, { limitInputPixels: 40_000_000 })
-      .rotate()
-      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 90 })
-      .toBuffer();
+    const downloaded = await downloadRemoteImage(url, {
+      allowedOrigins: origins,
+      storageOrigin,
+      maxBytes: maxSourceImageBytes,
+      timeoutMs: 20_000,
+      maxRedirects: 3,
+    });
+    const normalized = await optimizeUploadedImage(downloaded.buffer, {
+      declaredMimeType: downloaded.contentType,
+      maxBytes: maxSourceImageBytes,
+      maxPixels: maxSourcePixels,
+      maxWidth: maxSourceDimension,
+      maxHeight: maxSourceDimension,
+      resize: { width: 1600, height: 1600, fit: "inside" },
+      quality: 90,
+    });
     return {
-      blob: new Blob([new Uint8Array(normalized)], { type: "image/webp" }),
+      blob: new Blob([new Uint8Array(normalized.buffer)], { type: "image/webp" }),
       filename: `reference-${index + 1}.webp`,
     };
-  } catch {
-    throw new Error(`Reference image ${index + 1} is not a supported or valid image.`);
+  } catch (error) {
+    throw new Error(`Reference image ${index + 1} was rejected: ${error instanceof Error ? error.message : "unsupported image"}`);
   }
 }
 
 async function ensurePublicBucket(supabase: NonNullable<ReturnType<typeof getSupabaseAdminClient>>) {
   const { data, error } = await supabase.storage.getBucket(productImagesBucket);
-  if (!data && error) {
-    const { error: createError } = await supabase.storage.createBucket(productImagesBucket, { public: true });
-    return createError;
-  }
-  if (data && !data.public) {
-    const { error: updateError } = await supabase.storage.updateBucket(productImagesBucket, { public: true });
-    return updateError;
-  }
+  if (error || !data) return new Error("The product-images bucket is not installed.");
+  const allowedMimeTypes = Array.isArray(data.allowed_mime_types) ? data.allowed_mime_types : [];
+  if (
+    data.public !== true
+    || Number(data.file_size_limit || 0) !== 10 * 1024 * 1024
+    || !["image/jpeg", "image/png", "image/webp"].every((mime) => allowedMimeTypes.includes(mime))
+  ) return new Error("The product-images bucket security configuration is incomplete.");
   return null;
 }
 
@@ -208,20 +216,27 @@ export async function POST(request: NextRequest) {
   }
 
   const imageBuffer = Buffer.from(b64, "base64");
-  let outputMetadata: Awaited<ReturnType<ReturnType<typeof sharp>["metadata"]>>;
+  let validatedOutput;
   try {
-    outputMetadata = await sharp(imageBuffer).metadata();
-  } catch {
+    validatedOutput = await optimizeUploadedImage(imageBuffer, {
+      declaredMimeType: "image/webp",
+      maxBytes: maxSourceImageBytes,
+      maxPixels: maxSourcePixels,
+      maxWidth: maxSourceDimension,
+      maxHeight: maxSourceDimension,
+      quality: imageOutputCompression,
+    });
+  } catch (error) {
     return NextResponse.json({ error: "AI image response was not a valid image." }, { status: 502 });
   }
-  if (outputMetadata.format !== imageOutputFormat || outputMetadata.width !== imageWidth || outputMetadata.height !== imageHeight) {
+  if (validatedOutput.width !== imageWidth || validatedOutput.height !== imageHeight) {
     return NextResponse.json(
       {
         error: `AI image output did not match the required ${imageSize} ${imageOutputFormat.toUpperCase()} standard.`,
         received: {
-          width: outputMetadata.width || null,
-          height: outputMetadata.height || null,
-          format: outputMetadata.format || null,
+          width: validatedOutput.width || null,
+          height: validatedOutput.height || null,
+          format: validatedOutput.format || null,
         },
       },
       { status: 502 },
@@ -231,14 +246,9 @@ export async function POST(request: NextRequest) {
   const bucketError = await ensurePublicBucket(supabase);
   if (bucketError) return NextResponse.json({ error: bucketError.message }, { status: 500 });
 
-  const safeSku = storageSkuSegment(sku);
-  const path = `products/${safeSku}/ai/styling-${Date.now()}.webp`;
-  const { error: uploadError } = await supabase.storage
-    .from(productImagesBucket)
-    .upload(path, imageBuffer, { contentType: "image/webp", cacheControl: "31536000", upsert: true });
-
-  if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
-
+  const productId = Number(productRecord.id);
+  const operationId = randomUUID();
+  const path = productStoragePath(productId, sku, "ai", operationId);
   const { data: publicUrlData } = supabase.storage.from(productImagesBucket).getPublicUrl(path);
   const imageUrl = withCacheVersion(publicUrlData.publicUrl);
   const currentGallery = Array.isArray(productRecord.image_urls)
@@ -246,12 +256,34 @@ export async function POST(request: NextRequest) {
     : [];
   const nextGallery = Array.from(new Set([...currentGallery, imageUrl]));
 
-  const { error: updateError } = await supabase
-    .from("products")
-    .update({ image_urls: nextGallery })
-    .eq("sku", sku);
-
-  if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+  try {
+    await uploadAndCommitStorageObject({
+      backend: createSupabaseStorageLifecycleBackend(supabase),
+      object: {
+        operationId,
+        bucket: productImagesBucket,
+        path,
+        ownerType: "product",
+        ownerKey: String(productId),
+        reason: "ai_style_image_upload",
+      },
+      body: validatedOutput.buffer,
+      contentType: "image/webp",
+      commitReference: async () => {
+        const { data, error } = await (supabase as any)
+          .from("products")
+          .update({ image_urls: nextGallery })
+          .eq("id", productId)
+          .eq("sku", sku)
+          .select("id")
+          .single();
+        if (error || !data) throw new Error(error?.message || "AI image reference was not committed.");
+      },
+    });
+  } catch (error) {
+    const status = error instanceof ImageValidationError ? 400 : 500;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "AI image storage commit failed." }, { status });
+  }
 
   invalidateProductsCache(sku);
 
@@ -261,9 +293,9 @@ export async function POST(request: NextRequest) {
     image: {
       model: imageModel,
       quality: imageQuality,
-      width: outputMetadata.width,
-      height: outputMetadata.height,
-      format: outputMetadata.format,
+      width: validatedOutput.width,
+      height: validatedOutput.height,
+      format: validatedOutput.format,
     },
     note: "AI styling image generated as a reference image and appended to the product gallery.",
   });

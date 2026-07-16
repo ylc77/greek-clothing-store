@@ -1,72 +1,124 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
-import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
+import { adminActorFromContext, adminHasPermission, getAdminAuthContextFromRequest } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
-import { hasInventoryMovementsForProduct } from "@/lib/erp-inventory";
+import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
+import {
+  configuredStorageOrigin,
+  listManagedProductStoragePaths,
+  pathBelongsToProduct,
+  productImagesBucket,
+  storagePathFromPublicUrl,
+} from "@/lib/storage-images";
+import { completePreparedStorageDeletion, createSupabaseStorageLifecycleBackend } from "@/lib/storage-lifecycle";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type DeleteRpcResult = {
+  ok?: boolean;
+  code?: string;
+  productId?: number;
+  sku?: string;
+  blockers?: Record<string, number>;
+  cleanup?: Array<{ id?: string; path?: string }>;
+  replayed?: boolean;
+};
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  if (!(await adminRequestHasPermissionAsync(request, "products:delete"))) return unauthorized();
+  const auth = await getAdminAuthContextFromRequest(request);
+  if (!adminHasPermission(auth, "products:delete")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: auth ? 403 : 401 });
+  }
   if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "Admin client not configured" }, { status: 500 });
-
   const { id } = await context.params;
   const productId = Number(id);
-  if (!Number.isFinite(productId)) {
+  if (!Number.isSafeInteger(productId) || productId <= 0) {
     return NextResponse.json({ error: "Invalid product ID" }, { status: 400 });
   }
 
-  try {
-    const hasMovements = await hasInventoryMovementsForProduct(productId);
-    if (hasMovements) {
+  const requestedOperationId = (request.headers.get("x-operation-id") || "").trim();
+  if (requestedOperationId && !uuidPattern.test(requestedOperationId)) {
+    return NextResponse.json({ error: "x-operation-id must be a UUID" }, { status: 400 });
+  }
+  const operationId = requestedOperationId || randomUUID();
+
+  const { data: product, error: productError } = await (supabase as any)
+    .from("products")
+    .select("id,sku,image_url,image_urls")
+    .eq("id", productId)
+    .maybeSingle();
+  if (productError) return NextResponse.json({ error: productError.message }, { status: 500 });
+
+  let storagePaths: string[] = [];
+  if (product) {
+    const sku = String(product.sku || "");
+    const urls = [product.image_url, ...(Array.isArray(product.image_urls) ? product.image_urls : [])];
+    const referencedPaths = urls
+      .map((url) => storagePathFromPublicUrl(typeof url === "string" ? url : "", configuredStorageOrigin()))
+      .filter((path): path is string => Boolean(path) && pathBelongsToProduct(path as string, productId, sku));
+    try {
+      storagePaths = Array.from(new Set([...referencedPaths, ...(await listManagedProductStoragePaths(supabase, productId, sku))]));
+    } catch (error) {
       return NextResponse.json(
-        { error: "该商品已有库存记录，不能永久删除。请改为下架。" },
-        { status: 409 },
+        { error: error instanceof Error ? `Storage inventory could not be verified: ${error.message}` : "Storage inventory could not be verified." },
+        { status: 503 },
       );
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to check inventory history";
-    return NextResponse.json({ error: message }, { status: 500 });
   }
 
-  // Fetch product to get image URLs for storage cleanup
-  const { data: product } = await (supabase as any)
-    .from("products")
-    .select("sku, image_url, image_urls")
-    .eq("id", id)
-    .maybeSingle();
-
-  // Delete from database
-  const { error } = await (supabase as any).from("products").delete().eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  invalidateProductsCache(product?.sku as string | undefined);
-
-  // Try to clean up storage images (non-blocking)
-  if (product) {
-    const { sku, image_url, image_urls } = product;
-    const paths: string[] = [];
-    // Derive storage paths from SKU
-    if (image_url) {
-      const match = image_url.match(/\/products\/([^/]+)\/([^?]+)/);
-      if (match) paths.push(`products/${match[1]}/${match[2]}`);
-    }
-    if (Array.isArray(image_urls)) {
-      for (const url of image_urls) {
-        const m = (url as string).match(/\/products\/([^/]+)\/([^?]+)/);
-        if (m) paths.push(`products/${m[1]}/${m[2]}`);
-      }
-    }
-    if (paths.length > 0) {
-      try { await supabase.storage.from("product-images").remove(paths); } catch { /* non-blocking */ }
-    }
+  const { data, error } = await (supabase as any).rpc("product_permanent_delete_prepare_rpc", {
+    p_product_id: productId,
+    p_client_operation_id: operationId,
+    p_actor: adminActorFromContext(auth!),
+    p_storage_paths: storagePaths,
+  });
+  if (error) {
+    const unavailable = /function .* does not exist|schema cache|permission denied/i.test(error.message);
+    return NextResponse.json(
+      { error: unavailable ? "Permanent-delete transaction RPC is unavailable." : error.message, code: unavailable ? "STORAGE_RUNTIME_UNAVAILABLE" : "PRODUCT_DELETE_FAILED" },
+      { status: unavailable ? 503 : 500 },
+    );
   }
 
-  return NextResponse.json({ ok: true });
+  const result = (data || {}) as DeleteRpcResult;
+  if (result.code === "PRODUCT_NOT_FOUND") return NextResponse.json({ error: "Product not found", code: result.code }, { status: 404 });
+  if (result.code === "PRODUCT_DELETE_BLOCKED") {
+    return NextResponse.json(
+      {
+        error: "This product has inventory, order, import, or audit history and must be deactivated instead of permanently deleted.",
+        code: result.code,
+        blockers: result.blockers || {},
+      },
+      { status: 409 },
+    );
+  }
+  if (!result.ok || result.code !== "PRODUCT_DELETED") {
+    return NextResponse.json({ error: "Permanent deletion did not produce a confirmed result.", code: result.code || "PRODUCT_DELETE_UNKNOWN" }, { status: 500 });
+  }
+
+  const backend = createSupabaseStorageLifecycleBackend(supabase);
+  let cleanupPending = false;
+  for (const item of result.cleanup || []) {
+    if (!item.id || !item.path) {
+      cleanupPending = true;
+      continue;
+    }
+    const cleanup = await completePreparedStorageDeletion({
+      backend,
+      operationRowId: item.id,
+      bucket: productImagesBucket,
+      path: item.path,
+    });
+    cleanupPending = cleanupPending || cleanup.cleanupPending;
+  }
+
+  invalidateProductsCache(result.sku);
+  return NextResponse.json(
+    { ok: true, code: result.code, replayed: result.replayed === true, cleanupPending },
+    { status: cleanupPending ? 202 : 200 },
+  );
 }

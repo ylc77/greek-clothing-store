@@ -42,8 +42,9 @@ supabase/
 
 | Bucket | 用途 | 权限 |
 |--------|------|------|
-| `product-images` | 商品主图和多图 | public read |
-| `store-assets` | Logo、首页大图 | public read |
+| `product-images` | 商品、Logo、首页图和分类图片 | public read；写入/替换/删除只走服务端受保护 API |
+
+`20260716141423_harden_storage_image_lifecycle.sql` 将该 bucket 限制为 JPEG、PNG、WebP 和单对象 10 MiB。公开 bucket 只代表对象可读，不能给 `anon` 或 `authenticated` 任意写入/删除策略。
 
 ## 环境变量
 
@@ -57,14 +58,33 @@ USE_POS_RPC=true              # POS 事务 RPC；缺失时写入 fail closed
 USE_PRODUCT_RPC=true          # 商品事务 RPC；CSV 也依赖它
 USE_CSV_IMPORT_RPC=true       # CSV Job / 逐行事务 RPC；缺失时返回 503
 DEEPSEEK_API_KEY=             # DeepSeek 翻译 API key
+SERVER_IMAGE_FETCH_ALLOWED_ORIGINS= # 可选：经审查的外部 HTTPS exact origin，禁止通配符
 ```
 
 ## 常见排查
 
 ### 图片上传失败
-1. 确认 Supabase Storage bucket `product-images` 存在且 public=true
-2. 检查 Vercel 日志：`SUPABASE_SERVICE_ROLE_KEY` 是否配置
-3. 图片是否过大（sharp 压缩超时）
+1. 确认已部署 `20260716141423_harden_storage_image_lifecycle.sql`，并且 `product-images` 为 public read。
+2. 检查 Vercel 的服务器端 `SUPABASE_SERVICE_ROLE_KEY` 是否与同一 Supabase 项目匹配，绝不能使用 `NEXT_PUBLIC_` 前缀。
+3. 只接受真实 JPEG/PNG/WebP；扩展名或浏览器 MIME 不能代替 magic bytes。损坏图片、SVG/脚本、动画/多页、超大字节/像素/宽高会被拒绝，Sharp 失败不会回退保存原文件。
+4. 商品对象使用 `products/{productId}/{skuHash}/{main|gallery|ai}/{uuid}.webp`；不要手工拼路径或跨商品复用对象。
+5. 如果数据库引用失败，服务端会补偿删除已上传对象；对象删除失败时返回待清理状态，不应反复上传制造更多对象。
+
+### Storage 对账和恢复
+
+只读检查不会修改数据库或对象：
+
+```powershell
+npm run storage:reconcile -- --project-ref 客户项目ref
+```
+
+输出必须确认 `mutated=false`，并检查 orphan、missing reference 和 pending cleanup。需要处理待删除对象时，维护者在确认正确 project ref 后运行：
+
+```powershell
+npm run storage:recover -- --project-ref 客户项目ref
+```
+
+恢复命令使用本地 service role，并要求再次输入目标 ref；不要让商家电脑运行，不要把密钥写进命令、报告或日志。永久删除商品如存在订单、库存流水、库存操作、导入行、非零余额或旧库存，会被 RPC 阻断；此时使用下架而不是强删。
 
 ### 尺码库存不生效
 1. 确认 `products.size_stock` 字段存在（jsonb, default '{}')
@@ -111,7 +131,7 @@ BASE_URL=https://你的域名.vercel.app npm run check:skroutz
 ### 老客户升级 → migrations
 已有真实数据的客户不能执行完整 `client-init.sql`。正常升级使用尚未应用的 `supabase/migrations`；只有具体升级说明明确要求时才使用 `supabase/patches/` 专用补丁。
 
-事务 migrations 依次包含 P1 POS/库存/开发者凭据、`20260715143949_transactional_product_operations.sql` 商品事务，以及 `20260716100000_transactional_csv_import_jobs.sql` CSV Job 与逐行事务。老客户必须先备份并确认目标 project ref，再使用 `db push --dry-run` 核对计划后执行 `db push`；不要执行 `client-init.sql`，也不要手工伪造 migration history。部署代码前在 Vercel 同时设置 `USE_PRODUCT_RPC=true` 和 `USE_CSV_IMPORT_RPC=true`，否则 CSV 写入会以 503 fail closed。
+事务 migrations 依次包含 P1 POS/库存/开发者凭据、`20260715143949_transactional_product_operations.sql` 商品事务、`20260716100000_transactional_csv_import_jobs.sql` CSV Job 与逐行事务，以及 `20260716141423_harden_storage_image_lifecycle.sql` 图片/Storage 生命周期。老客户必须先备份并确认目标 project ref，再使用 `db push --dry-run` 核对计划后执行 `db push`；不要执行 `client-init.sql`，也不要手工伪造 migration history。部署代码前在 Vercel 同时设置 `USE_PRODUCT_RPC=true` 和 `USE_CSV_IMPORT_RPC=true`，否则 CSV 写入会以 503 fail closed。
 
 ### CSV 导入中断恢复
 
