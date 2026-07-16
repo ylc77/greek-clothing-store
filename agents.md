@@ -229,3 +229,24 @@ A recovery GET returning 401, 403, or 404 does not prove the original POST made 
 
 CSV fault-injection tests reuse one PL/pgSQL trigger function across tables with different row shapes. Branch on `TG_TABLE_NAME` in separate nested blocks before reading table-specific `NEW` fields; a combined boolean expression can still raise `record "new" has no field ...` on the other table and create a false retry failure.
 
+
+\---
+
+
+\## 17. Storage and image lifecycle boundary
+
+
+All product, Logo, hero, category, and AI styling images use the `product-images` bucket. Public bucket access is read-only for storefront delivery; never add anon/authenticated insert, update, or delete policies. The bucket MIME/size constraints and private recovery tables are installed by `20260716141423_harden_storage_image_lifecycle.sql`; image routes must fail closed when that migration or the server service role is unavailable instead of mutating bucket configuration at runtime.
+
+
+Accept only JPEG, PNG, or WebP after server-side magic-byte, declared MIME, byte, pixel, dimension, animation/multipage, and Sharp decode validation. Always re-encode accepted input to WebP. Never restore the old raw-file fallback. Managed product paths are scoped by immutable product id plus a collision-resistant SKU segment and random UUID; legacy or external URLs may be detached but must not be automatically deleted across products.
+
+
+Image writes and deletes must register `storage_object_operations` before Storage mutation, compensate a Storage upload when the database reference fails, and queue failed object deletion for the trusted `storage:recover` CLI. `storage:reconcile` is intentionally read-only. Permanent product deletion is RPC-only, protects all order/inventory/import history and non-zero balances, and records object cleanup in the same database transaction before removing Storage objects.
+
+
+Server-side reference-image downloads allow only the current customer Storage origin or reviewed exact origins from `SERVER_IMAGE_FETCH_ALLOWED_ORIGINS`. Keep DNS resolution, redirect revalidation, private/metadata/link-local blocking, IP pinning, timeout, response type, Content-Length, and streaming byte limits together; do not replace this with a plain `fetch(url)`.
+
+
+Standalone install fixtures that create `storage.buckets` must include `file_size_limit bigint` and `allowed_mime_types text[]`, and must use `supabase_storage_admin` for schema-owned setup as documented above.
+

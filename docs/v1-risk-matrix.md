@@ -22,10 +22,10 @@
 | 5A-03 | 5A | P2 | 已确认 | Products API 对所有 `products:read` 角色使用 service role `select(*)`；Suppliers API 对所有 `products:read` 角色返回 `select(*)`；Inventory DTO 含 `cost_price` 和供应商字段。staff/readonly 可越过最小数据边界。 | owner/staff/inventory/readonly/developer/anonymous 字段矩阵全部通过，inventory 仅获得库存作业必需采购字段。 |
 | 5A-04 | 5A | P2 | 已确认 | 角色相关 Products/Inventory/Suppliers 响应未统一设置 `private, no-store`，存在共享缓存误配置后跨角色复用的风险。 | 每个角色响应均为动态、private/no-store；owner 后低权限请求不命中高权限缓存。 |
 | 5A-05 | 5A | P2 | 已确认 | 公开、AI、Skroutz、后台与采购数据选择散落在多个文件，缺少可静态检查的 DTO 边界。 | DTO/选择器集中定义；静态门禁禁止公开路径 `select("*")` 和未批准危险 HTML helper。 |
-| 5B-01 | 5B | P2 | 已确认 | Store Settings 上传在 Sharp 失败时回退保存原文件；未看到统一的 magic-byte、像素和尺寸上限。 | JPEG/PNG/WebP magic bytes、字节/像素/宽高限制通过；Sharp 失败拒绝且不产生对象。 |
-| 5B-02 | 5B | P2 | 待验证假设 | 图片上传、数据库引用更新和对象删除分步执行，可能产生孤儿对象或悬空引用。 | 故障注入覆盖 Storage 成功/DB 失败与 DB 成功/Storage 失败；orphan reconciliation 为 0。 |
-| 5B-03 | 5B | P2 | 已确认 | AI 模特图服务端对 URL 执行 fetch；当前仅做 URL 字符串检查，尚无完整 DNS、重定向、私网和流式体积边界。 | IPv4/IPv6、重定向、DNS rebinding、metadata/private/link-local SSRF 测试全部拒绝。 |
-| 5B-04 | 5B | P2 | 待验证假设 | 永久删除商品可能未完整保护历史订单、库存流水、Variant 余额和外部图片引用。 | 数据库 fixture 覆盖有/无历史引用；受保护对象不能永久删除；清理流程可恢复并可对账。 |
+| 5B-01 | 5B | P2 | 本地已修复，待 CI/Preview | Store Settings 上传在 Sharp 失败时回退保存原文件，且没有统一 magic-byte、像素和尺寸上限；动态伪造 MIME fixture 证实原路径会接受不可信声明。 | 本地 JPEG/PNG/WebP magic bytes、声明 MIME、字节/像素/宽高、动画/多页和损坏图片测试通过；Sharp 失败拒绝且无对象残留。 |
+| 5B-02 | 5B | P2 | 本地已修复，待 CI/Preview | 商品、店铺和分类图片原先先写 Storage 再分步更新数据库引用；故障注入证实数据库更新失败会留下孤儿，反向删除失败会留下悬空引用。 | 本地真实 Storage/API 故障注入覆盖 Storage 成功/DB 失败补偿，以及 DB 引用移除成功/Storage 删除失败进入恢复队列；清理后 orphan reconciliation 为 0。 |
+| 5B-03 | 5B | P2 | 本地已修复，待 CI/Preview | AI 模特图服务端对浏览器提供的 URL 直接 `fetch`，只做 URL 字符串检查，没有 DNS、重定向、私网和流式体积边界。 | 本地 exact-origin、Storage 路径、IPv4/IPv6、重定向、DNS rebinding、DNS timeout、metadata/private/link-local、Content-Type/Length/stream 测试全部通过。 |
+| 5B-04 | 5B | P2 | 本地已修复，待 CI/Preview | 原永久删除只检查部分库存流水，先删数据库再 best-effort 删除对象；订单、库存操作、导入引用、非零余额和失败恢复均未完整保护。 | 本地数据库 fixture 覆盖有/无历史引用；受保护对象不能永久删除；安全对象在数据库事务内登记清理任务并删除，Storage 失败可恢复、可对账。 |
 | 5C-01 | 5C | P2 | 已确认 | 公共 AI 限流位于进程内 `Map`，多实例和冷启动可绕过；缺少共享分钟/日预算及全局并发边界。 | 多实例与冷启动测试、IP/会话/店铺/全局维度、日预算和并发门禁全部通过。 |
 | 5C-02 | 5C | P2 | 待验证假设 | AI 上游超时、响应大小、Prompt Injection、允许 SKU 二次校验及身体数据最小化需要完整动态验证。 | 超时、异常 JSON、超长输入、并发、PII 日志扫描和允许 SKU 校验测试通过。 |
 | 5C-03 | 5C | P2 | 已确认 | 环境管理员密码认证仍以环境变量为主，需要 timing-safe 比较、弱密码/重复角色密码启动检查和共享限流。 | 多实例爆破测试、弱密码启动失败、重复密码失败、timing-safe 单元测试通过。 |
