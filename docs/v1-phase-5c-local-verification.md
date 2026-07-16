@@ -1,8 +1,10 @@
 # v1 阶段 5C 本地验证报告
 
-日期：2026-07-16  
-分支：`codex/hardening-p2-ai-auth-abuse`  
-基线：`23dd67b1b93cc3fadbab8842fcf470ae1bf36b79`  
+日期：2026-07-16
+
+分支：`codex/hardening-p2-ai-auth-abuse`
+
+基线：`23dd67b1b93cc3fadbab8842fcf470ae1bf36b79`
 结论：**Local integration verified. GitHub CI, isolated Preview, and Production are not yet verified.**
 
 ## 已关闭或本地验证的风险
