@@ -10,7 +10,8 @@ const API_PORT = 55321;
 const DB_PORT = 55322;
 const APP_PORT = 3314;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
-const PASSWORDS = { owner: "feature-gate-owner", staff: "feature-gate-staff" };
+const PASSWORDS = { owner: "AuditFeatureOwner!2026-Alpha", staff: "AuditFeatureStaff!2026-Bravo" };
+const AUTH_RATE_LIMIT_SECRET = "test-only-feature-auth-rate-limit-secret-2026";
 const results = [];
 
 function command(name, args) {
@@ -47,6 +48,7 @@ async function startApp(local) {
       SUPABASE_SERVICE_ROLE_KEY: local.SERVICE_ROLE_KEY,
       ADMIN_PASSWORD: PASSWORDS.owner,
       ADMIN_STAFF_PASSWORD: PASSWORDS.staff,
+      AUTH_RATE_LIMIT_SECRET,
       USE_POS_RPC: "true",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -177,12 +179,15 @@ try {
     ]);
     assert.equal(responses[0].status, 403);
     assert.equal(responses[0].data.code, "FEATURE_DISABLED");
-    assert.equal(responses[1].status, 404);
+    assert.equal(responses[1].status, 403);
+    assert.equal(responses[1].data.code, "FEATURE_DISABLED");
     assert.equal(responses[2].status, 404);
   });
 
   await runCase("disabled staff accounts reject staff while owner remains authorized", async () => {
-    assert.equal((await request("/api/admin/session", { role: "staff" })).status, 401);
+    const staff = await request("/api/admin/session", { role: "staff" });
+    assert.equal(staff.status, 403);
+    assert.equal(staff.data.code, "FEATURE_DISABLED");
     const owner = await request("/api/admin/session", { role: "owner" });
     assert.equal(owner.status, 200);
     assert.equal(owner.data.role, "owner");

@@ -14,11 +14,12 @@ const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 const DB_CONTAINER = "supabase_db_clothing_web";
 const PREFIX = "AUDIT-CSV-ROUTE-";
 const PASSWORDS = {
-  owner: "csv-route-owner",
-  staff: "csv-route-staff",
-  inventory: "csv-route-inventory",
-  readonly: "csv-route-readonly",
+  owner: "AuditCsvOwner!2026-Alpha",
+  staff: "AuditCsvStaff!2026-Bravo",
+  inventory: "AuditCsvInventory!2026-Charlie",
+  readonly: "AuditCsvReadonly!2026-Delta",
 };
+const AUTH_RATE_LIMIT_SECRET = "test-only-csv-auth-rate-limit-secret-2026";
 const results = [];
 
 function command(name, args, options = {}) {
@@ -85,6 +86,7 @@ async function startApp(local, csvRpcEnabled) {
       ADMIN_STAFF_PASSWORD: PASSWORDS.staff,
       ADMIN_INVENTORY_PASSWORD: PASSWORDS.inventory,
       ADMIN_READONLY_PASSWORD: PASSWORDS.readonly,
+      AUTH_RATE_LIMIT_SECRET,
       USE_POS_RPC: "true",
       USE_PRODUCT_RPC: "true",
       USE_CSV_IMPORT_RPC: csvRpcEnabled ? "true" : "false",

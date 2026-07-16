@@ -15,12 +15,13 @@ const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 const DB_CONTAINER = "supabase_db_clothing_web";
 const PREFIX = "AUDIT-STORAGE-";
 const PASSWORDS = {
-  owner: "storage-owner-password",
-  staff: "storage-staff-password",
-  inventory: "storage-inventory-password",
-  readonly: "storage-readonly-password",
+  owner: "AuditStorageOwner!2026-Alpha",
+  staff: "AuditStorageStaff!2026-Bravo",
+  inventory: "AuditStorageInventory!2026-Charlie",
+  readonly: "AuditStorageReadonly!2026-Delta",
   developer: `Storage-Test-${randomUUID()}!9`,
 };
+const AUTH_RATE_LIMIT_SECRET = "test-only-storage-auth-rate-limit-secret-2026";
 const results = [];
 const objectPaths = new Set();
 let server;
@@ -101,6 +102,7 @@ async function startApp(local) {
       ADMIN_STAFF_PASSWORD: PASSWORDS.staff,
       ADMIN_INVENTORY_PASSWORD: PASSWORDS.inventory,
       ADMIN_READONLY_PASSWORD: PASSWORDS.readonly,
+      AUTH_RATE_LIMIT_SECRET,
       USE_POS_RPC: "true",
       USE_PRODUCT_RPC: "true",
       USE_CSV_IMPORT_RPC: "true",

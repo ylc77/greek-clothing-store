@@ -57,6 +57,7 @@ jobs:
           npm run check:csv-static
           npm run check:public-data-static
           npm run check:storage-static
+          npm run check:ai-auth-static
 
       - name: Regenerate client snapshot and require zero drift
         run: |
@@ -116,6 +117,7 @@ jobs:
           npm run test:csv-unit
           npm run test:public-data-unit
           npm run test:storage-unit
+          npm run test:ai-auth-unit
 
   local-supabase-integration:
     name: Local Supabase integration and security
@@ -159,6 +161,7 @@ jobs:
           npm run test:csv-routes
           npm run test:public-data-integration
           npm run test:storage-integration
+          npm run test:ai-auth-integration
 
       - name: Verify RPC grants, RLS, and SECURITY DEFINER search paths
         run: |
@@ -167,6 +170,7 @@ jobs:
           npm run check:csv-db-security
           npm run check:public-data-db-security
           npm run check:storage-db-security
+          npm run check:ai-auth-db-security
 
       - name: Run local database advisors
         run: supabase db advisors --local
@@ -209,6 +213,7 @@ jobs:
           npm run test:csv-install-paths
           npm run test:public-data-install-paths
           npm run test:storage-install-paths
+          npm run test:ai-auth-install-paths
       - name: Verify ordered migration snapshot
         run: |
           npm run check:p1-static
@@ -216,3 +221,4 @@ jobs:
           npm run check:csv-static
           npm run check:public-data-static
           npm run check:storage-static
+          npm run check:ai-auth-static

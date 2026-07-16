@@ -13,11 +13,12 @@ const DB_PORT = 55322;
 const APP_PORT = 3311;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 const PASSWORDS = {
-  owner: "audit-inventory-owner",
-  staff: "audit-inventory-staff",
-  inventory: "audit-inventory-worker",
-  readonly: "audit-inventory-readonly",
+  owner: "AuditInventoryOwner!2026-Alpha",
+  staff: "AuditInventoryStaff!2026-Bravo",
+  inventory: "AuditInventoryWorker!2026-Charlie",
+  readonly: "AuditInventoryReadonly!2026-Delta",
 };
+const AUTH_RATE_LIMIT_SECRET = "test-only-inventory-auth-rate-limit-secret-2026";
 const AUDIT_PREFIX = "AUDIT-INV-";
 const results = [];
 
@@ -372,6 +373,7 @@ async function startApp() {
       ADMIN_STAFF_PASSWORD: PASSWORDS.staff,
       ADMIN_INVENTORY_PASSWORD: PASSWORDS.inventory,
       ADMIN_READONLY_PASSWORD: PASSWORDS.readonly,
+      AUTH_RATE_LIMIT_SECRET,
       USE_POS_RPC: "true",
     },
     stdio: ["ignore", "pipe", "pipe"],

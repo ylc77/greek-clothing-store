@@ -11,11 +11,12 @@ const DB_PORT = 55322;
 const APP_PORT = 3312;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 const PASSWORDS = {
-  owner: "audit-product-owner",
-  staff: "audit-product-staff",
-  inventory: "audit-product-inventory",
-  readonly: "audit-product-readonly",
+  owner: "AuditProductOwner!2026-Alpha",
+  staff: "AuditProductStaff!2026-Bravo",
+  inventory: "AuditProductInventory!2026-Charlie",
+  readonly: "AuditProductReadonly!2026-Delta",
 };
+const AUTH_RATE_LIMIT_SECRET = "test-only-product-auth-rate-limit-secret-2026";
 const AUDIT_PREFIX = "AUDIT-PRODUCT-";
 const CREATED_BY = "product-transaction-integration-test";
 const PRODUCT_CREATE_SIGNATURE = "public.product_create_rpc(text,jsonb,jsonb,text,text)";
@@ -564,6 +565,7 @@ async function startApp() {
       ADMIN_STAFF_PASSWORD: PASSWORDS.staff,
       ADMIN_INVENTORY_PASSWORD: PASSWORDS.inventory,
       ADMIN_READONLY_PASSWORD: PASSWORDS.readonly,
+      AUTH_RATE_LIMIT_SECRET,
       USE_POS_RPC: "true",
       USE_PRODUCT_RPC: "true",
     },
