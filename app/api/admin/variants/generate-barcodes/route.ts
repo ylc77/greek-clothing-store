@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { generateBarcodesForVariants, VariantBarcodeError } from "@/lib/variant-barcodes";
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
 
 function barcodeError(error: unknown) {
   if (error instanceof VariantBarcodeError) {
@@ -17,7 +14,8 @@ function barcodeError(error: unknown) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "labels:write"))) return unauthorized();
+  const authorization = await authorizeAdminRequest(request, "labels:write");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabled("barcode_labels"))) return featureDisabledResponse("barcode_labels");
 
   try {

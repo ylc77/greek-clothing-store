@@ -1,5 +1,15 @@
 import { getSupabaseAdminClient } from "./supabase";
 import { isFeatureEnabled } from "./features";
+import {
+  configuredAdminPasswordRole,
+  validateAdminPasswordEnvironment,
+  type AdminPasswordConfiguration,
+} from "./admin-password-security";
+import {
+  AbuseProtectionUnavailableError,
+  checkSharedAuthLimit,
+  recordSharedAuthAttempt,
+} from "./abuse-protection";
 
 export type AdminRole = "owner" | "staff" | "inventory" | "readonly";
 
@@ -61,36 +71,39 @@ const ROLE_PERMISSIONS: Record<AdminRole, AdminPermission[]> = {
   readonly: ["products:read", "inventory:read", "pos:read", "feed:read"],
 };
 
-const ROLE_PASSWORD_ENV: Record<AdminRole, string> = {
-  owner: "ADMIN_PASSWORD",
-  staff: "ADMIN_STAFF_PASSWORD",
-  inventory: "ADMIN_INVENTORY_PASSWORD",
-  readonly: "ADMIN_READONLY_PASSWORD",
+export type AdminAuthenticationFailure =
+  | "unauthenticated"
+  | "invalid"
+  | "forbidden"
+  | "feature_disabled"
+  | "rate_limited"
+  | "unavailable";
+
+export type AdminAuthenticationResult = {
+  context: AdminAuthContext | null;
+  failure: AdminAuthenticationFailure | null;
+  retryAfter?: number;
 };
 
-function cleanPassword(password: string | null | undefined) {
-  return typeof password === "string" ? password.trim() : "";
+export type AdminAuthorizationDecision =
+  | { allowed: true; context: AdminAuthContext }
+  | { allowed: false; status: 401 | 403 | 429 | 503; code: string; error: string; retryAfter?: number };
+
+function passwordConfiguration(): AdminPasswordConfiguration {
+  return validateAdminPasswordEnvironment(process.env);
 }
 
 export function getAdminContextFromPassword(password: string | null | undefined): AdminAuthContext | null {
-  const providedPassword = cleanPassword(password);
-
+  const providedPassword = typeof password === "string" ? password : "";
   if (!providedPassword) {
     return null;
   }
-
-  for (const role of Object.keys(ROLE_PASSWORD_ENV) as AdminRole[]) {
-    const expectedPassword = cleanPassword(process.env[ROLE_PASSWORD_ENV[role]]);
-    if (expectedPassword && providedPassword === expectedPassword) {
-      return {
-        role,
-        permissions: ROLE_PERMISSIONS[role],
-        authType: "password",
-      };
-    }
-  }
-
-  return null;
+  const role = configuredAdminPasswordRole(providedPassword, passwordConfiguration());
+  return role ? {
+    role,
+    permissions: ROLE_PERMISSIONS[role],
+    authType: "password",
+  } : null;
 }
 
 export function adminPasswordIsValid(password: string | null | undefined) {
@@ -111,22 +124,39 @@ function isAdminRole(value: unknown): value is AdminRole {
   return value === "owner" || value === "staff" || value === "inventory" || value === "readonly";
 }
 
-export async function getAdminAuthContextFromRequest(request: Request): Promise<AdminAuthContext | null> {
-  const passwordContext = getAdminContextFromRequest(request);
-  if (passwordContext) {
-    if (passwordContext.role !== "owner" && !(await isFeatureEnabled("staff_accounts"))) return null;
-    return passwordContext;
+async function passwordAuthentication(request: Request): Promise<AdminAuthenticationResult> {
+  try {
+    const status = await checkSharedAuthLimit(request, "admin-password");
+    if (!status.allowed) return { context: null, failure: "rate_limited", retryAfter: status.retryAfter };
+    const passwordContext = getAdminContextFromRequest(request);
+    const attempt = await recordSharedAuthAttempt(request, "admin-password", Boolean(passwordContext));
+    if (!attempt.allowed) return { context: null, failure: "rate_limited", retryAfter: attempt.retryAfter };
+    if (!passwordContext) return { context: null, failure: "invalid" };
+    if (passwordContext.role !== "owner" && !(await isFeatureEnabled("staff_accounts"))) {
+      return { context: null, failure: "feature_disabled" };
+    }
+    return { context: passwordContext, failure: null };
+  } catch (error) {
+    if (error instanceof AbuseProtectionUnavailableError || error instanceof Error) {
+      return { context: null, failure: "unavailable" };
+    }
+    return { context: null, failure: "unavailable" };
   }
+}
+
+export async function getAdminAuthenticationResult(request: Request): Promise<AdminAuthenticationResult> {
+  const password = request.headers.get("x-admin-password");
+  if (password) return passwordAuthentication(request);
 
   const token = getBearerToken(request);
-  if (!token) return null;
+  if (!token) return { context: null, failure: "unauthenticated" };
 
   const supabase = getSupabaseAdminClient();
-  if (!supabase) return null;
+  if (!supabase) return { context: null, failure: "unavailable" };
 
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
   const user = userData?.user;
-  if (userError || !user) return null;
+  if (userError || !user) return { context: null, failure: "invalid" };
 
   const { data: adminUser, error: adminUserError } = await (supabase as any)
     .from("admin_users")
@@ -135,18 +165,51 @@ export async function getAdminAuthContextFromRequest(request: Request): Promise<
     .eq("active", true)
     .maybeSingle();
 
-  if (adminUserError || !adminUser || !isAdminRole(adminUser.role)) return null;
+  if (adminUserError) return { context: null, failure: "unavailable" };
+  if (!adminUser || !isAdminRole(adminUser.role)) return { context: null, failure: "forbidden" };
   const role = adminUser.role as AdminRole;
-  if (role !== "owner" && !(await isFeatureEnabled("staff_accounts"))) return null;
+  if (role !== "owner" && !(await isFeatureEnabled("staff_accounts"))) {
+    return { context: null, failure: "feature_disabled" };
+  }
 
   return {
-    role,
-    permissions: ROLE_PERMISSIONS[role],
-    authType: "account",
-    userId: user.id,
-    email: adminUser.email || user.email || "",
-    displayName: adminUser.display_name || null,
+    context: {
+      role,
+      permissions: ROLE_PERMISSIONS[role],
+      authType: "account",
+      userId: user.id,
+      email: adminUser.email || user.email || "",
+      displayName: adminUser.display_name || null,
+    },
+    failure: null,
   };
+}
+
+export async function getAdminAuthContextFromRequest(request: Request): Promise<AdminAuthContext | null> {
+  return (await getAdminAuthenticationResult(request)).context;
+}
+
+export async function authorizeAdminRequest(request: Request, permission: AdminPermission): Promise<AdminAuthorizationDecision> {
+  const authentication = await getAdminAuthenticationResult(request);
+  if (!authentication.context) {
+    if (authentication.failure === "rate_limited") {
+      return { allowed: false, status: 429, code: "AUTH_RATE_LIMITED", error: "Too many authentication attempts.", retryAfter: authentication.retryAfter };
+    }
+    if (authentication.failure === "unavailable") {
+      return { allowed: false, status: 503, code: "AUTH_SECURITY_UNAVAILABLE", error: "Authentication security controls are unavailable." };
+    }
+    if (authentication.failure === "feature_disabled") {
+      return { allowed: false, status: 403, code: "FEATURE_DISABLED", error: "Employee accounts are disabled for this customer plan." };
+    }
+    if (authentication.failure === "forbidden") {
+      return { allowed: false, status: 403, code: "FORBIDDEN", error: "Forbidden" };
+    }
+    return { allowed: false, status: 401, code: "UNAUTHORIZED", error: "Unauthorized" };
+  }
+  if (!adminHasPermission(authentication.context, permission)) {
+    return { allowed: false, status: 403, code: "FORBIDDEN", error: "Forbidden" };
+  }
+  return { allowed: true, context: authentication.context };
 }
 
 export function adminHasPermission(context: AdminAuthContext | null, permission: AdminPermission) {

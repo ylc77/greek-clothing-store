@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { invalidateProductsCache } from "@/lib/cache";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { ImageValidationError, optimizeImageFile } from "@/lib/image-security";
@@ -40,10 +41,6 @@ type ImageResult = {
   cleanupPending?: boolean;
 };
 
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
-
 function unavailable() {
   return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 500 });
 }
@@ -78,7 +75,8 @@ async function assertBucketReady(supabase: NonNullable<ReturnType<typeof getSupa
 }
 
 export async function POST(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "products:write"))) return unauthorized();
+  const authorization = await authorizeAdminRequest(request, "products:write");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
   const skroutzEnabled = await isFeatureEnabled("skroutz_feed");
   const supabase = getSupabaseAdminClient();
@@ -229,7 +227,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "products:write"))) return unauthorized();
+  const authorization = await authorizeAdminRequest(request, "products:write");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();

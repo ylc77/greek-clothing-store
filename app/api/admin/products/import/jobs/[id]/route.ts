@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  adminHasPermission,
-  getAdminAuthContextFromRequest,
-} from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { loadProductImportJob } from "@/lib/csv-import-server";
 import { featureDisabledResponse, isFeatureEnabledUncached } from "@/lib/features";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -10,11 +8,8 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, context: RouteContext) {
-  const auth = await getAdminAuthContextFromRequest(request);
-  if (!auth) return NextResponse.json({ error: "Unauthorized", code: "UNAUTHORIZED" }, { status: 401 });
-  if (!adminHasPermission(auth, "products:write")) {
-    return NextResponse.json({ error: "Forbidden", code: "FORBIDDEN" }, { status: 403 });
-  }
+  const authorization = await authorizeAdminRequest(request, "products:write");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabledUncached("csv_import"))) return featureDisabledResponse("csv_import");
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "CSV import is unavailable.", code: "CSV_IMPORT_RPC_UNAVAILABLE" }, { status: 503 });

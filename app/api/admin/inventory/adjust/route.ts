@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   adminActorFromContext,
-  adminHasPermission,
-  getAdminAuthContextFromRequest,
+  authorizeAdminRequest,
 } from "@/lib/admin-auth";
 import { featureDisabledResponse, isFeatureEnabledUncached } from "@/lib/features";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -71,11 +70,11 @@ function rpcFailure(error: unknown) {
 }
 
 export async function POST(request: NextRequest) {
-  const authContext = await getAdminAuthContextFromRequest(request);
-  if (!authContext) return errorResponse("Unauthorized", 401, "UNAUTHORIZED", true);
-  if (!adminHasPermission(authContext, "inventory:write")) {
-    return errorResponse("Forbidden", 403, "FORBIDDEN", true);
+  const authorization = await authorizeAdminRequest(request, "inventory:write");
+  if (!authorization.allowed) {
+    return errorResponse(authorization.error, authorization.status, authorization.code, true);
   }
+  const authContext = authorization.context;
   if (!(await isFeatureEnabledUncached("inventory"))) return featureDisabledResponse("inventory");
 
   const parsed = await readBody(request);

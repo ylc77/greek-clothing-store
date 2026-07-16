@@ -7,42 +7,17 @@ import {
   getDeveloperSessionStatus,
   verifyDeveloperPassword,
 } from "@/lib/developer-auth";
+import {
+  AbuseProtectionUnavailableError,
+  checkSharedAuthLimit,
+  recordSharedAuthAttempt,
+} from "@/lib/abuse-protection";
 
 export const dynamic = "force-dynamic";
-
-const attempts = new Map<string, { count: number; resetAt: number }>();
-const attemptWindowMs = 15 * 60 * 1000;
-const maxAttemptsPerWindow = 10;
-
-function clientKey(request: NextRequest) {
-  return (request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "local")
-    .split(",")[0]
-    .trim();
-}
 
 function noStore(response: NextResponse) {
   response.headers.set("Cache-Control", "no-store, max-age=0");
   return response;
-}
-
-function recordFailedAttempt(key: string) {
-  const now = Date.now();
-  const current = attempts.get(key);
-  if (!current || current.resetAt <= now) {
-    attempts.set(key, { count: 1, resetAt: now + attemptWindowMs });
-    return;
-  }
-  attempts.set(key, { ...current, count: current.count + 1 });
-}
-
-function isRateLimited(key: string) {
-  const current = attempts.get(key);
-  if (!current) return false;
-  if (current.resetAt <= Date.now()) {
-    attempts.delete(key);
-    return false;
-  }
-  return current.count >= maxAttemptsPerWindow;
 }
 
 export async function GET(request: NextRequest) {
@@ -50,12 +25,32 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const key = clientKey(request);
-  if (isRateLimited(key)) {
-    return noStore(NextResponse.json({ error: "尝试次数过多，请稍后再试。" }, { status: 429 }));
+  try {
+    const limit = await checkSharedAuthLimit(request, "developer-password");
+    if (!limit.allowed) {
+      return noStore(NextResponse.json(
+        { error: "尝试次数过多，请稍后再试。", code: "AUTH_RATE_LIMITED", retryAfter: limit.retryAfter },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfter || 60) } },
+      ));
+    }
+  } catch (error) {
+    if (error instanceof AbuseProtectionUnavailableError) {
+      return noStore(NextResponse.json({ error: "登录安全控制不可用，开发者登录已阻断。", code: "AUTH_SECURITY_UNAVAILABLE" }, { status: 503 }));
+    }
+    throw error;
   }
 
-  const payload = await request.json().catch(() => null);
+  const rawPayload = await request.text();
+  if (Buffer.byteLength(rawPayload, "utf8") > 4_096) {
+    return noStore(NextResponse.json({ error: "Login request is too large.", code: "PAYLOAD_TOO_LARGE" }, { status: 413 }));
+  }
+  const payload = (() => {
+    try {
+      return JSON.parse(rawPayload);
+    } catch {
+      return null;
+    }
+  })();
   const verification = await verifyDeveloperPassword(payload?.password);
   if (verification === "uninitialized") {
     return noStore(NextResponse.json({
@@ -76,7 +71,20 @@ export async function POST(request: NextRequest) {
     }, { status: 503 }));
   }
   if (verification !== "ok") {
-    recordFailedAttempt(key);
+    try {
+      const limit = await recordSharedAuthAttempt(request, "developer-password", false);
+      if (!limit.allowed) {
+        return noStore(NextResponse.json(
+          { error: "尝试次数过多，请稍后再试。", code: "AUTH_RATE_LIMITED", retryAfter: limit.retryAfter },
+          { status: 429, headers: { "Retry-After": String(limit.retryAfter || 60) } },
+        ));
+      }
+    } catch (error) {
+      if (error instanceof AbuseProtectionUnavailableError) {
+        return noStore(NextResponse.json({ error: "登录安全控制不可用，开发者登录已阻断。", code: "AUTH_SECURITY_UNAVAILABLE" }, { status: 503 }));
+      }
+      throw error;
+    }
     return noStore(NextResponse.json({ error: "开发者密码不正确。" }, { status: 401 }));
   }
 
@@ -85,7 +93,14 @@ export async function POST(request: NextRequest) {
     return noStore(NextResponse.json({ error: "开发者访问配置不可用，请确认数据库 migration 已执行。" }, { status: 503 }));
   }
 
-  attempts.delete(key);
+  try {
+    await recordSharedAuthAttempt(request, "developer-password", true);
+  } catch (error) {
+    if (error instanceof AbuseProtectionUnavailableError) {
+      return noStore(NextResponse.json({ error: "登录安全控制不可用，开发者登录已阻断。", code: "AUTH_SECURITY_UNAVAILABLE" }, { status: 503 }));
+    }
+    throw error;
+  }
   const response = NextResponse.json({ initialized: true, mustRotate: false, sessionValid: true });
   response.cookies.set(developerSessionCookieName, token, {
     httpOnly: true,

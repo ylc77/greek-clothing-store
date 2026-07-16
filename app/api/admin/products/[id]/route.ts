@@ -1,8 +1,7 @@
 import { NextRequest } from "next/server";
 import {
   adminActorFromContext,
-  adminHasPermission,
-  getAdminAuthContextFromRequest,
+  authorizeAdminRequest,
 } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import { finalizeCommittedProductMutation } from "@/lib/product-cache-policy";
@@ -35,14 +34,10 @@ function productRpcRequired() {
 }
 
 async function authorizeWrite(request: NextRequest) {
-  const authContext = await getAdminAuthContextFromRequest(request);
-  if (!authContext) {
-    return { response: productErrorResponse("Unauthorized", 401, "UNAUTHORIZED", true) };
-  }
-  if (!adminHasPermission(authContext, "products:write")) {
-    return { response: productErrorResponse("Forbidden", 403, "FORBIDDEN", true) };
-  }
-  return { authContext };
+  const decision = await authorizeAdminRequest(request, "products:write");
+  return decision.allowed
+    ? { authContext: decision.context }
+    : { response: productErrorResponse(decision.error, decision.status, decision.code, true) };
 }
 
 function parseProductId(value: string) {

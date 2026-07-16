@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   adminActorFromContext,
-  getAdminAuthContextFromRequest,
+  authorizeAdminRequest,
 } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import { featureDisabledResponse, isFeatureEnabledUncached } from "@/lib/features";
@@ -130,8 +130,11 @@ async function loadVariant(
 }
 
 export async function POST(request: NextRequest) {
-  const authContext = await getAdminAuthContextFromRequest(request);
-  if (!authContext) return errorResponse("Unauthorized", 401, "UNAUTHORIZED", true);
+  const authorization = await authorizeAdminRequest(request, "inventory:write");
+  if (!authorization.allowed) {
+    return errorResponse(authorization.error, authorization.status, authorization.code, true);
+  }
+  const authContext = authorization.context;
   if (authContext.role !== "owner") return errorResponse("Forbidden", 403, "FORBIDDEN", true);
   if (!(await isFeatureEnabledUncached("quick_sell"))) return featureDisabledResponse("quick_sell");
 

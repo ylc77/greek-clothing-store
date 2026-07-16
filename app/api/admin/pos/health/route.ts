@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminHasPermission, getAdminAuthContextFromRequest } from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
@@ -19,10 +20,8 @@ function blocked(error: string, code: string, details?: unknown) {
 }
 
 export async function GET(request: NextRequest) {
-  const authContext = await getAdminAuthContextFromRequest(request);
-  if (!adminHasPermission(authContext, "pos:read")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authorization = await authorizeAdminRequest(request, "pos:read");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabled("pos_checkout"))) return featureDisabledResponse("pos_checkout");
 
   if (process.env.USE_POS_RPC !== "true") {

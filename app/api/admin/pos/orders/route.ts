@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 
@@ -32,10 +33,6 @@ type ItemRow = {
   name: string;
   quantity: number | string;
 };
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
 
 function unavailable() {
   return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 500 });
@@ -82,7 +79,8 @@ function includesQuery(value: unknown, q: string) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "pos:read"))) return unauthorized();
+  const authorization = await authorizeAdminRequest(request, "pos:read");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabled("pos_orders"))) return featureDisabledResponse("pos_orders");
 
   const supabase = getSupabaseAdminClient();
