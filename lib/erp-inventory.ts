@@ -1,6 +1,7 @@
 // This module must only run on the server. Never import it from client components.
 
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 import type { VariantProcurement } from "@/lib/types";
 
 type LegacyProductInventory = {
@@ -458,12 +459,16 @@ async function loadInventoryOverviewRows(): Promise<InventoryOverviewItem[]> {
 
   const [{ data: products, error: productsError }, { data: variants, error: variantsError }] =
     await Promise.all([
-      supabase
+      fetchAllSupabaseRows<Record<string, unknown>>((from, to) => supabase
         .from("products")
-        .select("id, sku, name_cn, name_en, name_gr, category, subcategory, price, stock, size_stock, is_active, supplier_id, supplier_style_code"),
-      supabase
+        .select("id, sku, name_cn, name_en, name_gr, category, subcategory, price, stock, size_stock, is_active, supplier_id, supplier_style_code")
+        .order("id")
+        .range(from, to)),
+      fetchAllSupabaseRows<Record<string, unknown>>((from, to) => supabase
         .from("product_variants")
-        .select("id, product_id, variant_sku, barcode, size, color, price, active, supplier_sku, cost_price, reorder_level"),
+        .select("id, product_id, variant_sku, barcode, size, color, price, active, supplier_sku, cost_price, reorder_level")
+        .order("id")
+        .range(from, to)),
     ]);
 
   if (productsError) {
@@ -481,22 +486,23 @@ async function loadInventoryOverviewRows(): Promise<InventoryOverviewItem[]> {
   const supplierIds = Array.from(new Set((products || []).map((product: { supplier_id?: string | null }) => product.supplier_id).filter(Boolean))) as string[];
   const supplierNames = new Map<string, string>();
   if (supplierIds.length > 0) {
-    const { data: suppliers, error: suppliersError } = await supabase
+    const { data: suppliers, error: suppliersError } = await fetchAllSupabaseRows<Record<string, unknown>>((from, to) => supabase
       .from("suppliers")
       .select("id, name")
-      .in("id", supplierIds);
+      .order("id")
+      .range(from, to));
     if (suppliersError) throw new Error(`Failed to load suppliers: ${suppliersError.message}`);
     for (const supplier of suppliers || []) supplierNames.set(String(supplier.id), String(supplier.name || ""));
   }
 
-  const variantIds = (variants || []).map((variant: { id: string }) => variant.id);
   const balancesByVariant = new Map<string, Record<string, unknown>>();
-  if (variantIds.length > 0) {
-    const { data: balances, error: balancesError } = await supabase
+  if ((variants || []).length > 0) {
+    const { data: balances, error: balancesError } = await fetchAllSupabaseRows<Record<string, unknown>>((from, to) => supabase
       .from("inventory_balances")
       .select("id, variant_id, location_id, quantity_on_hand, quantity_reserved")
       .eq("location_id", location.id)
-      .in("variant_id", variantIds);
+      .order("id")
+      .range(from, to));
 
     if (balancesError) {
       throw new Error(`Failed to load inventory balances: ${balancesError.message}`);
@@ -756,9 +762,11 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
     productsById.set(row.product_id, list);
   });
 
-  const { data: products, error: productsError } = await supabase
+  const { data: products, error: productsError } = await fetchAllSupabaseRows<Record<string, unknown>>((from, to) => supabase
     .from("products")
-    .select("id, sku, size_stock");
+    .select("id, sku, size_stock")
+    .order("id")
+    .range(from, to));
 
   if (productsError) {
     throw new Error(`Failed to load products for reconciliation: ${productsError.message}`);
@@ -791,22 +799,25 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
   }
 
   const mainLocation = await getMainInventoryLocation();
-  const { data: allVariants, error: allVariantsError } = await supabase
+  const { data: allVariants, error: allVariantsError } = await fetchAllSupabaseRows<Record<string, unknown>>((from, to) => supabase
     .from("product_variants")
-    .select("id, product_id, variant_sku");
+    .select("id, product_id, variant_sku")
+    .order("id")
+    .range(from, to));
 
   if (allVariantsError) {
     throw new Error(`Failed to load variants for reconciliation: ${allVariantsError.message}`);
   }
 
-  const allVariantIds = (allVariants || []).map((variant: { id: string }) => variant.id);
+  const allVariantIds = (allVariants || []).map((variant) => String(variant.id || ""));
   const variantIdsWithMainBalance = new Set<string>();
   if (allVariantIds.length > 0) {
-    const { data: mainBalances, error: mainBalancesError } = await supabase
+    const { data: mainBalances, error: mainBalancesError } = await fetchAllSupabaseRows<Record<string, unknown>>((from, to) => supabase
       .from("inventory_balances")
       .select("variant_id")
       .eq("location_id", mainLocation.id)
-      .in("variant_id", allVariantIds);
+      .order("id")
+      .range(from, to));
 
     if (mainBalancesError) {
       throw new Error(`Failed to load MAIN_STORE balances for reconciliation: ${mainBalancesError.message}`);
@@ -839,9 +850,11 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
     .filter(([, count]) => count > 1)
     .map(([barcode, duplicate_count]) => ({ barcode, duplicate_count }));
 
-  const { data: balances, error: balancesError } = await supabase
+  const { data: balances, error: balancesError } = await fetchAllSupabaseRows<Record<string, unknown>>((from, to) => supabase
     .from("inventory_balances")
-    .select("id, variant_id, location_id, quantity_on_hand, quantity_reserved");
+    .select("id, variant_id, location_id, quantity_on_hand, quantity_reserved")
+    .order("id")
+    .range(from, to));
 
   if (balancesError) {
     throw new Error(`Failed to load balances for reconciliation: ${balancesError.message}`);
@@ -874,10 +887,12 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
       quantity_reserved: Number(balance.quantity_reserved),
     }));
 
-  const { data: movements, error: movementsError } = await supabase
+  const { data: movements, error: movementsError } = await fetchAllSupabaseRows<Record<string, unknown>>((from, to) => supabase
     .from("stock_movements")
     .select("id, variant_id, location_id, movement_type, quantity_before, quantity_after, quantity_delta, reason, source_type, idempotency_key, created_at")
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+    .range(from, to));
 
   if (movementsError) {
     throw new Error(`Failed to load movements for reconciliation: ${movementsError.message}`);
@@ -956,9 +971,11 @@ export async function getInventoryReconciliation(): Promise<InventoryReconciliat
     }
   }
 
-  const { data: operations, error: operationsError } = await supabase
+  const { data: operations, error: operationsError } = await fetchAllSupabaseRows<Record<string, unknown>>((from, to) => supabase
     .from("inventory_operations")
-    .select("operation_key, operation_type, variant_id, location_id, quantity_before, quantity_after, quantity_delta");
+    .select("id, operation_key, operation_type, variant_id, location_id, quantity_before, quantity_after, quantity_delta")
+    .order("id")
+    .range(from, to));
   if (operationsError) {
     throw new Error(`Failed to load inventory operation keys for reconciliation: ${operationsError.message}`);
   }

@@ -52,6 +52,7 @@ const parser = read("lib/csv-parser.ts");
 const operationIds = read("lib/csv-operation-id.ts");
 const exportRoute = read("app/api/admin/backup/route.ts");
 const csvOutput = read("lib/csv-output.ts");
+const erpInventory = read("lib/erp-inventory.ts");
 const dashboard = read("components/admin-dashboard.tsx");
 const envExample = read(".env.example");
 const migrationSource = read(`supabase/migrations/${csvMigration}`);
@@ -139,6 +140,26 @@ assert.match(csvOutput, /neutralizeSpreadsheetFormula/, "CSV output must neutral
 assert.match(csvOutput, /CSV_EXPORT_COUNT_MISMATCH/, "CSV output must reject partial pagination");
 assert.match(csvOutput, /["']Cache-Control["']\s*:\s*["']no-store["']/, "CSV downloads must be non-cacheable");
 
+const overviewStart = erpInventory.indexOf("async function loadInventoryOverviewRows");
+const overviewEnd = erpInventory.indexOf("export async function getInventoryOverview", overviewStart);
+const reconciliationStart = erpInventory.indexOf("export async function getInventoryReconciliation()", overviewEnd);
+const reconciliationEnd = erpInventory.indexOf("export async function syncProductVariantActiveFromLegacy", reconciliationStart);
+assert.ok(overviewStart >= 0 && overviewEnd > overviewStart, "inventory overview source boundary is missing");
+assert.ok(reconciliationStart >= 0 && reconciliationEnd > reconciliationStart, "inventory reconciliation source boundary is missing");
+const overviewSource = erpInventory.slice(overviewStart, overviewEnd);
+const reconciliationSource = erpInventory.slice(reconciliationStart, reconciliationEnd);
+assert.match(overviewSource, /fetchAllSupabaseRows/, "inventory overview must paginate capacity fixtures");
+assert.doesNotMatch(overviewSource, /\.in\(\s*["']variant_id["']/, "inventory overview must not build an oversized Variant ID URL");
+assert.ok(
+  (reconciliationSource.match(/fetchAllSupabaseRows/g) || []).length >= 6,
+  "inventory reconciliation must paginate every full-table ledger query",
+);
+assert.doesNotMatch(
+  reconciliationSource,
+  /\.in\(\s*["']variant_id["']\s*,\s*allVariantIds\s*\)/,
+  "inventory reconciliation must not build an oversized Variant ID URL",
+);
+
 assert.match(envExample, /^USE_PRODUCT_RPC=true$/m, ".env.example must keep product RPC enabled");
 assert.match(envExample, /^USE_CSV_IMPORT_RPC=true$/m, ".env.example must enable transactional CSV import by default");
 assert.match(migrationSource, /app_private\.product_import_authoritative_variants/, "CSV set_inventory must use the authoritative Variant merge helper");
@@ -157,5 +178,5 @@ if (actualSnapshot !== normalizedExpectedSnapshot) {
 }
 
 console.log(
-  `CSV static gates passed: ${csvMigration} is ordered, client-init is exact, import writes are RPC-only, and export safety is enforced.`,
+  `CSV static gates passed: ${csvMigration} is ordered, client-init is exact, import writes are RPC-only, and export/reconciliation capacity safety is enforced.`,
 );
