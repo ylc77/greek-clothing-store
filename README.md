@@ -80,7 +80,10 @@ NEXT_PUBLIC_SITE_URL=https://你的域名.vercel.app
 NEXT_PUBLIC_SUPABASE_URL=https://你的项目.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=你的-publishable-或-anon-key
 SUPABASE_SERVICE_ROLE_KEY=你的-service-role-key
-ADMIN_PASSWORD=设置一个强密码
+# 可选的维护者紧急 owner 密码；如启用，至少 20 位且每客户唯一
+ADMIN_PASSWORD=
+# 每个客户独立生成至少 32 个随机字符，仅服务端使用
+AUTH_RATE_LIMIT_SECRET=
 USE_POS_RPC=true
 USE_PRODUCT_RPC=true
 USE_CSV_IMPORT_RPC=true
@@ -110,7 +113,7 @@ CSV 会先完成整份文件预检，再建立可恢复的持久 Job，并按行
 
 “快速售出”是仅限 owner 的快速扣库存工具，适合店主临时登记一件已售商品；它不会创建 POS 订单、订单明细或付款记录，也不能代替正常 POS 扫码结账。店员应使用 POS 扫码流程，不能直接调用快速售出 API。
 
-`ADMIN_PASSWORD` 是仅供维护者使用的服务器端紧急 owner 密码，每个客户建议设置不同值，不要告诉购买系统的商家。商家日常使用通过 Supabase Auth 创建的员工账号，不使用这个环境变量密码。
+`ADMIN_PASSWORD` 是可选的服务器端紧急 owner 密码。启用时必须至少 20 位、同时包含字母/数字/符号，并且每个客户、每种紧急角色都使用不同值；弱密码或重复密码会让应用启动失败。不要把该密码交给购买系统的商家，商家日常使用通过 Supabase Auth 创建的员工账号。`AUTH_RATE_LIMIT_SECRET` 用于跨 Vercel 实例的登录防爆破标识，每个客户必须独立随机生成，不能使用 `NEXT_PUBLIC_` 前缀。
 
 店铺设置、法律设置和客户版本功能使用刚才 bootstrap 生成的独立开发者密码。Vercel 环境变量中不配置该明文；数据库只保存不可逆 scrypt hash 和会话失效版本。
 
@@ -121,6 +124,13 @@ CSV 会先完成整份文件预检，再建立可恢复的持久 Job，并按行
 ```env
 DEEPSEEK_API_KEY=
 DEEPSEEK_TRANSLATION_MODEL=deepseek-chat
+AI_IP_REQUESTS_PER_MINUTE=10
+AI_SESSION_REQUESTS_PER_MINUTE=12
+AI_STORE_REQUESTS_PER_MINUTE=60
+AI_GLOBAL_REQUESTS_PER_MINUTE=100
+AI_DAILY_REQUEST_BUDGET=500
+AI_GLOBAL_CONCURRENCY=3
+AI_PROVIDER_TIMEOUT_MS=15000
 OPENAI_API_KEY=
 OPENAI_IMAGE_MODEL=gpt-image-2
 # 只有经过审查的外部 HTTPS 图片源才填写，多个 exact origin 用逗号分隔；禁止通配符。
@@ -128,6 +138,10 @@ SERVER_IMAGE_FETCH_ALLOWED_ORIGINS=
 ```
 
 AI 模特图默认使用最多两张真实商品参考图，通过 GPT Image 2 生成 `1024×1536` 竖版、`medium` 品质、WebP 85% 压缩的图片。服务端只允许当前客户 Supabase Storage 或 `SERVER_IMAGE_FETCH_ALLOWED_ORIGINS` 中的精确 HTTPS origin；会重新校验 DNS、重定向、私网/metadata 地址、响应类型、下载体积、magic bytes、像素和尺寸，并重新编码为 WebP。不符合标准的来源或结果不会写入商品多图。
+
+前台 AI 导购在用户明确勾选隐私同意前不会发送身体测量数据。同意后也只发送当前回答所需的身高、体重、胸围、腰围、臀围等最小字段；这些数据不写入数据库、浏览器存储或应用日志。AI 商品上下文由服务端从公开商品字段重新读取，浏览器不能伪造采购价、供应商信息或任意推荐 SKU。共享数据库限流同时约束 IP、浏览器会话、店铺、全局分钟请求、每日预算和并发数；上游超时、异常或输出过大时安全失败，不会无限占用费用。
+
+`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`AUTH_RATE_LIMIT_SECRET` 和 `SUPABASE_SERVICE_ROLE_KEY` 都只能配置在 Vercel 服务端环境变量中，绝不能使用 `NEXT_PUBLIC_` 前缀、写入 Git、截图、聊天记录或前端代码。
 
 6. 点击 **Deploy**。
 7. 部署完成后打开正式网址。

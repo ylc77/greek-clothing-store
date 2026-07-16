@@ -26,11 +26,11 @@
 | 5B-02 | 5B | P2 | 已修复并通过 Preview | 商品、店铺和分类图片原先先写 Storage 再分步更新数据库引用；故障注入证实数据库更新失败会留下孤儿，反向删除失败会留下悬空引用。 | 本地故障注入和 Preview 替换/删除验证均通过；旧对象被清除，引用与对象一致，最终 operation/orphan/Storage 残留均为 0。 |
 | 5B-03 | 5B | P2 | 已修复并通过 CI | AI 模特图服务端对浏览器提供的 URL 直接 `fetch`，只做 URL 字符串检查，没有 DNS、重定向、私网和流式体积边界。 | exact-origin、Storage 路径、IPv4/IPv6、重定向、DNS rebinding、DNS timeout、metadata/private/link-local、Content-Type/Length/stream 自动化测试全部通过。 |
 | 5B-04 | 5B | P2 | 已修复并通过 Preview | 原永久删除只检查部分库存流水，先删数据库再 best-effort 删除对象；订单、库存操作、导入引用、非零余额和失败恢复均未完整保护。 | Preview 证明安全无历史商品与对象可完整删除，有库存历史商品返回阻断；本地故障注入证明 Storage 失败可恢复、可对账。 |
-| 5C-01 | 5C | P2 | 已确认 | 公共 AI 限流位于进程内 `Map`，多实例和冷启动可绕过；缺少共享分钟/日预算及全局并发边界。 | 多实例与冷启动测试、IP/会话/店铺/全局维度、日预算和并发门禁全部通过。 |
-| 5C-02 | 5C | P2 | 待验证假设 | AI 上游超时、响应大小、Prompt Injection、允许 SKU 二次校验及身体数据最小化需要完整动态验证。 | 超时、异常 JSON、超长输入、并发、PII 日志扫描和允许 SKU 校验测试通过。 |
-| 5C-03 | 5C | P2 | 已确认 | 环境管理员密码认证仍以环境变量为主，需要 timing-safe 比较、弱密码/重复角色密码启动检查和共享限流。 | 多实例爆破测试、弱密码启动失败、重复密码失败、timing-safe 单元测试通过。 |
-| 5C-04 | 5C | P2 | 待验证假设 | 员工 Supabase Token 刷新、`onAuthStateChange` 和真正 `signOut()` 生命周期尚未形成完整浏览器回归。 | token 刷新/过期/登出后 UI 与 API 同时失效；所有旧 token/cookie 无写权限。 |
-| 5C-05 | 5C | P3 | 已确认 | Issue #3：部分“已认证但无权”响应使用 401，语义不一致但当前能够拒绝写入。 | 未认证 401、无权 403、Feature 关闭 403/`FEATURE_DISABLED`、能力不可用 503。 |
+| 5C-01 | 5C | P2 | 已修复并通过本地验证 | 公共 AI 限流位于进程内 `Map`，多实例和冷启动可绕过；缺少共享分钟/日预算及全局并发边界。 | 数据库共享 IP/会话/店铺/全局分钟、每日预算、并发 lease 和重放测试通过；进程重启后状态仍生效。 |
+| 5C-02 | 5C | P2 | 已修复并通过本地验证 | 动态验证确认原 AI 路径缺少完整的上游超时、输出大小、允许 SKU 二次约束和身体数据同意边界。 | 超时、异常 JSON、超长输入/输出、并发、PII 日志扫描、服务端公开商品投影和允许 SKU 测试通过。 |
+| 5C-03 | 5C | P2 | 已修复并通过本地验证 | 环境管理员密码认证仍以环境变量为主，需要 timing-safe 比较、弱密码/重复角色密码启动检查和共享限流。 | 多实例爆破、重启后限流、弱密码启动失败、重复角色密码失败、timing-safe 单元测试通过。 |
+| 5C-04 | 5C | P2 | 本地已验证，Preview 待验收 | 员工 Supabase Token 刷新、`onAuthStateChange` 和真正 `signOut()` 生命周期尚未形成完整浏览器回归。 | 本地集成和组件生命周期测试证明刷新后会话恢复、Token 更新、登出后 UI/API 同时失效；真实 Preview 浏览器复验仍是合并门禁。 |
+| 5C-05 | 5C | P3 | 已修复并通过本地验证 | Issue #3：部分“已认证但无权”响应使用 401，语义不一致但当前能够拒绝写入。 | Route 权限矩阵证明未认证 401、无权 403、Feature 关闭 403/`FEATURE_DISABLED`、能力不可用 503，且拒绝请求无业务写入。 |
 | 6A-01 | 6A | P2 | 已确认 | 线上 `feed.xml` 当前 HTTP 200 但 `<products>` 为空，Daily site monitor #15 因“Feed 没有商品”失败；Feed 仍需官方规则和容量验收。 | 隔离 Preview 生成真实可售 Variant Feed；XML/1001+ 商品/官方 Validator 通过；监控全绿。 |
 | 6A-02 | 6A | P2 | 已确认 | 当前语言主要依赖查询参数和 hydration 前脚本设置 `lang`，原始 HTML 的 canonical/hreflang/语言 URL 不完整。 | `/el/...`、`/en/...` 或等价稳定 URL 的原始 HTML lang/canonical/hreflang 与 sitemap 一致。 |
 | 6A-03 | 6A | P2 | 待验证假设 | Legal Settings 的 GR/EN 独立内容、发布完整性、Cookie/AI 身体数据/第三方服务说明可能不足。 | 双语必填发布测试、Privacy/Cookie/Terms 页面原始 HTML 与第三方启用状态一致。 |
