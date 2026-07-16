@@ -9,7 +9,7 @@
 |---|---|---|---|
 | 风险矩阵/看板 | `codex/hardening-p2-public-data-boundary` | 完成 | 风险均有证据等级、完成证据和停止条件。 |
 | 5A 公开数据边界 | `codex/hardening-p2-public-data-boundary` | 已完成并合并 | PR #6、CI、隔离 Preview、清理、签核、阶段标签和 merge commit `7d943ea` 均完成。 |
-| 5B 图片与 Storage | `codex/hardening-p2-storage-image-security` | 本地专项门禁通过，正在全量回归 | MIME/magic bytes、Sharp、资源限制、Storage 补偿、SSRF、永久删除和只读 orphan 对账已通过；待全量回归、Draft PR、CI、隔离 Preview、清理签核和合并。 |
+| 5B 图片与 Storage | `codex/hardening-p2-storage-image-security` | 本地全量门禁完成 | MIME/magic bytes、Sharp、资源限制、Storage 补偿、SSRF、永久删除、orphan 对账以及 P1/4A/4B/5A 回归均通过；待 Draft PR、CI、隔离 Preview、清理签核和合并。 |
 | 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 等待 5B 合并 | 共享限流/预算/并发/超时/PII、登录防爆破、Token 生命周期和状态码矩阵通过。 |
 | 6A 渠道/SEO/法律 | `codex/hardening-p2-channels-seo-legal` | 等待 5C 合并 | Skroutz Validator、EL/EN 原始 HTML、法律双语、安全头和可访问性通过。 |
 | 6B 运营/报表/打印 | `codex/hardening-p2-operations-reporting-print` | 等待 6A 合并 | Athens 时区、对账、审计、容量、打印、备份恢复与硬件状态结论完成。 |
@@ -51,7 +51,7 @@
 - [x] 永久删除 RPC 保护订单、库存流水、库存操作、商品操作、导入记录、Variant 余额和旧库存投影。
 - [x] 只读 orphan/missing/pending reconciliation；显式 project ref 的恢复 CLI。
 - [x] 专项 unit、Route/Storage 集成、故障注入、数据库权限和三条安装路径测试。
-- [ ] 全量 P1/4A/4B 回归、build、secret scan、database advisors。
+- [x] 全量 P1/4A/4B/5A 回归、build、secret scan、database advisors。
 - [ ] Draft PR、CI、Preview、清理、签核、标签和 merge commit。
 
 ## 发布版本判定占位
