@@ -14,6 +14,12 @@ export type ConstrainedAiOutput = {
   sizeAdvice: string | null;
 };
 
+export type BoundedAiCustomerPayload = {
+  payload: string;
+  allowedSkus: Set<string>;
+  productCount: number;
+};
+
 export class AiSecurityError extends Error {
   readonly code:
     | "PAYLOAD_TOO_LARGE"
@@ -50,6 +56,104 @@ const measurementRanges: Record<string, [number, number]> = {
 
 function plainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function boundedProductText(value: unknown, maximum: number) {
+  return typeof value === "string" ? value.trim().slice(0, maximum) : "";
+}
+
+function boundedProductList(value: unknown, maximumItems: number, maximumLength: number) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim().slice(0, maximumLength))
+    .filter(Boolean)
+    .slice(0, maximumItems);
+}
+
+function boundedSizeStock(value: unknown) {
+  if (!plainObject(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .slice(0, 40)
+      .map(([label, quantity]) => [
+        label.trim().slice(0, 50),
+        Math.max(0, Math.min(1_000_000, Math.trunc(Number(quantity) || 0))),
+      ] as const)
+      .filter(([label]) => Boolean(label)),
+  );
+}
+
+function boundedSizeChart(value: unknown) {
+  if (!plainObject(value) && !Array.isArray(value)) return {};
+  try {
+    const serialized = JSON.stringify(value);
+    return Buffer.byteLength(serialized, "utf8") <= 4_096 ? JSON.parse(serialized) : {};
+  } catch {
+    return {};
+  }
+}
+
+function modelProduct(value: unknown) {
+  if (!plainObject(value)) return null;
+  const sku = boundedProductText(value.sku, 120);
+  if (!sku) return null;
+  const materialVerified = value.material_verified === true;
+  return {
+    sku,
+    name_en: boundedProductText(value.name_en, 180),
+    name_gr: boundedProductText(value.name_gr, 180),
+    category: boundedProductText(value.category, 80),
+    subcategory: boundedProductText(value.subcategory, 80),
+    price: Math.max(0, Math.min(1_000_000, Number(value.price) || 0)),
+    stock: Math.max(0, Math.min(1_000_000, Math.trunc(Number(value.stock) || 0))),
+    size_system: boundedProductText(value.size_system, 40),
+    all_sizes: boundedProductList(value.all_sizes, 40, 50),
+    available_sizes: boundedProductList(value.available_sizes, 40, 50),
+    sold_out_sizes: boundedProductList(value.sold_out_sizes, 40, 50),
+    size_stock: boundedSizeStock(value.size_stock),
+    size_chart: boundedSizeChart(value.size_chart),
+    fit_type: boundedProductText(value.fit_type, 80),
+    material: materialVerified ? boundedProductText(value.material, 300) : "",
+    material_verified: materialVerified,
+    brand: boundedProductText(value.brand, 120),
+    color: boundedProductText(value.color, 120),
+    style_tags: boundedProductList(value.style_tags, 20, 80),
+  };
+}
+
+export function createBoundedAiCustomerPayload(options: {
+  message: string;
+  language: "en" | "el";
+  measurements?: AiMeasurements;
+  currentProduct?: unknown;
+  products: unknown[];
+}, maximumBytes = 60_000): BoundedAiCustomerPayload {
+  const current = modelProduct(options.currentProduct);
+  const candidates = [
+    ...(current ? [current] : []),
+    ...options.products.map(modelProduct).filter((product): product is NonNullable<ReturnType<typeof modelProduct>> => Boolean(product)),
+  ];
+  const products: NonNullable<ReturnType<typeof modelProduct>>[] = [];
+  const seen = new Set<string>();
+  const base = {
+    message: options.message,
+    language: options.language,
+    measurements: options.measurements,
+    CURRENT_PRODUCT: current || undefined,
+  };
+  for (const product of candidates) {
+    if (seen.has(product.sku)) continue;
+    const tentative = JSON.stringify({ ...base, ACTUAL_PRODUCTS: [...products, product] });
+    if (Buffer.byteLength(tentative, "utf8") > maximumBytes) continue;
+    products.push(product);
+    seen.add(product.sku);
+  }
+  const payload = JSON.stringify({ ...base, ACTUAL_PRODUCTS: products });
+  if (Buffer.byteLength(payload, "utf8") > maximumBytes) {
+    throw new AiSecurityError("PAYLOAD_TOO_LARGE", "AI provider payload is too large.");
+  }
+  return { payload, allowedSkus: seen, productCount: products.length };
 }
 
 export function parseAiAssistantRequest(raw: string): AiAssistantInput {
@@ -145,4 +249,38 @@ export function parseAndConstrainAiModelOutput(raw: string, allowedSkus: Readonl
     if (products.length === 3) break;
   }
   return { reply, products, sizeAdvice };
+}
+
+export async function readLimitedResponseText(response: Response, maximumBytes = 65_536) {
+  const declared = Number(response.headers.get("content-length") || 0);
+  if (Number.isFinite(declared) && declared > maximumBytes) {
+    throw new AiSecurityError("UPSTREAM_RESPONSE_TOO_LARGE", "AI provider response exceeded the maximum size.");
+  }
+  if (!response.body) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > maximumBytes) {
+      throw new AiSecurityError("UPSTREAM_RESPONSE_TOO_LARGE", "AI provider response exceeded the maximum size.");
+    }
+    return text;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maximumBytes) {
+        await reader.cancel();
+        throw new AiSecurityError("UPSTREAM_RESPONSE_TOO_LARGE", "AI provider response exceeded the maximum size.");
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } finally {
+    reader.releaseLock();
+  }
 }

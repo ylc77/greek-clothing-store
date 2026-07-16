@@ -3,6 +3,19 @@ import { getSupabaseClient } from "@/lib/supabase";
 import { AI_PRODUCT_SELECT } from "@/lib/product-data-boundary";
 import { getBusinessSettings } from "@/lib/settings";
 import { isFeatureEnabled } from "@/lib/features";
+import { randomUUID } from "node:crypto";
+import {
+  AiSecurityError,
+  createBoundedAiCustomerPayload,
+  parseAiAssistantRequest,
+  parseAndConstrainAiModelOutput,
+  readLimitedResponseText,
+} from "@/lib/ai-security";
+import {
+  AbuseProtectionUnavailableError,
+  beginSharedAiRequest,
+  finishSharedAiRequest,
+} from "@/lib/abuse-protection";
 
 const SYSTEM_PROMPT = `You are a customer-facing shopping assistant for a clothing store in Greece.
 
@@ -176,16 +189,61 @@ function buildProductSummary(products: Record<string, unknown>[]) {
   });
 }
 
-const rateLimitMap = new Map<string, number[]>();
-const RATE_LIMIT = 10;
+const aiSessionCookieName = "clothing_ai_session";
+const aiSessionLifetimeSeconds = 24 * 60 * 60;
 
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const timestamps = (rateLimitMap.get(ip) || []).filter((t) => now - t < 60000);
-  if (timestamps.length >= RATE_LIMIT) return false;
-  timestamps.push(now);
-  rateLimitMap.set(ip, timestamps.slice(-20));
-  return true;
+function aiSessionId(request: NextRequest) {
+  const existing = request.cookies.get(aiSessionCookieName)?.value || "";
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(existing)
+    ? existing
+    : randomUUID();
+}
+
+function withAiSession(response: NextResponse, sessionId: string) {
+  response.cookies.set(aiSessionCookieName, sessionId, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/api/ai-shop-assistant",
+    maxAge: aiSessionLifetimeSeconds,
+  });
+  response.headers.set("Cache-Control", "no-store, max-age=0");
+  return response;
+}
+
+function localizedUnavailable(language: "en" | "el") {
+  return language === "el"
+    ? "Ο AI βοηθός δεν είναι προσωρινά διαθέσιμος. Παρακαλούμε δοκιμάστε ξανά αργότερα."
+    : "AI assistant is temporarily unavailable. Please try again later.";
+}
+
+class AiProviderError extends Error {
+  readonly code: "AI_PROVIDER_FAILED" | "AI_PROVIDER_TIMEOUT";
+
+  constructor(code: "AI_PROVIDER_FAILED" | "AI_PROVIDER_TIMEOUT") {
+    super(code);
+    this.code = code;
+  }
+}
+
+function aiProviderUrl() {
+  const testUrl = String(process.env.AI_TEST_PROVIDER_URL || "").trim();
+  if (!testUrl) return "https://api.deepseek.com/v1/chat/completions";
+  const parsed = new URL(testUrl);
+  if (
+    process.env.AI_TEST_MODE !== "true"
+    || !["127.0.0.1", "localhost", "::1"].includes(parsed.hostname)
+    || !["http:", "https:"].includes(parsed.protocol)
+  ) throw new AbuseProtectionUnavailableError("AI_TEST_PROVIDER_URL is allowed only for an explicit loopback test environment.");
+  return parsed.toString();
+}
+
+function aiProviderTimeoutMs() {
+  const value = Number(process.env.AI_PROVIDER_TIMEOUT_MS || 15_000);
+  if (!Number.isInteger(value) || value < 1_000 || value > 30_000) {
+    throw new AbuseProtectionUnavailableError("AI_PROVIDER_TIMEOUT_MS is outside its safe range.");
+  }
+  return value;
 }
 
 const localReplies: Record<string, Record<string, string>> = {
@@ -227,51 +285,51 @@ function getLocalReply(message: string, lang: string): string | null {
 
 export async function POST(request: NextRequest) {
   if (!(await isFeatureEnabled("ai_tools"))) {
-    return NextResponse.json({ error: "AI assistant is not enabled." }, { status: 404 });
+    return NextResponse.json({ error: "AI assistant is not enabled.", code: "FEATURE_DISABLED" }, { status: 403 });
   }
-  const body = await request.json().catch(() => ({}));
-  const message = String(body.message || "").trim();
-  const language = body.language === "en" ? "en" : "el";
-  const measurements = body.measurements || {};
-  const requestedProductSku = String(body.productContext?.sku || "").trim();
-
-  if (!message) {
-    return NextResponse.json({ error: "Message is required" }, { status: 400 });
+  const sessionId = aiSessionId(request);
+  let input;
+  try {
+    input = parseAiAssistantRequest(await request.text());
+  } catch (error) {
+    const securityError = error instanceof AiSecurityError ? error : null;
+    const status = securityError?.code === "PAYLOAD_TOO_LARGE" ? 413
+      : securityError?.code === "CONSENT_REQUIRED" ? 403
+        : 400;
+    return withAiSession(NextResponse.json({
+      error: securityError?.message || "AI request is invalid.",
+      code: securityError?.code || "INVALID_INPUT",
+    }, { status }), sessionId);
   }
-
-  const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
-  if (!checkRateLimit(ip)) {
-    return NextResponse.json({
-      reply: language === "el"
-        ? "Στέλνετε μηνύματα πολύ γρήγορα. Παρακαλούμε δοκιμάστε ξανά σε λίγο."
-        : "You are sending messages too quickly. Please try again later.",
-    });
-  }
+  const { message, language, measurements, productSku: requestedProductSku } = input;
 
   const localReply = getLocalReply(message, language);
   if (localReply) {
-    return NextResponse.json({ reply: localReply, products: [] });
+    return withAiSession(NextResponse.json({ reply: localReply, products: [] }), sessionId);
   }
 
   const apiKey = (process.env.DEEPSEEK_API_KEY || "").trim();
   if (!apiKey) {
-    return NextResponse.json({
-      reply: language === "el"
-        ? "Ο AI βοηθός δεν είναι προσωρινά διαθέσιμος. Παρακαλούμε επικοινωνήστε μαζί μας στο WhatsApp."
-        : "AI assistant is temporarily unavailable. Please contact us on WhatsApp.",
-    });
+    return withAiSession(NextResponse.json({
+      reply: localizedUnavailable(language),
+      code: "AI_PROVIDER_UNAVAILABLE",
+    }, { status: 503 }), sessionId);
   }
 
   const supabase = getSupabaseClient();
-  const { data } = supabase
-    ? await (supabase as any)
-        .from("products")
-        .select(AI_PRODUCT_SELECT)
-        .neq("is_active", false)
-        .gte("stock", 0)
-        .order("created_at", { ascending: false })
-        .limit(20)
-    : { data: null };
+  if (!supabase) {
+    return withAiSession(NextResponse.json({ reply: localizedUnavailable(language), code: "AI_DATA_UNAVAILABLE" }, { status: 503 }), sessionId);
+  }
+  const { data, error: productsError } = await (supabase as any)
+    .from("products")
+    .select(AI_PRODUCT_SELECT)
+    .neq("is_active", false)
+    .gte("stock", 0)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (productsError) {
+    return withAiSession(NextResponse.json({ reply: localizedUnavailable(language), code: "AI_DATA_UNAVAILABLE" }, { status: 503 }), sessionId);
+  }
 
   let allProducts = (data || []) as Record<string, unknown>[];
   let currentProduct = requestedProductSku
@@ -280,13 +338,16 @@ export async function POST(request: NextRequest) {
 
   // Product context from the browser is only a SKU hint. Reload the authoritative
   // product record so customer-edited request data cannot invent sizes or stock.
-  if (supabase && requestedProductSku && !currentProduct) {
-    const { data: requestedProduct } = await (supabase as any)
+  if (requestedProductSku && !currentProduct) {
+    const { data: requestedProduct, error: requestedProductError } = await (supabase as any)
       .from("products")
       .select(AI_PRODUCT_SELECT)
       .eq("sku", requestedProductSku)
       .neq("is_active", false)
       .maybeSingle();
+    if (requestedProductError) {
+      return withAiSession(NextResponse.json({ reply: localizedUnavailable(language), code: "AI_DATA_UNAVAILABLE" }, { status: 503 }), sessionId);
+    }
     currentProduct = requestedProduct as Record<string, unknown> | null;
     if (currentProduct) allProducts = [currentProduct, ...allProducts];
   }
@@ -310,58 +371,132 @@ export async function POST(request: NextRequest) {
   };
   const context = `${SYSTEM_PROMPT}\n${langPrompt}\nStore: ${storeName}\nSTORE_INFO: ${JSON.stringify(storeInfo)}`;
 
+  const requestId = randomUUID();
+  let boundedPayload;
   try {
-    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        temperature: 0.3,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: context },
-          {
-            role: "user",
-            content: JSON.stringify({
-              message,
-              language,
-              measurements: Object.keys(measurements).length > 0 ? measurements : undefined,
-              CURRENT_PRODUCT: currentProductSummary,
-              ACTUAL_PRODUCTS: productSummary,
-            }),
-          },
-        ],
-      }),
+    boundedPayload = createBoundedAiCustomerPayload({
+      message,
+      language,
+      measurements,
+      currentProduct: currentProductSummary,
+      products: productSummary,
     });
+  } catch (error) {
+    const securityError = error instanceof AiSecurityError ? error : null;
+    return withAiSession(NextResponse.json({
+      reply: localizedUnavailable(language),
+      code: securityError?.code || "AI_SECURITY_UNAVAILABLE",
+      products: [],
+    }, { status: securityError?.code === "PAYLOAD_TOO_LARGE" ? 413 : 503 }), sessionId);
+  }
+  const customerPayload = boundedPayload.payload;
+  let leaseStarted = false;
+  let leaseFinished = false;
+  let outputCharacters = 0;
+  try {
+    const limit = await beginSharedAiRequest({
+      request,
+      requestId,
+      sessionId,
+      inputCharacters: customerPayload.length,
+    });
+    if (!limit.allowed) {
+      return withAiSession(NextResponse.json({
+        reply: language === "el"
+          ? "Έχει επιτευχθεί προσωρινά το όριο χρήσης του AI. Παρακαλούμε δοκιμάστε ξανά αργότερα."
+          : "The AI usage limit has been reached temporarily. Please try again later.",
+        code: limit.code,
+        retryAfter: limit.retryAfter,
+        products: [],
+      }, {
+        status: 429,
+        headers: { "Retry-After": String(limit.retryAfter || 1) },
+      }), sessionId);
+    }
+    leaseStarted = true;
 
-    const result = await response.json();
-    const content = result?.choices?.[0]?.message?.content || "{}";
-    const parsed = JSON.parse(content);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), aiProviderTimeoutMs());
+    let response: Response;
+    try {
+      response = await fetch(aiProviderUrl(), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          temperature: 0.3,
+          max_tokens: 500,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: context },
+            { role: "user", content: customerPayload },
+          ],
+        }),
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") throw new AiProviderError("AI_PROVIDER_TIMEOUT");
+      throw new AiProviderError("AI_PROVIDER_FAILED");
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (!response.ok) throw new AiProviderError("AI_PROVIDER_FAILED");
 
-    const enriched = (parsed.products || [])
-      .map((rec: { sku: string; reason: string }) => {
-        const product = allProducts.find((p) => p.sku === rec.sku);
-        return product
-          ? {
-              ...buildProductSummary([product])[0],
-              reason: rec.reason,
-              url: `/product/${encodeURIComponent(rec.sku)}`,
-            }
-          : null;
+    const rawProviderResponse = await readLimitedResponseText(response);
+    outputCharacters = rawProviderResponse.length;
+    let providerEnvelope: unknown;
+    try {
+      providerEnvelope = JSON.parse(rawProviderResponse);
+    } catch {
+      throw new AiSecurityError("INVALID_UPSTREAM_RESPONSE", "AI provider response envelope was not valid JSON.");
+    }
+    const content = (providerEnvelope as { choices?: Array<{ message?: { content?: unknown } }> })
+      ?.choices?.[0]?.message?.content;
+    if (typeof content !== "string") {
+      throw new AiSecurityError("INVALID_UPSTREAM_RESPONSE", "AI provider response omitted JSON content.");
+    }
+    const parsed = parseAndConstrainAiModelOutput(content, boundedPayload.allowedSkus);
+
+    const enriched = parsed.products
+      .map((recommendation) => {
+        const product = allProducts.find((candidate) => candidate.sku === recommendation.sku);
+        return product ? {
+          ...buildProductSummary([product])[0],
+          reason: recommendation.reason,
+          url: `/product/${encodeURIComponent(recommendation.sku)}`,
+        } : null;
       })
       .filter(Boolean);
 
-    return NextResponse.json({
-      reply: parsed.reply || "I couldn't process that. Please try again.",
+    await finishSharedAiRequest(requestId, "completed", outputCharacters);
+    leaseFinished = true;
+    return withAiSession(NextResponse.json({
+      reply: parsed.reply,
       products: enriched,
-      sizeAdvice: parsed.sizeAdvice || null,
-    });
-  } catch {
-    return NextResponse.json({
-      reply: language === "el"
-        ? "Ο AI βοηθός δεν είναι προσωρινά διαθέσιμος. Παρακαλούμε επικοινωνήστε μαζί μας στο WhatsApp."
-        : "AI assistant is temporarily unavailable. Please contact us on WhatsApp.",
+      sizeAdvice: parsed.sizeAdvice,
+    }), sessionId);
+  } catch (error) {
+    if (leaseStarted && !leaseFinished) {
+      try {
+        await finishSharedAiRequest(requestId, "failed", outputCharacters);
+      } catch {
+        return withAiSession(NextResponse.json({
+          reply: localizedUnavailable(language),
+          code: "AI_SECURITY_UNAVAILABLE",
+          products: [],
+        }, { status: 503 }), sessionId);
+      }
+    }
+    const timeout = error instanceof AiProviderError && error.code === "AI_PROVIDER_TIMEOUT";
+    const upstream = error instanceof AiProviderError || error instanceof AiSecurityError;
+    const unavailable = error instanceof AbuseProtectionUnavailableError;
+    return withAiSession(NextResponse.json({
+      reply: localizedUnavailable(language),
+      code: timeout ? "AI_PROVIDER_TIMEOUT"
+        : unavailable ? "AI_SECURITY_UNAVAILABLE"
+          : upstream ? "AI_PROVIDER_INVALID_RESPONSE"
+            : "AI_PROVIDER_FAILED",
       products: [],
-    });
+    }, { status: timeout ? 504 : unavailable ? 503 : 502 }), sessionId);
   }
 }

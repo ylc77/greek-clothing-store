@@ -45,6 +45,7 @@ export function ChatAssistant({
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", text: t.aiGreeting }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [privacyConsent, setPrivacyConsent] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const previousLanguageRef = useRef(language);
   const [expanded, setExpanded] = useState(() => {
@@ -81,13 +82,13 @@ export function ChatAssistant({
 
   async function sendMessage(msg?: string) {
     const text = msg || input.trim();
-    if (!text || loading) return;
+    if (!text || loading || !privacyConsent) return;
     if (!msg) setInput("");
     setMessages((prev) => [...prev, { role: "user", text }]);
     setLoading(true);
 
     try {
-      const body: Record<string, unknown> = { message: text, language };
+      const body: Record<string, unknown> = { message: text, language, privacyConsent: true };
       if (productContext) body.productContext = productContext;
 
       const response = await fetch("/api/ai-shop-assistant", {
@@ -219,7 +220,7 @@ export function ChatAssistant({
       {quickBtns.length > 0 ? (
         <div className="flex shrink-0 gap-1.5 overflow-x-auto px-3 pb-1 pt-2 [-ms-overflow-style:none] [scrollbar-width:none] sm:flex-wrap sm:px-4 [&::-webkit-scrollbar]:hidden">
           {quickBtns.map((q, i) => (
-            <button key={i} className="shrink-0 whitespace-nowrap rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100 sm:py-1" onClick={() => sendMessage(q.prompt)} type="button">
+            <button key={i} className="shrink-0 whitespace-nowrap rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-40 sm:py-1" disabled={!privacyConsent || loading} onClick={() => sendMessage(q.prompt)} type="button">
               {q.label}
             </button>
           ))}
@@ -266,6 +267,14 @@ export function ChatAssistant({
       </div>
 
       <div className="shrink-0 border-t border-stone-100 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:py-3">
+        <label className="mb-2 flex items-start gap-2 rounded-xl bg-stone-50 px-3 py-2 text-[10px] leading-4 text-stone-500">
+          <input className="mt-0.5" checked={privacyConsent} onChange={(event) => setPrivacyConsent(event.target.checked)} type="checkbox" />
+          <span>
+            {language === "el"
+              ? "Συμφωνώ να σταλεί αυτό το μήνυμα στον πάροχο AI. Θα δώσω μόνο τις απαραίτητες μετρήσεις και όχι ευαίσθητα προσωπικά δεδομένα."
+              : "I agree that this message may be sent to the AI provider. I will include only necessary measurements and no sensitive personal data."}
+          </span>
+        </label>
         <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); sendMessage(); }}>
           <input
             className="min-h-11 flex-1 rounded-full border border-stone-200 px-4 py-2 text-base outline-none focus:border-violet-400 sm:text-sm"
@@ -274,7 +283,7 @@ export function ChatAssistant({
             onChange={(event) => setInput(event.target.value)}
             disabled={loading}
           />
-          <button className="min-h-11 shrink-0 rounded-full bg-violet-600 px-4 py-2 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50" disabled={loading || !input.trim()} type="submit">→</button>
+          <button className="min-h-11 shrink-0 rounded-full bg-violet-600 px-4 py-2 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50" disabled={loading || !input.trim() || !privacyConsent} type="submit">→</button>
         </form>
         <p className="mt-1 text-center text-[10px] leading-4 text-stone-400">
           By submitting, you agree to our{" "}
