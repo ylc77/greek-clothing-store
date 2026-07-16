@@ -28,15 +28,19 @@
 
 | 门禁 | 结果 |
 |---|---|
+| `npm ci` / `npm audit` | 通过；0 vulnerabilities。 |
 | 5C 单元测试 | 15/15 通过。 |
 | 5C 集成测试 | 10/10 通过，包含 consent、服务端商品上下文、代理 IP、多实例/重启限流、预算/并发、超时/异常/超长输出、Developer 登录、角色状态码、Token 生命周期和 PII 日志。 |
 | 数据库安全门禁 | RLS、grants、RPC search path、共享计数、预算、并发、重放和容量清理全部通过。 |
 | 安装路径 | 4/4：migration 空库、client-init 空库、唯一旧邮箱升级、大小写重复旧邮箱安全停止。 |
 | 既有业务回归 | POS 18/18、库存 22/22、Developer 12/12、Feature 5/5、商品 39/39、CSV DB 21/21、CSV Route 7/7、公开数据 7/7、Storage 8/8。 |
+| 全量总计 | 113/113 单元测试、149/149 集成测试、22/22 安装路径断言通过。 |
 | `npm run typecheck` / `npm run build` | 通过。 |
 | `git diff --check` | 通过（仅 Git 的 LF/CRLF 工作区提示）。 |
 | 本地空库 reset | 18 份 migration 顺序执行通过。 |
-| 测试数据清理 | 专项和既有集成测试均完成零残留断言。 |
+| Database advisors | 0 项。 |
+| Secret scan | 通过；扫描 326 个源码、migration、文档、测试、快照和浏览器 Bundle 文件。 |
+| 测试数据清理 | 最终空库核对 21 个业务、认证、AI 限流、恢复和 Storage 对象集合，残留均为 0。 |
 
 ## 安全运行约束
 

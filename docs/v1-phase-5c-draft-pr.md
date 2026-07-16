@@ -30,9 +30,9 @@ Phase 5C replaces process-local AI and password-abuse controls with shared datab
 
 ## Local verification
 
-- 15/15 Phase 5C unit tests
-- 10/10 Phase 5C multi-instance/integration tests
-- 4/4 Phase 5C clean/client-init/legacy install fixtures
+- 113/113 total unit tests, including 15/15 Phase 5C tests
+- 149/149 total integration tests, including 10/10 Phase 5C multi-instance tests
+- 22/22 total install-path assertions, including 4/4 Phase 5C clean/client-init/legacy fixtures
 - RLS, grants, search path, budget, concurrency, replay, and cleanup gates
 - POS, inventory, developer, feature, product, CSV, public-data, and Storage regressions
 - local 18-migration reset
