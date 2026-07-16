@@ -1,6 +1,6 @@
 # v1.0 阶段看板
 
-基线：`49aeb93afd1ea08e41c692af9acbddb6b169a10a`（2026-07-16 的最新 `origin/master`）  
+基线：`49aeb93afd1ea08e41c692af9acbddb6b169a10a`（2026-07-16 的最新 `origin/master`）
 总原则：每阶段独立分支、独立 PR，测试先行，本地 → CI → 隔离 Preview → 清理 → 单人维护者签核 → merge commit。
 
 ## 当前状态
