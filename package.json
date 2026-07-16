@@ -38,6 +38,8 @@
     "check:storage-static": "node scripts/verify-storage-static-gates.mjs",
     "check:storage-db-security": "node scripts/verify-storage-database-security.mjs",
     "test:storage-security": "npm run test:storage-unit && npm run check:storage-static && npm run check:storage-db-security && npm run test:storage-integration",
+    "storage:reconcile": "node --experimental-strip-types scripts/storage-maintenance.ts reconcile",
+    "storage:recover": "node --experimental-strip-types scripts/storage-maintenance.ts recover",
     "test:developer-credentials": "node --experimental-strip-types --test tests/developer-credentials.test.ts",
     "test:developer-integration": "node scripts/developer-credential-integration-test.mjs",
     "test:developer-install-paths": "node scripts/run-powershell.mjs scripts/verify-developer-credential-install-paths.ps1",

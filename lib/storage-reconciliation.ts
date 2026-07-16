@@ -14,7 +14,6 @@ export type StorageReconciliationReport = {
 function normalizedSet(values: Iterable<string> | undefined) {
   return new Set(Array.from(values || []).map((value) => value.trim()).filter(Boolean));
 }
-
 export function reconcileStorageInventory(input: StorageReconciliationInput): StorageReconciliationReport {
   const objects = normalizedSet(input.objectPaths);
   const references = normalizedSet(input.referencedPaths);
@@ -26,4 +25,3 @@ export function reconcileStorageInventory(input: StorageReconciliationInput): St
     mutated: false,
   };
 }
-
