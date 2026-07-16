@@ -3,8 +3,6 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   categories,
-  isProductCategory,
-  isProductSubcategory,
   subcategoriesByCategory,
   subcategoryList,
   type ProductCategory,
@@ -29,6 +27,13 @@ import {
   ProductOperationStateError,
   createProductOperationFingerprint,
 } from "@/lib/product-operation-id";
+import {
+  CsvImportOperationIdStore,
+  CsvImportOperationStateError,
+  createCsvImportFingerprint,
+} from "@/lib/csv-operation-id";
+import type { ProductCsvImportMode, ProductCsvInventoryMode } from "@/lib/csv-import";
+import { PRODUCT_CSV_FIELDS, serializeCsv } from "@/lib/csv-output";
 
 /* ── Types ───────────────────────────────────────────────── */
 type AdminProductVariant = {
@@ -55,11 +60,23 @@ type AdminProduct = ProductFormData & {
   variant_procurement?: Record<string, VariantProcurement>;
   variants?: AdminProductVariant[];
 };
-type ApiResult = { rowNumber?: number; fileName?: string; sku: string; ok: boolean; message: string; imageUrl?: string; translated?: boolean; translateError?: string };
+type ApiResult = {
+  rowNumber?: number;
+  fileName?: string;
+  sku: string;
+  ok: boolean;
+  message: string;
+  imageUrl?: string;
+  translated?: boolean;
+  translateError?: string;
+  statusLabel?: string;
+  statusTone?: "success" | "error" | "pending" | "info";
+};
 class AdminApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly operationSafeToDiscard: boolean;
+  readonly jobId: string | null;
 
   constructor(message: string, status: number, data: Record<string, unknown>) {
     super(message);
@@ -67,9 +84,85 @@ class AdminApiError extends Error {
     this.status = status;
     this.code = typeof data.code === "string" ? data.code : "REQUEST_FAILED";
     this.operationSafeToDiscard = data.operationSafeToDiscard === true;
+    this.jobId = typeof data.jobId === "string" ? data.jobId : null;
   }
 }
-type CsvRow = Record<string, string | number>;
+type CsvPreviewRow = {
+  rowNumber: number;
+  sku: string;
+  normalizedSku: string;
+  metadata: Record<string, unknown>;
+  variants: Array<Record<string, unknown>>;
+};
+type CsvPreview = {
+  filename: string;
+  fileHash: string;
+  byteLength: number;
+  importMode: ProductCsvImportMode;
+  inventoryMode: ProductCsvInventoryMode;
+  headers: string[];
+  rowCount: number;
+  rows: CsvPreviewRow[];
+  previewTruncated: boolean;
+};
+type CsvImportJob = {
+  id: string;
+  client_request_id: string;
+  filename: string;
+  import_mode: ProductCsvImportMode;
+  inventory_mode: ProductCsvInventoryMode;
+  status: "pending" | "running" | "completed" | "partial" | "failed";
+  total_rows: number;
+  pending_rows: number;
+  succeeded_rows: number;
+  failed_rows: number;
+  created_at?: string;
+  completed_at?: string | null;
+};
+type CsvImportJobRow = {
+  row_number: number;
+  normalized_sku: string;
+  status: "pending" | "processing" | "succeeded" | "failed";
+  attempt_count: number;
+  retryable: boolean;
+  product_id: string | number | null;
+  error_code: string | null;
+  error_summary: string | null;
+  result_snapshot: Record<string, unknown>;
+};
+type CsvImportJobView = {
+  job: CsvImportJob;
+  rows: CsvImportJobRow[];
+  totalRows: number;
+  offset: number;
+  limit: number;
+  processed?: number;
+};
+type CsvTranslationResult = {
+  rowNumber: number;
+  translated: boolean;
+  translateError?: string;
+  name_en: string;
+  description_en: string;
+  name_gr: string;
+  description_gr: string;
+};
+const csvImportModeLabels: Record<ProductCsvImportMode, string> = {
+  create_only: "仅新增",
+  update_existing: "仅更新已有商品",
+  upsert: "新增或更新",
+};
+const csvInventoryModeLabels: Record<ProductCsvInventoryMode, string> = {
+  metadata_only: "只导入商品资料",
+  set_inventory: "按 CSV 设置库存",
+};
+const csvJobStatusLabels: Record<CsvImportJob["status"], string> = {
+  pending: "待处理",
+  running: "处理中",
+  completed: "已完成",
+  partial: "部分成功",
+  failed: "失败",
+};
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
@@ -332,56 +425,8 @@ type QuickAddState = {
 
 /* ── Constants ───────────────────────────────────────────── */
 const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_en: "", description_cn: "", description_gr: "", description_en: "", category: "men", subcategory: "tshirts", price: 0, stock: 0, sizes: "", size_system: "letter", image_url: "", image_urls: "", brand: "", supplier_id: "", supplier_style_code: "", barcode: "", ean: "", mpn: "", vat: 24, color: "", skroutz_url: "", is_active: true, fit_type: "regular", material: "", fiber_composition_gr: "", fiber_composition_en: "", care_instructions_gr: "", care_instructions_en: "", country_of_origin: "", manufacturer_name: "", manufacturer_contact: "", eu_responsible_person: "", product_safety_notes_gr: "", product_safety_notes_en: "", ai_keywords: "", style_tags: "", size_chart: "", material_verified: false };
-const csvFields = ["sku","name_cn","description_cn","name_en","description_en","name_gr","description_gr","category","subcategory","price","stock","sizes","size_system","size_stock","variant_supplier_skus","variant_cost_prices","variant_reorder_levels","image_url","image_urls","brand","supplier_id","supplier_style_code","barcode","ean","mpn","vat","color","skroutz_url","is_active","material","fiber_composition_gr","fiber_composition_en","care_instructions_gr","care_instructions_en","country_of_origin","manufacturer_name","manufacturer_contact","eu_responsible_person","product_safety_notes_gr","product_safety_notes_en","fit_type","ai_keywords","style_tags","size_chart","material_verified"];
-const quickCsvFields = ["sku","name_cn","description_cn","category","subcategory","price","stock","sizes","brand","color","image_url","image_urls","is_active"];
-const csvFieldLabels: Record<string, string> = {
-  sku: "SKU（必填，唯一商品编号）",
-  name_cn: "中文名称（必填，可用于自动翻译）",
-  description_cn: "中文描述（必填，可用于自动翻译）",
-  name_en: "英文名称（选填，可由 AI 生成）",
-  description_en: "英文描述（选填，可由 AI 生成）",
-  name_gr: "希腊语名称（选填，可由 AI 生成）",
-  description_gr: "希腊语描述（选填，可由 AI 生成）",
-  category: "一级分类（必填：men/women/shoes/bags/luggage/hats/jewelry/other）",
-  subcategory: "二级分类（必填，按后台分类填写）",
-  price: "价格（必填，数字，不加 €）",
-  stock: "总库存（必填，数字）",
-  sizes: "尺码（选填，如 S,M,L）",
-  size_system: "尺码体系（选填：letter/eu_women_numeric/eu_men_numeric/eu_shoes/one_size/custom）",
-  size_stock: "尺码库存（选填，如 S:2,M:3,L:1）",
-  variant_supplier_skus: "各尺码供货商 SKU（选填，如 S:SUP-01-S,M:SUP-01-M）",
-  variant_cost_prices: "各尺码进货价（选填，如 S:8.5,M:8.5）",
-  variant_reorder_levels: "各尺码补货提醒值（选填，如 S:2,M:2）",
-  image_url: "主图 URL（选填，可后续上传图片自动绑定）",
-  image_urls: "多图 URL（选填，多个用逗号或换行）",
-  brand: "品牌（选填）",
-  supplier_id: "供货商 ID（选填）",
-  supplier_style_code: "供货商款号（选填）",
-  barcode: "店内 Code 128 条码（选填，不等于 EAN）",
-  ean: "真实 EAN（Skroutz 商品使用，选填）",
-  mpn: "制造商 MPN（Skroutz 商品使用，选填）",
-  vat: "VAT（选填，默认 24）",
-  color: "颜色（选填，建议填写）",
-  skroutz_url: "Skroutz 链接（选填，没有可留空）",
-  is_active: "是否上架（TRUE/FALSE）",
-  material: "材质（选填）",
-  fiber_composition_gr: "希腊语纤维成分（选填）",
-  fiber_composition_en: "英语纤维成分（选填）",
-  care_instructions_gr: "希腊语护理说明（选填）",
-  care_instructions_en: "英语护理说明（选填）",
-  country_of_origin: "原产国（选填）",
-  manufacturer_name: "制造商名称（选填）",
-  manufacturer_contact: "制造商联系方式（选填）",
-  eu_responsible_person: "EU 责任方（选填）",
-  product_safety_notes_gr: "希腊语安全说明（选填）",
-  product_safety_notes_en: "英语安全说明（选填）",
-  fit_type: "版型（选填：regular/slim/loose）",
-  ai_keywords: "AI 关键词（选填）",
-  style_tags: "风格标签（选填）",
-  size_chart: "尺码表 JSON（选填，高级字段）",
-  material_verified: "材质已人工确认（TRUE/FALSE）",
-};
-const csvHeaderAliases = new Map(Object.entries(csvFieldLabels).flatMap(([field, label]) => [[field, field], [label, field]]));
+const csvFields = [...PRODUCT_CSV_FIELDS];
+const quickCsvFields = ["sku","name_cn","description_cn","category","subcategory","price","stock","sizes","size_system","size_stock","brand","color","image_url","image_urls","is_active"];
 const fallbackCategoryNamesCn: Record<string, string> = {
   women: "女装", men: "男装", shoes: "鞋子", bags: "包包", luggage: "行李箱", hats: "帽子", jewelry: "首饰", other: "其他",
 };
@@ -607,50 +652,44 @@ const stockOperationOptions: Array<{
 ];
 
 /* ── Utilities ───────────────────────────────────────────── */
-function parseCsv(text: string) {
-  const rows: string[][] = []; let row: string[] = []; let cell = ""; let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i]; const n = text[i + 1];
-    if (c === '"' && quoted && n === '"') { cell += '"'; i++; continue; }
-    if (c === '"') { quoted = !quoted; continue; }
-    if (c === "," && !quoted) { row.push(cell.trim()); cell = ""; continue; }
-    if ((c === "\n" || c === "\r") && !quoted) { if (c === "\r" && n === "\n") i++; row.push(cell.trim()); if (row.some(Boolean)) rows.push(row); row = []; cell = ""; continue; }
-    cell += c;
-  }
-  row.push(cell.trim()); if (row.some(Boolean)) rows.push(row);
-  const headers = rows.shift()?.map((h) => csvHeaderAliases.get(h.trim()) || h.trim()) || [];
-  const labels = headers.map((field) => csvFieldLabels[field] || field);
-  let dataStartRow = 2;
-  if (rows[0]?.every((value, index) => value.trim() === labels[index])) { rows.shift(); dataStartRow = 3; }
-  return rows.map((values, i) => { const out: CsvRow = { rowNumber: i + dataStartRow }; headers.forEach((h, hi) => { out[h] = values[hi] || ""; }); return out; });
-}
-function csvCell(v: string) { return `"${v.replace(/"/g, '""')}"`; }
-function downloadCsv(filename: string, fields: string[], sample: string[]) {
-  const labels = fields.map((field) => csvFieldLabels[field] || field);
-  const csv = `${fields.join(",")}\n${labels.map(csvCell).join(",")}\n${sample.map(csvCell).join(",")}\n`;
+function downloadCsv(filename: string, fields: string[], sample: Array<string | number | boolean>) {
+  const csv = serializeCsv(fields, [sample]);
   const b = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
   const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
 }
 function downloadCsvTemplate() {
-  const sample = ["SKU-001","Chinese product name","Chinese product description","English product name","English product description","Greek product name","Greek product description","women","dresses","29.90","10","S,M,L","S:2,M:3,L:1","","","Store Brand","","24","black","","true","cotton","regular","dress summer elegant","casual summer","{\"S\":{\"bust\":\"84-88\"},\"M\":{\"bust\":\"88-92\"}}","true"];
+  const example: Partial<Record<(typeof PRODUCT_CSV_FIELDS)[number], string | number | boolean>> = {
+    sku: "SKU-001",
+    name_cn: "示例连衣裙",
+    description_cn: "示例商品说明",
+    name_en: "Example dress",
+    description_en: "Example product description",
+    name_gr: "Παράδειγμα φορέματος",
+    description_gr: "Παράδειγμα περιγραφής προϊόντος",
+    category: "women",
+    subcategory: "dresses",
+    price: 29.9,
+    stock: 6,
+    sizes: "S,M,L",
+    size_system: "letter",
+    size_stock: "S:2,M:3,L:1",
+    brand: "Store Brand",
+    vat: 24,
+    color: "black",
+    is_active: true,
+    material: "cotton",
+    fit_type: "regular",
+    ai_keywords: '["dress","summer","elegant"]',
+    style_tags: '["casual","summer"]',
+    size_chart: '{"S":{"bust":"84-88"},"M":{"bust":"88-92"}}',
+    material_verified: true,
+  };
+  const sample = csvFields.map(field => example[field] ?? "");
   downloadCsv("products-template.csv", csvFields, sample);
 }
 function downloadQuickCsvTemplate() {
-  const sample = ["SKU-001","Chinese product name","Chinese product description","women","dresses","29.90","10","S,M,L","Store Brand","black","","","true"];
+  const sample = ["SKU-001","示例商品","示例商品说明","women","dresses","29.90","10","S,M,L","letter","S:3,M:4,L:3","Store Brand","black","","","true"];
   downloadCsv("products-quick-template.csv", quickCsvFields, sample);
-}
-function validatePreviewRow(row: CsvRow) {
-  const errors: string[] = [];
-  const sku = String(row.sku || "").trim(); const cat = String(row.category || "").trim(); const sub = String(row.subcategory || "").trim();
-  const price = Number(String(row.price || "").replace(",", ".")); const stock = Number(String(row.stock || "").replace(",", "."));
-  const vat = row.vat === undefined || row.vat === "" ? 24 : Number(String(row.vat).replace(",", "."));
-  if (!sku) errors.push("SKU 必填");
-  if (!isProductCategory(cat)) errors.push("一级分类无效或为空");
-  if (isProductCategory(cat) && sub && !isProductSubcategory(cat, sub)) errors.push("二级分类无效");
-  if (!Number.isFinite(price)) errors.push("价格必须是数字，不能带 € 或文字");
-  if (!Number.isFinite(stock)) errors.push("库存必须是数字");
-  if (!Number.isFinite(vat)) errors.push("VAT 必须是数字");
-  return errors;
 }
 function cleanImageUrls(raw: string, mainUrl: string): string {
   const urls = raw.split(/[\r?\n,]+/).map(u => u.trim()).filter(u => u && u.length > 5 && u.startsWith("http"));
@@ -786,7 +825,18 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const [aiQuickCopyLoading, setAiQuickCopyLoading] = useState(false);
   const [showSizeChart, setShowSizeChart] = useState(false);
   const editingIdRef = useRef<string | null>(null); editingIdRef.current = editingId;
-  const [csvRows, setCsvRows] = useState<CsvRow[]>([]); const [csvResults, setCsvResults] = useState<ApiResult[]>([]);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvImportMode, setCsvImportMode] = useState<ProductCsvImportMode>("create_only");
+  const [csvInventoryMode, setCsvInventoryMode] = useState<ProductCsvInventoryMode>("metadata_only");
+  const [csvPreview, setCsvPreview] = useState<CsvPreview | null>(null);
+  const [csvPreviewError, setCsvPreviewError] = useState("");
+  const [csvTranslations, setCsvTranslations] = useState<CsvTranslationResult[]>([]);
+  const [csvTranslationFailures, setCsvTranslationFailures] = useState(0);
+  const [csvJobView, setCsvJobView] = useState<CsvImportJobView | null>(null);
+  const [csvHasPendingOperation, setCsvHasPendingOperation] = useState(false);
+  const [csvBusy, setCsvBusy] = useState<"preview" | "translate" | "submit" | "process" | "retry" | "recover" | "download" | null>(null);
+  const csvFileInputRef = useRef<HTMLInputElement | null>(null);
+  const csvPreviewSequenceRef = useRef(0);
   const [imageResults, setImageResults] = useState<ApiResult[]>([]); const [selectedImageSku, setSelectedImageSku] = useState("");
   const [tab, setTab] = useState<Tab>("stockLookup");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -849,6 +899,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const inventoryOperationIdsRef = useRef<InventoryOperationIdStore | null>(null);
   const quickSellOperationIdsRef = useRef<InventoryOperationIdStore | null>(null);
   const productOperationIdsRef = useRef<ProductOperationIdStore | null>(null);
+  const csvOperationIdsRef = useRef<CsvImportOperationIdStore | null>(null);
   const [labelSearch, setLabelSearch] = useState("");
   const [labelCategory, setLabelCategory] = useState("");
   const [labelSubcategory, setLabelSubcategory] = useState("");
@@ -1028,10 +1079,65 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   }, [tab, visibleCommonTabKeys, visibleAdvancedTabKeys]);
 
   const csvSummary = useMemo(() => {
-    const valid = csvRows.filter(r => validatePreviewRow(r).length === 0).length;
-    const needs = csvRows.filter(r => { if (validatePreviewRow(r).length > 0) return false; const nc = String(r.name_cn||"").trim(), dc = String(r.description_cn||"").trim(); if (!nc && !dc) return false; const ne = String(r.name_en||"").trim(), de = String(r.description_en||"").trim(), ng = String(r.name_gr||"").trim(), dg = String(r.description_gr||"").trim(); return !(ne && de && ng && dg); }).length;
-    return { valid, invalid: csvRows.length - valid, needsTranslation: needs };
-  }, [csvRows]);
+    if (!csvPreview) return { valid: 0, invalid: 0, needsTranslation: 0 };
+    const translationsByRow = new Map(csvTranslations.map(result => [result.rowNumber, result]));
+    const needsTranslation = csvPreview.rows.filter(row => {
+      const translated = translationsByRow.get(row.rowNumber);
+      const sourceName = String(row.metadata.name_cn || "").trim();
+      const sourceDescription = String(row.metadata.description_cn || "").trim();
+      if (!sourceName && !sourceDescription) return false;
+      return !String(translated?.translated ? translated.name_en : row.metadata.name_en || "").trim()
+        || !String(translated?.translated ? translated.description_en : row.metadata.description_en || "").trim()
+        || !String(translated?.translated ? translated.name_gr : row.metadata.name_gr || "").trim()
+        || !String(translated?.translated ? translated.description_gr : row.metadata.description_gr || "").trim();
+    }).length;
+    return { valid: csvPreview.rowCount, invalid: 0, needsTranslation };
+  }, [csvPreview, csvTranslations]);
+  const csvPreviewResults = useMemo<ApiResult[]>(() => {
+    const translationsByRow = new Map(csvTranslations.map(result => [result.rowNumber, result]));
+    return (csvPreview?.rows || []).map(row => {
+      const translation = translationsByRow.get(row.rowNumber);
+      const finalNameEn = String(translation?.translated ? translation.name_en : row.metadata.name_en || "").trim();
+      const finalDescriptionEn = String(translation?.translated ? translation.description_en : row.metadata.description_en || "").trim();
+      const finalNameGr = String(translation?.translated ? translation.name_gr : row.metadata.name_gr || "").trim();
+      const finalDescriptionGr = String(translation?.translated ? translation.description_gr : row.metadata.description_gr || "").trim();
+      return {
+        rowNumber: row.rowNumber,
+        sku: row.sku,
+        ok: true,
+        translated: translation?.translated === true,
+        translateError: translation?.translateError,
+        statusLabel: translation?.translated ? "最终译文已冻结" : translation?.translateError ? "翻译失败，保留原值" : "已校验",
+        statusTone: "info" as const,
+        message: [
+          `${String(row.metadata.category || "-")} / ${String(row.metadata.subcategory || "-")}，${row.variants.length} 个 Variant`,
+          `英文：${finalNameEn || "未填写"}${finalDescriptionEn ? `｜${finalDescriptionEn}` : ""}`,
+          `希腊语：${finalNameGr || "未填写"}${finalDescriptionGr ? `｜${finalDescriptionGr}` : ""}`,
+        ].join("；"),
+      };
+    });
+  }, [csvPreview, csvTranslations]);
+  const csvJobResults = useMemo<ApiResult[]>(() => (csvJobView?.rows || []).map(row => {
+    const statusTone: ApiResult["statusTone"] = row.status === "succeeded"
+      ? "success"
+      : row.status === "failed" ? "error" : "pending";
+    const statusLabel = row.status === "succeeded"
+      ? "成功"
+      : row.status === "failed" ? "失败" : row.status === "processing" ? "处理中" : "待处理";
+    const action = typeof row.result_snapshot?.action === "string" ? `，${row.result_snapshot.action}` : "";
+    return {
+      rowNumber: row.row_number,
+      sku: row.normalized_sku,
+      ok: row.status === "succeeded",
+      statusLabel,
+      statusTone,
+      message: row.error_summary || `${statusLabel}${action}${row.attempt_count > 0 ? `，尝试 ${row.attempt_count} 次` : ""}`,
+    };
+  }), [csvJobView]);
+  const csvRetryableFailures = useMemo(
+    () => (csvJobView?.rows || []).filter(row => row.status === "failed" && row.retryable).length,
+    [csvJobView],
+  );
 
   // Stats
   const stats = useMemo(() => {
@@ -1273,8 +1379,8 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
         product.image_url || "",
         issues.map(issue => issue.label).join("；"),
       ]);
-    const csv = [headers, ...rows].map(row => row.map(csvCell).join(",")).join("\n");
-    const blob = new Blob(["\uFEFF", csv, "\n"], { type: "text/csv;charset=utf-8" });
+    const csv = serializeCsv(headers, rows);
+    const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -1328,8 +1434,8 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       inventoryCsvStatus(item, lowStockThreshold),
       item.stock_matches_legacy && item.size_stock_matches_legacy ? "OK" : "MISMATCH",
     ]);
-    const csv = [headers, ...rows].map(row => row.map(csvCell).join(",")).join("\n");
-    const blob = new Blob(["\uFEFF", csv, "\n"], { type: "text/csv;charset=utf-8" });
+    const csv = serializeCsv(headers, rows);
+    const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -1401,6 +1507,124 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     }
     return productOperationIdsRef.current;
   }
+
+  function csvOperationIds() {
+    if (!csvOperationIdsRef.current) {
+      csvOperationIdsRef.current = new CsvImportOperationIdStore("products-csv", window.sessionStorage);
+    }
+    return csvOperationIdsRef.current;
+  }
+
+  function csvTranslationPayload() {
+    return csvTranslations
+      .filter(result => result.translated)
+      .map(({ rowNumber, name_en, description_en, name_gr, description_gr }) => ({
+        rowNumber,
+        name_en,
+        description_en,
+        name_gr,
+        description_gr,
+      }));
+  }
+
+  function csvOperationFingerprint() {
+    if (!csvPreview) throw new Error("请先完成服务端 CSV 预览。");
+    return createCsvImportFingerprint({
+      fileHash: csvPreview.fileHash,
+      importMode: csvImportMode,
+      inventoryMode: csvInventoryMode,
+      translations: csvTranslationPayload(),
+    });
+  }
+
+  async function csvFetchJson(path: string, init: RequestInit = {}) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 45_000);
+    try {
+      const response = await fetch(path, {
+        ...init,
+        headers: { ...adminAuthHeaders(), ...(init.headers || {}) },
+        signal: controller.signal,
+      });
+      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!response.ok) {
+        throw new AdminApiError(
+          typeof data.error === "string" ? data.error : "CSV 请求失败",
+          response.status,
+          data,
+        );
+      }
+      return data;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new Error("CSV 请求超时；如果已经提交导入，请使用原业务 ID 恢复 Job 状态。");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  function clearCompletedCsvForm(operationId?: string) {
+    if (operationId) csvOperationIds().complete(operationId);
+    setCsvHasPendingOperation(false);
+    setCsvFile(null);
+    setCsvPreview(null);
+    setCsvTranslations([]);
+    setCsvTranslationFailures(0);
+    setCsvPreviewError("");
+    if (csvFileInputRef.current) csvFileInputRef.current.value = "";
+  }
+
+  function acceptCsvJobView(data: Record<string, unknown>, operationId?: string) {
+    const view = data as unknown as CsvImportJobView;
+    if (!view.job || typeof view.job.id !== "string") {
+      throw new Error("CSV Job 返回结果不可识别，请使用原业务 ID 恢复后再继续。");
+    }
+    if (operationId) csvOperationIds().attachJob(operationId, view.job.id);
+    setCsvJobView(view);
+    if (view.job.status === "completed" && view.job.failed_rows === 0) {
+      clearCompletedCsvForm(operationId || view.job.client_request_id);
+    }
+    return view;
+  }
+
+  async function recoverPendingCsvImport(showToast = false) {
+    let pending: ReturnType<CsvImportOperationIdStore["getPending"]>;
+    try {
+      pending = csvOperationIds().getPending();
+    } catch (error) {
+      setCsvPreviewError(error instanceof Error ? error.message : "CSV 业务状态无法读取，请先人工核对。 ");
+      return;
+    }
+    if (!pending) return;
+    if (!pending.attempted) {
+      csvOperationIds().cancel();
+      setCsvHasPendingOperation(false);
+      return;
+    }
+    setCsvHasPendingOperation(true);
+    setCsvBusy("recover");
+    setCsvPreviewError("");
+    try {
+      const path = pending.jobId
+        ? `/api/admin/products/import/jobs/${encodeURIComponent(pending.jobId)}`
+        : `/api/admin/products/import?operationId=${encodeURIComponent(pending.operationId)}`;
+      const data = await csvFetchJson(path);
+      const view = acceptCsvJobView(data, pending.operationId);
+      if (showToast) toast(`已恢复 CSV Job：成功 ${view.job.succeeded_rows}，失败 ${view.job.failed_rows}，待处理 ${view.job.pending_rows}`);
+    } catch (error) {
+      setCsvPreviewError(`${error instanceof Error ? error.message : "CSV Job 恢复失败"} 原业务 ID 已保留；登录失效、权限变化或暂时未找到 Job 都不能证明原请求未写入。`);
+      if (showToast) toast(error instanceof Error ? error.message : "CSV Job 恢复失败", "err");
+    } finally {
+      setCsvBusy(null);
+    }
+  }
+
+  useEffect(() => {
+    if (!adminSession || !adminFeatures.csv_import || !hasPermission("products:write")) return;
+    void recoverPendingCsvImport(false);
+  }, [adminSession, adminAuthToken, activePassword, adminFeatures.csv_import]);
 
   function handleProductOperationFailure(scope: string, operationId: string, error: unknown) {
     if (error instanceof AdminApiError && error.operationSafeToDiscard) {
@@ -2952,9 +3176,306 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   async function batchGenerateAiMeta() { const ids = Array.from(selectedIds); if (ids.length === 0) { toast("请先选择商品", "err"); return; } const targets = products.filter(p => ids.includes(p.id) && (p.name_cn?.trim() || p.name_en?.trim())); const skipped = ids.length - targets.length; setLoading(true); let ok = 0; let fail = 0; for (const p of targets) { try { const r = await fetch("/api/admin/generate-ai-meta", { method: "POST", headers: { "Content-Type": "application/json", ...adminAuthHeaders() }, body: JSON.stringify({ product: { name_cn: p.name_cn, name_en: p.name_en, name_gr: p.name_gr, description_en: (p as Record<string,unknown>).description_en, category: p.category, subcategory: p.subcategory, price: p.price, sizes: p.sizes } }) }); const d = await r.json(); if (r.ok) { const payload: Record<string, unknown> = {}; if (d.fit_type) payload.fit_type = d.fit_type; if (d.material) payload.material = d.material; payload.material_verified = false; if (d.ai_keywords) { const kw = d.ai_keywords.split(/[,，\s]+/).filter(Boolean); payload.ai_keywords = kw; } if (d.style_tags) { const st = d.style_tags.split(/[,，\s]+/).filter(Boolean); payload.style_tags = st; } await saveProductMetadata(p, payload, "ai-meta"); ok++; } else { fail++; } } catch { fail++; } } if (skipped > 0) toast(`完成：成功 ${ok}，失败 ${fail}。跳过 ${skipped} 个（无名称）`); else toast(`完成：成功 ${ok}，失败 ${fail}`); setSelectedIds(new Set()); setLoading(false); await loadProducts(); }
 
   /* ── CSV ──────────────────────────────────────────────── */
-  async function handleCsv(f: File | null) { setCsvResults([]); if (!f) { setCsvRows([]); return; } setCsvRows(parseCsv(await f.text())); }
-  function confirmImportCsv() { if (csvSummary.needsTranslation > 20) { setConfirm({ open: true, title: "CSV 导入确认", desc: `有 ${csvSummary.needsTranslation} 行需要自动翻译，将调用 DeepSeek API 约 ${Math.ceil(csvSummary.needsTranslation / 3)} 次。是否继续？`, confirmText: "确认导入", variant: "default", action: () => { setConfirm(c => ({ ...c, open: false })); executeImportCsv(); } }); return; } executeImportCsv(); }
-  async function executeImportCsv() { setLoading(true); try { const d = await api("/api/admin/products/import", { method: "POST", body: JSON.stringify({ rows: csvRows }) }); setCsvResults(d.results||[]); toast(`CSV 导入完成：成功 ${d.successCount}，失败 ${d.failureCount}${d.translatedCount>0?`，翻译成功 ${d.translatedCount}`:""}${d.translateFailureCount>0?`，翻译失败 ${d.translateFailureCount}`:""}`); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "CSV 导入失败", "err"); } finally { setLoading(false); } }
+  async function previewCsvFile(
+    file: File,
+    importMode = csvImportMode,
+    inventoryMode = csvInventoryMode,
+  ) {
+    const sequence = ++csvPreviewSequenceRef.current;
+    setCsvBusy("preview");
+    setCsvPreviewError("");
+    setCsvPreview(null);
+    setCsvTranslations([]);
+    setCsvTranslationFailures(0);
+    const body = new FormData();
+    body.append("file", file);
+    body.append("importMode", importMode);
+    body.append("inventoryMode", inventoryMode);
+    try {
+      const data = await csvFetchJson("/api/admin/products/import/preview", { method: "POST", body });
+      if (sequence !== csvPreviewSequenceRef.current) return;
+      setCsvPreview(data as unknown as CsvPreview);
+    } catch (error) {
+      if (sequence !== csvPreviewSequenceRef.current) return;
+      setCsvPreviewError(error instanceof Error ? error.message : "CSV 服务端预览失败");
+    } finally {
+      if (sequence === csvPreviewSequenceRef.current) setCsvBusy(null);
+    }
+  }
+
+  async function handleCsv(file: File | null) {
+    if (!file) {
+      setCsvFile(null);
+      setCsvPreview(null);
+      setCsvTranslations([]);
+      setCsvTranslationFailures(0);
+      return;
+    }
+    try {
+      const pending = csvOperationIds().getPending();
+      if (pending?.attempted) {
+        setCsvHasPendingOperation(true);
+        setCsvPreviewError("上一项 CSV 导入可能已经写入数据。请先恢复并完成该 Job，不能直接换文件生成新业务 ID。");
+        if (csvFileInputRef.current) csvFileInputRef.current.value = "";
+        await recoverPendingCsvImport(false);
+        return;
+      }
+      if (pending) csvOperationIds().cancel();
+      setCsvHasPendingOperation(false);
+    } catch (error) {
+      setCsvPreviewError(error instanceof Error ? error.message : "CSV 业务状态无法读取");
+      if (csvFileInputRef.current) csvFileInputRef.current.value = "";
+      return;
+    }
+    setCsvJobView(null);
+    setCsvFile(file);
+    await previewCsvFile(file);
+  }
+
+  async function changeCsvModes(
+    importMode: ProductCsvImportMode,
+    inventoryMode: ProductCsvInventoryMode,
+  ) {
+    if (csvHasPendingOperation) {
+      toast("当前 CSV Job 尚未结束，不能更改导入模式。", "err");
+      return;
+    }
+    setCsvImportMode(importMode);
+    setCsvInventoryMode(inventoryMode);
+    setCsvTranslations([]);
+    setCsvTranslationFailures(0);
+    if (csvFile) await previewCsvFile(csvFile, importMode, inventoryMode);
+  }
+
+  function rowsNeedingCsvTranslation() {
+    const translationsByRow = new Map(csvTranslations.map(result => [result.rowNumber, result]));
+    return (csvPreview?.rows || []).filter(row => {
+      const translated = translationsByRow.get(row.rowNumber);
+      const sourceName = String(row.metadata.name_cn || "").trim();
+      const sourceDescription = String(row.metadata.description_cn || "").trim();
+      if (!sourceName && !sourceDescription) return false;
+      return !String(translated?.translated ? translated.name_en : row.metadata.name_en || "").trim()
+        || !String(translated?.translated ? translated.description_en : row.metadata.description_en || "").trim()
+        || !String(translated?.translated ? translated.name_gr : row.metadata.name_gr || "").trim()
+        || !String(translated?.translated ? translated.description_gr : row.metadata.description_gr || "").trim();
+    });
+  }
+
+  async function translateCsvPreview() {
+    if (!csvPreview) return;
+    if (csvPreview.previewTruncated) {
+      toast("超过 100 行时预览接口不会返回全部内容。为避免只翻译部分商品，请先在 CSV 中填写译文或拆分文件。", "err");
+      return;
+    }
+    const rows = rowsNeedingCsvTranslation();
+    if (rows.length === 0) {
+      toast("当前 CSV 不需要补充英文或希腊语译文。", "ok");
+      return;
+    }
+    setCsvBusy("translate");
+    setCsvPreviewError("");
+    const results: CsvTranslationResult[] = [];
+    try {
+      for (let index = 0; index < rows.length; index += 50) {
+        const batch = rows.slice(index, index + 50).map(row => ({
+          rowNumber: row.rowNumber,
+          name_cn: String(row.metadata.name_cn || ""),
+          description_cn: String(row.metadata.description_cn || ""),
+          name_en: String(row.metadata.name_en || ""),
+          description_en: String(row.metadata.description_en || ""),
+          name_gr: String(row.metadata.name_gr || ""),
+          description_gr: String(row.metadata.description_gr || ""),
+        }));
+        const data = await csvFetchJson("/api/admin/products/import/translate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rows: batch }),
+        });
+        results.push(...((data.results || []) as CsvTranslationResult[]));
+      }
+      const mergedTranslations = new Map(csvTranslations.map(result => [result.rowNumber, result]));
+      for (const result of results) mergedTranslations.set(result.rowNumber, result);
+      const nextTranslations = Array.from(mergedTranslations.values()).sort((left, right) => left.rowNumber - right.rowNumber);
+      setCsvTranslations(nextTranslations);
+      setCsvTranslationFailures(nextTranslations.filter(result => Boolean(result.translateError)).length);
+      const succeeded = results.filter(result => result.translated).length;
+      const failed = results.filter(result => Boolean(result.translateError)).length;
+      toast(`翻译完成：成功 ${succeeded}，失败 ${failed}${failed > 0 ? "。失败行不会覆盖 CSV 原值。" : ""}`, failed > 0 ? "err" : "ok");
+    } catch (error) {
+      setCsvPreviewError(error instanceof Error ? error.message : "CSV 翻译失败");
+      toast(error instanceof Error ? error.message : "CSV 翻译失败", "err");
+    } finally {
+      setCsvBusy(null);
+    }
+  }
+
+  function confirmImportCsv() {
+    if (!csvFile || !csvPreview) {
+      toast("请先选择 CSV 文件并通过服务端预览。", "err");
+      return;
+    }
+    const importLabel = csvImportMode === "create_only" ? "仅新增" : csvImportMode === "update_existing" ? "仅更新已有商品" : "新增或更新";
+    const inventoryLabel = csvInventoryMode === "metadata_only" ? "只改商品资料，不改库存" : "按 CSV 设置库存";
+    setConfirm({
+      open: true,
+      title: "确认创建 CSV 导入 Job？",
+      desc: `文件 ${csvPreview.filename}，共 ${csvPreview.rowCount} 行。模式：${importLabel}；${inventoryLabel}。提交后会保留同一个业务 ID，网络异常时请恢复 Job，不要重新上传。`,
+      confirmText: "确认导入",
+      variant: csvInventoryMode === "set_inventory" || csvImportMode === "upsert" ? "danger" : "default",
+      action: () => {
+        setConfirm(current => ({ ...current, open: false }));
+        void executeImportCsv();
+      },
+    });
+  }
+
+  async function executeImportCsv() {
+    if (!csvFile || !csvPreview) return;
+    let operationId = "";
+    setCsvBusy("submit");
+    setCsvPreviewError("");
+    try {
+      operationId = csvOperationIds().getOrCreate(csvOperationFingerprint());
+      const body = new FormData();
+      body.append("file", csvFile);
+      body.append("importMode", csvImportMode);
+      body.append("inventoryMode", csvInventoryMode);
+      body.append("operationId", operationId);
+      const translations = csvTranslationPayload();
+      if (translations.length > 0) body.append("translations", JSON.stringify(translations));
+      csvOperationIds().markAttempt(operationId);
+      setCsvHasPendingOperation(true);
+      const data = await csvFetchJson("/api/admin/products/import", { method: "POST", body });
+      const view = acceptCsvJobView(data, operationId);
+      toast(`CSV Job：成功 ${view.job.succeeded_rows}，失败 ${view.job.failed_rows}，待处理 ${view.job.pending_rows}`);
+      await loadProducts();
+    } catch (error) {
+      if (error instanceof AdminApiError && error.jobId && operationId) {
+        try { csvOperationIds().attachJob(operationId, error.jobId); } catch {}
+      }
+      if (error instanceof AdminApiError && error.operationSafeToDiscard && operationId) {
+        try {
+          csvOperationIds().discardKnownNoWrite(operationId);
+          setCsvHasPendingOperation(false);
+        } catch {}
+      }
+      const message = error instanceof CsvImportOperationStateError
+        ? error.message
+        : error instanceof Error ? error.message : "CSV 导入失败";
+      const operationResultUnknown = Boolean(operationId)
+        && !(error instanceof AdminApiError && error.operationSafeToDiscard);
+      setCsvPreviewError(`${message}${operationResultUnknown ? " 原业务 ID 已保留，请点击恢复状态。" : ""}`);
+      toast(message, "err");
+    } finally {
+      setCsvBusy(null);
+    }
+  }
+
+  async function processCsvJob(action: "process" | "retry" | "refresh") {
+    const job = csvJobView?.job;
+    if (!job) return;
+    setCsvBusy(action === "refresh" ? "recover" : action);
+    setCsvPreviewError("");
+    try {
+      const path = action === "refresh"
+        ? `/api/admin/products/import/jobs/${encodeURIComponent(job.id)}`
+        : `/api/admin/products/import/jobs/${encodeURIComponent(job.id)}/${action}`;
+      const data = await csvFetchJson(path, action === "refresh" ? {} : { method: "POST" });
+      const view = acceptCsvJobView(data, job.client_request_id);
+      toast(`CSV Job：成功 ${view.job.succeeded_rows}，失败 ${view.job.failed_rows}，待处理 ${view.job.pending_rows}`);
+      if (action !== "refresh" || Number(view.processed || 0) > 0) await loadProducts();
+    } catch (error) {
+      setCsvPreviewError(`${error instanceof Error ? error.message : "CSV Job 操作失败"} 原业务 ID 已保留，请刷新状态后再决定。`);
+      toast(error instanceof Error ? error.message : "CSV Job 操作失败", "err");
+    } finally {
+      setCsvBusy(null);
+    }
+  }
+
+  async function downloadCsvErrors() {
+    const job = csvJobView?.job;
+    if (!job) return;
+    setCsvBusy("download");
+    try {
+      const response = await fetch(`/api/admin/products/import/jobs/${encodeURIComponent(job.id)}/errors.csv`, {
+        headers: adminAuthHeaders(),
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        throw new Error(typeof data.error === "string" ? data.error : "失败明细下载失败");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `csv-import-errors-${job.id}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "失败明细下载失败", "err");
+    } finally {
+      setCsvBusy(null);
+    }
+  }
+
+  function finishReviewedCsvJob() {
+    const job = csvJobView?.job;
+    if (!job || job.pending_rows > 0) return;
+    setConfirm({
+      open: true,
+      title: "确认已核对 CSV Job？",
+      desc: `该 Job 成功 ${job.succeeded_rows} 行、失败 ${job.failed_rows} 行。只有在已下载失败明细并确认无需继续重试后，才开始新的 CSV 文件。`,
+      confirmText: "已核对，开始新文件",
+      variant: "danger",
+      action: () => {
+        try {
+          csvOperationIds().complete(job.client_request_id);
+          setCsvHasPendingOperation(false);
+          setCsvJobView(null);
+          setCsvFile(null);
+          setCsvPreview(null);
+          setCsvTranslations([]);
+          setCsvTranslationFailures(0);
+          setCsvPreviewError("");
+          if (csvFileInputRef.current) csvFileInputRef.current.value = "";
+          toast("CSV Job 已结束，可以选择新文件。", "ok");
+        } catch (error) {
+          toast(error instanceof Error ? error.message : "CSV 业务 ID 清理失败", "err");
+        } finally {
+          setConfirm(current => ({ ...current, open: false }));
+        }
+      },
+    });
+  }
+
+  async function downloadProductBackup() {
+    try {
+      const response = await fetch("/api/admin/backup", { headers: adminAuthHeaders() });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        throw new Error(typeof data.error === "string" ? data.error : "商品 CSV 导出失败");
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+      const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const filename = encodedName
+        ? decodeURIComponent(encodedName)
+        : plainName || `products-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "商品 CSV 导出失败", "err");
+    }
+  }
 
   /* ── Image upload ──────────────────────────────────────── */
   async function uploadImages(files: FileList | null, opts: ImageUploadOptions = {}) { setImageResults([]); if (!files || files.length === 0) return; if (opts.sku && !opts.mode) { toast("请选择上传类型。", "err"); return; } try { setLoading(true); const body = new FormData(); Array.from(files).forEach(f => body.append("images", f)); if (opts.sku) body.append("sku", opts.sku); if (opts.mode) body.append("mode", opts.mode); const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body }); const d = await readJson(r, "图片上传接口错误"); if (!r.ok) throw new Error(d.error || "图片上传失败"); setImageResults(d.results||[]); const okCount = (d.results||[]).filter((r: ApiResult) => r.ok).length; const failCount = (d.results||[]).filter((r: ApiResult) => !r.ok).length; const failReasons = (d.results||[]).filter((r: ApiResult) => !r.ok).map((r: ApiResult) => r.message).filter(Boolean); const summary = failReasons.length > 0 ? `失败原因：${failReasons.join("；")}` : ""; toast(`图片处理完成：成功 ${okCount}，失败 ${failCount}${summary ? `。${summary}` : ""}`); syncFormAfterUpload(opts, d); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "图片上传失败", "err"); } finally { setLoading(false); } }
@@ -3240,7 +3761,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <div className="flex flex-wrap gap-2">
             <span className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">{adminSession.displayName || adminSession.email || adminSession.role} · {adminSession.authType === "account" ? "员工账号" : "应急密码"}</span>
             {isOwner ? <a className="hidden rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50 xl:inline-flex" href="/admin/settings">店铺设置</a> : null}
-            {isOwner && adminFeatures.backup_tools ? <button className="hidden rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50 xl:inline-flex" onClick={() => { fetch("/api/admin/backup", { headers: adminAuthHeaders() }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `products-export-${new Date().toISOString().split("T")[0]}.csv`; a.click(); }).catch(() => toast("备份下载失败", "err")); }} type="button">导出 CSV</button> : null}
+            {isOwner && adminFeatures.backup_tools ? <button className="hidden rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50 xl:inline-flex" onClick={() => void downloadProductBackup()} type="button">导出 CSV</button> : null}
             <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { setAdminSession(null); setAdminAuthToken(""); setActivePassword(""); setPassword(""); }}>退出</button>
           </div>
         </header>
@@ -5587,25 +6108,96 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {tab === "csv" ? (
           <section className="admin-panel">
             <h2 className="mb-1 text-lg font-black text-ink">CSV 批量导入</h2>
-            <p className="mb-4 text-xs text-stone-500">SKU 已存在则更新，不存在则新增。中文商品自动翻译英文和希腊语。</p>
-            <div className="mb-4 grid gap-2 sm:grid-cols-3">
+            <p className="mb-4 text-xs text-stone-500">先由服务器校验整份文件，再创建可恢复的导入 Job。导入模式、库存模式和自动翻译都需要明确选择，不再隐式覆盖商品或库存。</p>
+
+            <div className="mb-4 grid gap-3 md:grid-cols-2">
+              <label className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3">
+                <span className="block text-sm font-black text-ink">商品处理模式</span>
+                <select
+                  className="input mt-2 bg-white"
+                  disabled={csvHasPendingOperation || csvBusy !== null}
+                  onChange={event => void changeCsvModes(event.target.value as ProductCsvImportMode, csvInventoryMode)}
+                  value={csvImportMode}
+                >
+                  <option value="create_only">仅新增：已存在 SKU 记为失败</option>
+                  <option value="update_existing">仅更新：不存在 SKU 记为失败</option>
+                  <option value="upsert">新增或更新：按 SKU 自动判断</option>
+                </select>
+                <span className="mt-2 block text-[11px] leading-relaxed text-stone-500">日常新增优先使用“仅新增”，可以避免误覆盖已有商品。</span>
+              </label>
+              <label className={`rounded-2xl border p-3 ${csvInventoryMode === "set_inventory" ? "border-amber-300 bg-amber-50" : "border-stone-200 bg-stone-50/70"}`}>
+                <span className="block text-sm font-black text-ink">库存处理模式</span>
+                <select
+                  className="input mt-2 bg-white"
+                  disabled={csvHasPendingOperation || csvBusy !== null}
+                  onChange={event => void changeCsvModes(csvImportMode, event.target.value as ProductCsvInventoryMode)}
+                  value={csvInventoryMode}
+                >
+                  <option value="metadata_only">只导入商品资料，不修改库存</option>
+                  <option value="set_inventory">按 CSV 设置库存（会产生库存流水）</option>
+                </select>
+                <span className="mt-2 block text-[11px] leading-relaxed text-stone-500">库存不确定时保持“只导入商品资料”；设置库存前请确认尺码和数量完整。</span>
+              </label>
+            </div>
+
+            <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black hover:bg-stone-50" onClick={downloadQuickCsvTemplate} type="button">下载快速 CSV 模板</button>
               <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black hover:bg-stone-50" onClick={downloadCsvTemplate} type="button">下载完整 CSV 模板</button>
-              <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={csvRows.length === 0 || loading} onClick={confirmImportCsv} type="button">导入 CSV</button>
+              {adminFeatures.ai_tools ? <button className="min-h-11 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-black text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={!csvPreview || csvPreview.previewTruncated || csvSummary.needsTranslation === 0 || csvBusy !== null || csvHasPendingOperation} onClick={() => void translateCsvPreview()} type="button">{csvBusy === "translate" ? "翻译中..." : "可选：补充英/希译文"}</button> : null}
+              <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={!csvFile || !csvPreview || csvBusy !== null || csvHasPendingOperation} onClick={confirmImportCsv} type="button">{csvBusy === "submit" ? "正在创建 Job..." : "创建导入 Job"}</button>
             </div>
             <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3">
               <label className="block text-sm font-black text-ink">选择 CSV 文件</label>
-              <input accept=".csv,text/csv" className="input mt-2 min-h-12 bg-white" onChange={e => void handleCsv(e.target.files?.[0] || null)} type="file" />
+              <input ref={csvFileInputRef} accept=".csv,text/csv" className="input mt-2 min-h-12 bg-white" disabled={csvHasPendingOperation || csvBusy !== null && csvBusy !== "preview"} onChange={e => void handleCsv(e.target.files?.[0] || null)} type="file" />
+              {csvBusy === "preview" ? <p className="mt-2 text-xs font-bold text-blue-700">服务器正在解析和校验整份文件...</p> : null}
             </div>
-            <p className="mt-2 text-xs text-stone-500">快速模板只保留日常上新字段，图片 URL 可以留空，之后用批量上传按 SKU 自动绑定；完整模板适合从备份迁移或填写 AI / 尺码表等高级字段。</p>
+            <p className="mt-2 text-xs text-stone-500">快速模板只保留日常上新字段，图片 URL 可以留空，之后用批量上传按 SKU 自动绑定；完整模板适合从备份迁移或填写 AI / 尺码表等高级字段。模板示例包含尺码库存，使用示例时请选择“按 CSV 设置库存”；只导资料时请清空 stock 和 size_stock。</p>
             <p className="mt-2 text-xs text-stone-400">字段：{csvFields.join(", ")}</p>
-            {csvRows.length > 0 ? (
-              <div className="mt-4">
-                <p className="rounded-2xl border border-stone-200 bg-white p-3 text-sm font-black text-ink shadow-sm shadow-stone-900/5">预览：有效 {csvSummary.valid}，错误 {csvSummary.invalid}{csvSummary.needsTranslation > 0 ? `，需翻译 ${csvSummary.needsTranslation}` : ""}</p>
-                <ResultTable results={csvRows.map(r => { const errs = validatePreviewRow(r); let msg = errs.length === 0 ? "OK" : errs.join("; "); if (errs.length === 0) { const nc = String(r.name_cn||"").trim(), dc = String(r.description_cn||"").trim(); if (nc||dc) { const ne = String(r.name_en||"").trim(), de = String(r.description_en||"").trim(), ng = String(r.name_gr||"").trim(), dg = String(r.description_gr||"").trim(); msg = ne&&de&&ng&&dg ? "OK，无需翻译" : "OK，需翻译"; } } return { rowNumber: Number(r.rowNumber), sku: String(r.sku||""), ok: errs.length === 0, message: msg }; })} />
+            {csvPreviewError ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-bold leading-relaxed text-red-700">{csvPreviewError}{csvFile && !csvPreview && !csvHasPendingOperation ? <button className="ml-2 underline underline-offset-4 disabled:opacity-50" disabled={csvBusy !== null} onClick={() => void previewCsvFile(csvFile)} type="button">重新预览</button> : null}</div> : null}
+            {csvHasPendingOperation && !csvJobView ? (
+              <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div><p className="text-sm font-black text-amber-900">存在结果待确认的 CSV 业务 ID</p><p className="mt-1 text-xs text-amber-800">请恢复原 Job；不要换文件或生成新的业务 ID。</p></div>
+                <button className="min-h-11 rounded-xl bg-amber-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50" disabled={csvBusy !== null} onClick={() => void recoverPendingCsvImport(true)} type="button">{csvBusy === "recover" ? "恢复中..." : "恢复 Job 状态"}</button>
               </div>
             ) : null}
-            {csvResults.length > 0 ? <ResultTable results={csvResults} /> : null}
+
+            {csvPreview ? (
+              <div className="mt-4">
+                <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5">
+                  <p className="text-sm font-black text-ink">服务器预览通过：{csvSummary.valid} 行{csvSummary.needsTranslation > 0 ? `，其中 ${csvSummary.needsTranslation} 行可选补充译文` : ""}</p>
+                  <p className="mt-1 text-xs text-stone-500">{csvPreview.filename} · {(csvPreview.byteLength / 1024).toFixed(1)} KB · {csvImportModeLabels[csvPreview.importMode]} · {csvInventoryModeLabels[csvPreview.inventoryMode]}</p>
+                  {csvPreview.previewTruncated ? <p className="mt-2 text-xs font-bold text-amber-700">页面只展示前 100 行，服务器已校验全部 {csvPreview.rowCount} 行；大文件不提供自动翻译，避免只翻译部分数据。</p> : null}
+                  {csvTranslations.length > 0 ? <p className="mt-2 text-xs font-bold text-violet-700">翻译成功 {csvTranslations.filter(result => result.translated).length} 行，失败 {csvTranslationFailures} 行；失败行保持 CSV 原值。</p> : null}
+                </div>
+                <ResultTable results={csvPreviewResults} />
+              </div>
+            ) : null}
+
+            {csvJobView ? (
+              <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50/70 p-3 sm:p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-black text-ink">CSV Job · {csvJobStatusLabels[csvJobView.job.status]}</p>
+                    <p className="mt-1 break-all font-mono text-[11px] text-stone-500">{csvJobView.job.id}</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs sm:min-w-72">
+                    <div className="rounded-xl bg-white p-2"><strong className="block text-base text-green-700">{csvJobView.job.succeeded_rows}</strong>成功</div>
+                    <div className="rounded-xl bg-white p-2"><strong className="block text-base text-red-600">{csvJobView.job.failed_rows}</strong>失败</div>
+                    <div className="rounded-xl bg-white p-2"><strong className="block text-base text-amber-700">{csvJobView.job.pending_rows}</strong>待处理</div>
+                  </div>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-200"><div className="h-full bg-green-600 transition-all" style={{ width: `${Math.round(((csvJobView.job.succeeded_rows + csvJobView.job.failed_rows) / Math.max(csvJobView.job.total_rows, 1)) * 100)}%` }} /></div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {csvJobView.job.pending_rows > 0 ? <button className="min-h-11 rounded-xl bg-ink px-4 py-2 text-sm font-black text-white disabled:opacity-50" disabled={csvBusy !== null} onClick={() => void processCsvJob("process")} type="button">{csvBusy === "process" ? "处理中..." : "继续下一批"}</button> : null}
+                  {csvJobView.job.failed_rows > 0 ? <button className="min-h-11 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-black text-amber-800 disabled:opacity-50" disabled={csvBusy !== null} onClick={() => void processCsvJob("retry")} type="button">{csvBusy === "retry" ? "重试中..." : `重试失败行${csvRetryableFailures > 0 ? `（当前页 ${csvRetryableFailures}）` : ""}`}</button> : null}
+                  <button className="min-h-11 rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-black disabled:opacity-50" disabled={csvBusy !== null} onClick={() => void processCsvJob("refresh")} type="button">刷新状态</button>
+                  {csvJobView.job.failed_rows > 0 ? <button className="min-h-11 rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-black disabled:opacity-50" disabled={csvBusy !== null} onClick={() => void downloadCsvErrors()} type="button">下载失败 CSV</button> : null}
+                </div>
+                {csvJobView.job.pending_rows === 0 && csvJobView.job.failed_rows > 0 ? <button className="mt-3 text-xs font-bold text-stone-500 underline decoration-dotted underline-offset-4" onClick={finishReviewedCsvJob} type="button">已核对失败行，结束此 Job 并开始新文件</button> : null}
+                <ResultTable results={csvJobResults} />
+                {csvJobView.totalRows > csvJobView.rows.length ? <p className="mt-2 text-xs text-stone-500">当前显示前 {csvJobView.rows.length} 行 Job 明细，共 {csvJobView.totalRows} 行。</p> : null}
+              </div>
+            ) : null}
           </section>
         ) : null}
 
@@ -6020,35 +6612,45 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
   );
 }
 
+function resultStatus(result: ApiResult) {
+  const tone = result.statusTone || (result.ok ? "success" : "error");
+  if (tone === "info") return { label: result.statusLabel || "已校验", className: "bg-blue-100 text-blue-700", textClassName: "text-blue-700" };
+  if (tone === "pending") return { label: result.statusLabel || "待处理", className: "bg-amber-100 text-amber-800", textClassName: "text-amber-700" };
+  if (tone === "error") return { label: result.statusLabel || "失败", className: "bg-red-100 text-red-700", textClassName: "text-red-600" };
+  return { label: result.statusLabel || "成功", className: "bg-green-100 text-green-700", textClassName: "text-green-700" };
+}
+
 function ResultTable({ results }: { results: ApiResult[] }) {
   return (
     <div className="mt-4">
       <div className="grid gap-2 lg:hidden">
-        {results.map((r, i) => (
-          <article className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5" key={`${r.sku}-card-${r.fileName || r.rowNumber || i}`}>
+        {results.map((r, i) => {
+          const status = resultStatus(r);
+          return <article className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5" key={`${r.sku}-card-${r.fileName || r.rowNumber || i}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-xs font-black text-stone-500">{r.fileName || `第 ${r.rowNumber} 行`}</p>
                 <p className="mt-1 truncate font-mono text-sm font-black text-ink">{r.sku || "无 SKU"}</p>
               </div>
-              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black ${r.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{r.ok ? "成功" : "失败"}</span>
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black ${status.className}`}>{status.label}</span>
             </div>
             <p className="mt-2 text-xs leading-relaxed text-stone-600">{r.message || "-"}</p>
             {r.translateError ? <p className="mt-1 text-xs font-bold text-orange-600">翻译错误: {r.translateError}</p> : null}
-          </article>
-        ))}
+          </article>;
+        })}
       </div>
       <div className="hidden overflow-x-auto lg:block">
         <table className="w-full text-left text-sm">
           <thead><tr className="border-b border-stone-200 text-stone-500"><th className="py-2 pr-3 text-xs font-bold">#</th><th className="py-2 pr-3 text-xs font-bold">SKU</th><th className="py-2 pr-3 text-xs font-bold">状态</th><th className="py-2 pr-3 text-xs font-bold">说明</th></tr></thead>
           <tbody>
-            {results.map((r, i) => (
-              <tr className="border-b border-stone-50" key={`${r.sku}-${r.fileName || r.rowNumber || i}`}>
+            {results.map((r, i) => {
+              const status = resultStatus(r);
+              return <tr className="border-b border-stone-50" key={`${r.sku}-${r.fileName || r.rowNumber || i}`}>
                 <td className="py-2 pr-3 text-xs">{r.fileName || `第 ${r.rowNumber} 行`}</td><td className="py-2 pr-3 text-xs font-mono">{r.sku}</td>
-                <td className={`py-2 pr-3 text-xs font-bold ${r.ok ? "text-green-700" : "text-red-600"}`}>{r.ok ? "成功" : "失败"}</td>
+                <td className={`py-2 pr-3 text-xs font-bold ${status.textClassName}`}>{status.label}</td>
                 <td className="py-2 pr-3 text-xs">{r.message}{r.translateError ? <span className="ml-2 text-orange-600">翻译错误: {r.translateError}</span> : null}</td>
-              </tr>
-            ))}
+              </tr>;
+            })}
           </tbody>
         </table>
       </div>

@@ -167,7 +167,7 @@ Inventory adjustment and Quick Sell writes are RPC-only through `public.inventor
 Quick Sell is an owner-only inventory shortcut and intentionally does not create a POS order, payment, or receipt. Staff must use the POS checkout flow. Both inventory adjustment and Quick Sell must preserve one browser business operation ID across double clicks, timeouts, response loss, and refreshes; an uncertain expired/corrupt ID requires explicit reconciliation before reset.
 
 
-CSV import still contains historical inventory compatibility writes outside this RPC boundary. Product create/edit uses the separate product transaction boundary below; do not silently route CSV through it or describe CSV as transactionally hardened without its own review and regression suite.
+CSV import uses its own transaction and recovery boundary below. Do not route ordinary inventory work through the CSV import Job model.
 
 
 \---
@@ -200,5 +200,32 @@ Formal product creation and editing are RPC-only and require `USE_PRODUCT_RPC=tr
 `inventory_balances` is the authoritative inventory source. Legacy `products.stock` and `products.size_stock` are compatibility projections that may only be updated inside the same product or inventory database transaction. Preserve one product business operation ID across double clicks, timeouts, response loss, and refreshes so a retry reuses the same idempotency key.
 
 
-CSV import, product image upload/deletion, and permanent product deletion are outside this P2 product transaction boundary. Do not claim those paths are transactionally hardened or expand this boundary without their own scoped review, migration, and regression coverage.
+CSV import uses the separate CSV transaction boundary below. Product image upload/deletion and permanent product deletion remain outside this P2 product transaction boundary; do not expand it without their own scoped review, migration, and regression coverage.
+
+
+\---
+
+
+\## 16. CSV import transaction and recovery boundary
+
+
+Formal CSV product import requires both `USE_PRODUCT_RPC=true` and `USE_CSV_IMPORT_RPC=true`. Missing configuration, `20260716100000_transactional_csv_import_jobs.sql`, execute privilege, PostgREST, or RPC availability must fail closed with HTTP 503 before a business write. Never restore direct `products` upserts or the historical best-effort ERP synchronization fallback.
+
+
+The server is authoritative for UTF-8 CSV parsing and whole-file prevalidation. A normalized duplicate SKU, invalid or ambiguous header, malformed quote structure, invalid field, or resource-limit violation rejects the file before a Job is created. Translation is an optional pre-commit step: the user must see the final translated preview, and the frozen post-translation payload is what receives the fingerprint.
+
+
+Every import explicitly selects `create_only`, `update_existing`, or `upsert`, plus `metadata_only` or `set_inventory`. `metadata_only` must not alter inventory. `set_inventory` uses stocktake/set-to semantics without implicitly deleting, deactivating, or zeroing omitted existing Variants. `inventory_balances` remains authoritative, and each row's product, Variants, balances, movements, compatibility projections, and result record commit or roll back together.
+
+
+`product_import_jobs` and `product_import_rows` are service-role-only recovery records with RLS and no anon/authenticated policies. Preserve the file operation ID across double clicks, timeout, response loss, refresh, and login refresh; replaying the same ID and fingerprint returns the original Job, while a changed payload conflicts. Successful rows never rerun; failed rows may be downloaded and explicitly retried. Product CSV export is not a database disaster-recovery backup, and every exported text cell must use the shared spreadsheet-formula neutralization.
+
+
+The file-level fingerprint must be computed from the raw file hash, explicit modes, and final normalized post-translation payload. Do not include database-derived product IDs or metadata/structure versions: those are row concurrency tokens and change after a successful import. On POST replay, look up the existing Job before recomputing preview tokens. Likewise, `product_import_rows.expected_product_id` must remain an immutable bigint rather than an `ON DELETE SET NULL` foreign key, otherwise deleting and recreating the same SKU can erase the frozen target identity.
+
+
+A recovery GET returning 401, 403, or 404 does not prove the original POST made no write and must never clear an attempted browser operation ID. CSV runtime health must include the underlying product runtime, active `MAIN_STORE`, and the private authoritative Variant helper before a new Job is created.
+
+
+CSV fault-injection tests reuse one PL/pgSQL trigger function across tables with different row shapes. Branch on `TG_TABLE_NAME` in separate nested blocks before reading table-specific `NEW` fields; a combined boolean expression can still raise `record "new" has no field ...` on the other table and create a false retry failure.
 

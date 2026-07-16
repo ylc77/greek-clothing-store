@@ -83,6 +83,7 @@ SUPABASE_SERVICE_ROLE_KEY=你的-service-role-key
 ADMIN_PASSWORD=设置一个强密码
 USE_POS_RPC=true
 USE_PRODUCT_RPC=true
+USE_CSV_IMPORT_RPC=true
 ```
 
 POS 使用前必须确认数据库已包含以下事务 RPC migrations（新客户的 `client-init.sql` 已自动包含）：
@@ -97,7 +98,13 @@ POS 使用前必须确认数据库已包含以下事务 RPC migrations（新客�
 
 商品新增和编辑还必须包含 `20260715143949_transactional_product_operations.sql`，并设置 `USE_PRODUCT_RPC=true`。正式商品写入只允许调用事务 RPC；配置不是 `true`、migration 未部署、函数无执行权限或 RPC 不可用时，商品 API 返回 503，不会创建或部分修改商品、Variant、库存余额、库存流水。系统不会回退到历史 JavaScript 多步双写。
 
-`inventory_balances` 是库存数量的权威来源；`products.stock` 和 `products.size_stock` 只是在同一数据库事务内更新的旧页面兼容投影，不能作为独立库存写入入口。本批事务边界不包含 CSV 导入、商品图片上传/删除或商品永久删除，这些路径不得被描述为已经完成事务加固。
+CSV 导入还必须包含 `20260716100000_transactional_csv_import_jobs.sql`，并同时设置 `USE_PRODUCT_RPC=true` 与 `USE_CSV_IMPORT_RPC=true`。配置、migration、RPC 执行权限或服务不可用时，导入 API 返回 503，且不会回退到直接写表或 Node.js 多步 upsert。
+
+CSV 会先完成整份文件预检，再建立可恢复的持久 Job，并按行事务提交。商品模式必须显式选择 `create_only`（默认，仅新增）、`update_existing`（仅更新）或 `upsert`（新增或更新）；库存模式必须选择 `metadata_only`（不改库存）或 `set_inventory`（明确按盘点数量设置库存）。可选翻译发生在最终预览和提交之前，不在数据库事务内调用。网络中断或刷新后应恢复原 Job；失败行可以下载并安全重试，成功行不会重复执行。
+
+当前按小型服装店和 Vercel 请求边界设置为：最大 1 MiB、500 行、100 列、单 Cell 32 KiB、每商品最多 20 个图片 URL 和 100 个尺码。超过限制会在建立 Job 前明确拒绝，应拆分文件，不会先尝试写入再超时。
+
+`inventory_balances` 是库存数量的权威来源；`products.stock` 和 `products.size_stock` 只是在同一数据库事务内更新的旧页面兼容投影，不能作为独立库存写入入口。商品图片上传/删除和商品永久删除不属于本批事务边界。
 
 “快速售出”是仅限 owner 的快速扣库存工具，适合店主临时登记一件已售商品；它不会创建 POS 订单、订单明细或付款记录，也不能代替正常 POS 扫码结账。店员应使用 POS 扫码流程，不能直接调用快速售出 API。
 
@@ -185,7 +192,7 @@ Supabase Storage：
 
 不可以。`supabase/migrations` 是已有客户升级的权威来源；只有部署说明明确指定时才使用专用 patch，避免破坏数据。
 
-当前未发布的 P1 migrations 已按依赖关系使用单调递增时间戳：POS checkout、POS void、事务库存、开发者凭据。正常升级使用 `db push --dry-run` 检查计划后再执行 `db push`，不要手工修改 migration history。
+当前事务 migrations 已按依赖关系使用单调递增时间戳：POS checkout、POS void、事务库存、开发者凭据、商品事务、CSV Job。已有客户先备份并确认链接的 project ref，再运行 `db push --dry-run` 检查只包含预期 migrations，最后执行 `db push`；不要执行 `client-init.sql`，也不要手工修改 migration history。升级代码部署时同时设置 `USE_PRODUCT_RPC=true` 和 `USE_CSV_IMPORT_RPC=true`。
 
 ### 图片上传失败怎么办？
 
@@ -214,7 +221,10 @@ npm run developer:rotate -- --project-ref abcdefgh
 - 库存调整和快速售出正式写入只允许调用 `inventory_apply_rpc`；每次用户操作必须保留同一个业务 ID，超时或响应丢失后的重试必须复用该 ID。
 - 快速售出是 owner-only 的库存工具，不产生 POS 订单或付款；需要销售记录时必须使用 POS 扫码结账。
 - 商品新增和编辑正式写入只允许调用商品事务 RPC，并要求 `USE_PRODUCT_RPC=true`；RPC 不可用时必须返回 503，不能恢复 Node.js 多步写入。
-- 商品库存以 `inventory_balances` 为权威，`products.stock` / `products.size_stock` 只允许作为事务内兼容投影。CSV、图片操作和永久删除仍在本批事务边界之外。
+- CSV 导入要求 `USE_CSV_IMPORT_RPC=true` 和 `20260716100000_transactional_csv_import_jobs.sql`；整份文件先预检，行内商品、Variant、余额、流水、兼容投影和结果记录必须一起提交或回滚，RPC 不可用时禁止 fallback。
+- CSV 的 `create_only` / `update_existing` / `upsert` 与 `metadata_only` / `set_inventory` 必须由用户显式选择；外部翻译只在提交前执行，最终 payload 冻结后再计算 fingerprint。
+- 商品库存以 `inventory_balances` 为权威，`products.stock` / `products.size_stock` 只允许作为事务内兼容投影。图片操作和永久删除仍在本批事务边界之外。
+- 后台“导出 CSV”只是完整的商品资料导出，不是 PostgreSQL 灾难恢复备份；数据库备份与恢复仍需单独执行和演练。
 - `public.developer_access` 空表表示未初始化；有记录时只保存 scrypt hash、随机 credential version、整数 password version 和轮换时间，不保存明文。
 - 新客户运行 `npm run developer:bootstrap -- --project-ref ...`；已有客户升级后统一进入 `must_rotate`，运行 `npm run developer:rotate -- --project-ref ...` 才能重新访问受保护设置。
 - 店铺设置和法律设置不能改回普通 owner/员工权限；相关 API 必须继续要求开发者会话。

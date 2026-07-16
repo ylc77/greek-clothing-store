@@ -204,16 +204,21 @@ Receipt notes:
 Open `CSV 导入`.
 
 1. Download or prepare a CSV template.
-2. Fill required fields.
-3. Import CSV.
-4. Review import result.
-5. Check inventory and product list.
+2. Upload it and complete server-side preflight validation.
+3. Choose `create_only`, `update_existing`, or explicitly confirmed `upsert`.
+4. Choose `metadata_only` (no inventory changes) or `set_inventory` (stocktake/set-to semantics).
+5. Optionally translate, review the final translated preview, and then commit.
+6. Review the persistent Job result. After a refresh or network interruption, recover the same Job instead of starting a duplicate import.
+7. Download failed rows and retry only those rows when appropriate.
+
+Current small-store safety limits are 1 MiB per CSV, 500 data rows, 100 columns, 32 KiB per cell, 20 image URLs, and 100 sizes per product. Files beyond a limit are rejected before a Job is created; split them into smaller files instead of repeatedly retrying an oversized request.
 
 After import:
 
-- Products are updated.
-- ERP inventory is synced.
-- Import errors should be reviewed before demo.
+- Every successful row has committed its product, Variants, inventory, movements, compatibility projections, and result atomically.
+- Failed rows are not reported as successful and do not leave partial product/inventory writes.
+- `metadata_only` never changes inventory; `set_inventory` must be selected deliberately.
+- Product CSV export is a product-data export, not a complete database backup.
 
 ## Check Skroutz Feed
 

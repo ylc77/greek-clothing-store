@@ -22,6 +22,10 @@ export type TranslationResult =
   | { ok: true; translations: TranslationOutput }
   | { ok: false; error: string };
 
+type TranslationRequestOptions = {
+  timeoutMs?: number;
+};
+
 function envString(key: string) {
   return (process.env[key] || "").trim();
 }
@@ -49,6 +53,7 @@ function extractJson(text: string) {
  */
 export async function translateProductContent(
   input: TranslationInput,
+  options: TranslationRequestOptions = {},
 ): Promise<TranslationResult> {
   const apiKey = envString("DEEPSEEK_API_KEY");
   if (!apiKey) {
@@ -58,11 +63,22 @@ export async function translateProductContent(
   const model =
     envString("DEEPSEEK_TRANSLATION_MODEL") || "deepseek-chat";
 
+  const nameCn = input.name_cn.trim();
+  const descriptionCn = input.description_cn.trim();
+  if (nameCn.length > 1_000 || descriptionCn.length > 8_000) {
+    return { ok: false, error: "Translation input exceeds the configured limit." };
+  }
+
   const systemPrompt =
     "You translate product catalog content for a Greek fashion store. " +
     "Return only JSON with keys name_gr, description_gr, name_en, description_en. " +
     "Preserve SKU-like text, sizes, brand names, and numbers. Do not add facts.";
 
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    Math.min(Math.max(options.timeoutMs ?? 12_000, 1_000), 30_000),
+  );
   try {
     const response = await fetch(
       "https://api.deepseek.com/v1/chat/completions",
@@ -81,12 +97,13 @@ export async function translateProductContent(
             {
               role: "user",
               content: JSON.stringify({
-                name_cn: input.name_cn,
-                description_cn: input.description_cn,
+                name_cn: nameCn,
+                description_cn: descriptionCn,
               }),
             },
           ],
         }),
+        signal: controller.signal,
       },
     );
 
@@ -98,7 +115,7 @@ export async function translateProductContent(
     if (!response.ok) {
       return {
         ok: false,
-        error: data?.error?.message || `DeepSeek API error (${response.status})`,
+        error: `Translation provider rejected the request (${response.status}).`,
       };
     }
 
@@ -120,8 +137,12 @@ export async function translateProductContent(
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "DeepSeek translation request failed.",
+      error: error instanceof Error && error.name === "AbortError"
+        ? "Translation request timed out."
+        : "DeepSeek translation request failed.",
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -177,6 +198,7 @@ export async function batchTranslateRows(
     description_gr?: unknown;
   }>,
   groupSize = 3,
+  options: TranslationRequestOptions = {},
 ): Promise<
   Array<{
     translated: boolean;
@@ -220,7 +242,7 @@ export async function batchTranslateRows(
 
     const groupResults = await Promise.all(
       group.map(async ({ index, input }) => {
-        const result = await translateProductContent(input);
+        const result = await translateProductContent(input, options);
         if (result.ok) {
           results[index] = { translated: true, ...result.translations };
         } else {

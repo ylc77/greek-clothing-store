@@ -1,343 +1,232 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
 import {
-  validateProductPayload,
-  type AdminProductPayload,
-  type ProductMutation,
-} from "@/lib/admin-products";
-import type { VariantProcurement } from "@/lib/types";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
-import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
+  adminActorFromContext,
+  adminHasPermission,
+  getAdminAuthContextFromRequest,
+} from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
-import { syncProductInventoryFromLegacy } from "@/lib/erp-inventory";
+import {
+  CSV_IMPORT_SCHEMA_VERSION,
+  loadProductImportJob,
+  prepareProductImportRows,
+  processProductImportJob,
+  productImportRuntimeReady,
+  readProductCsvFormData,
+  stablePayloadHash,
+} from "@/lib/csv-import-server";
+import { CsvInputError } from "@/lib/csv-parser";
+import { featureDisabledResponse, isFeatureEnabledUncached } from "@/lib/features";
 import { getSupabaseAdminClient } from "@/lib/supabase";
-import { batchTranslateRows } from "@/lib/translate";
 
-type ImportRow = {
-  rowNumber?: number;
-  [key: string]: unknown;
-};
+export const dynamic = "force-dynamic";
 
-type ImportResult = {
-  rowNumber: number;
-  sku: string;
-  ok: boolean;
-  message: string;
-  translated: boolean;
-  translateError?: string;
-};
-
-type ValidImportRow = {
-  rowNumber: number;
-  mutation: ProductMutation;
-  variantProcurement?: Record<string, VariantProcurement>;
-};
-
-type ErpSyncError = {
-  sku: string;
-  productId?: number;
-  message: string;
-};
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+async function authorize(request: NextRequest) {
+  const context = await getAdminAuthContextFromRequest(request);
+  if (!context) {
+    return { response: NextResponse.json(
+      { error: "Unauthorized", code: "UNAUTHORIZED", operationSafeToDiscard: true },
+      { status: 401 },
+    ) };
+  }
+  if (!adminHasPermission(context, "products:write")) {
+    return { response: NextResponse.json(
+      { error: "Forbidden", code: "FORBIDDEN", operationSafeToDiscard: true },
+      { status: 403 },
+    ) };
+  }
+  return { context };
 }
 
-function unavailable() {
+function configurationUnavailable() {
   return NextResponse.json(
     {
-      error:
-        "Admin Supabase is not configured. Add SUPABASE_SERVICE_ROLE_KEY and ADMIN_PASSWORD.",
+      error: "Transactional CSV import is not configured.",
+      code: "CSV_IMPORT_RPC_REQUIRED",
+      operationSafeToDiscard: false,
     },
-    { status: 500 },
+    { status: 503 },
   );
 }
 
-function skuKey(sku: string) {
-  return sku.trim().toUpperCase();
+function inputError(error: CsvInputError) {
+  return NextResponse.json(
+    {
+      error: error.message,
+      code: error.code,
+      rowNumber: error.rowNumber,
+      field: error.field,
+      operationSafeToDiscard: true,
+    },
+    { status: error.code === "CSV_FILE_TOO_LARGE" ? 413 : 400 },
+  );
 }
 
-function parseCsvSizeStock(value: unknown) {
-  if (typeof value !== "string" || !value.trim()) {
-    return null;
+function startFailure(error: unknown) {
+  const message = String((error as { message?: unknown } | null)?.message || "");
+  if (message.includes("CSV_IMPORT_OPERATION_CONFLICT")) {
+    return NextResponse.json(
+      {
+        error: "This operation ID is already attached to different CSV content.",
+        code: "CSV_IMPORT_OPERATION_CONFLICT",
+        operationSafeToDiscard: false,
+      },
+      { status: 409 },
+    );
   }
-
-  const sizeStock: Record<string, number> = {};
-  for (const match of value.matchAll(/([^,;]+?):\s*(\d+)/g)) {
-    const size = match[1]?.trim();
-    const parsedQty = parseInt(match[2], 10);
-    if (!size) continue;
-    if (!Number.isNaN(parsedQty) && parsedQty >= 0) {
-      sizeStock[size.trim().toUpperCase()] = parsedQty;
-    }
+  if (message.includes("CSV_IMPORT_INVALID_ARGUMENT")) {
+    return NextResponse.json(
+      { error: "Normalized CSV import data is invalid.", code: "CSV_IMPORT_INVALID_ARGUMENT", operationSafeToDiscard: true },
+      { status: 400 },
+    );
   }
-
-  return Object.keys(sizeStock).length > 0 ? sizeStock : null;
-}
-
-function parseCsvVariantValues(value: unknown) {
-  const result: Record<string, string> = {};
-  if (typeof value !== "string" || !value.trim()) return result;
-
-  value.split(/[;,]/).forEach((pair) => {
-    const separator = pair.indexOf(":");
-    if (separator <= 0) return;
-    const size = pair.slice(0, separator).trim().toUpperCase();
-    const item = pair.slice(separator + 1).trim();
-    if (size && item) result[size] = item;
-  });
-  return result;
-}
-
-function parseCsvVariantProcurement(row: ImportRow) {
-  const supplierSkus = parseCsvVariantValues(row.variant_supplier_skus);
-  const costPrices = parseCsvVariantValues(row.variant_cost_prices);
-  const reorderLevels = parseCsvVariantValues(row.variant_reorder_levels);
-  const sizes = new Set([...Object.keys(supplierSkus), ...Object.keys(costPrices), ...Object.keys(reorderLevels)]);
-  const result: Record<string, VariantProcurement> = {};
-
-  sizes.forEach((size) => {
-    const costPrice = Number(costPrices[size]);
-    const reorderLevel = Number(reorderLevels[size]);
-    result[size] = {
-      supplier_sku: supplierSkus[size] || "",
-      cost_price: Number.isFinite(costPrice) && costPrice >= 0 ? costPrice : null,
-      reorder_level: Number.isFinite(reorderLevel) && reorderLevel >= 0 ? Math.trunc(reorderLevel) : null,
-    };
-  });
-
-  return Object.keys(result).length > 0 ? result : undefined;
-}
-
-function readableImportMessage(message: string) {
-  return message
-    .split(";")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const lower = part.toLowerCase();
-      if (lower.includes("sku is required")) return "SKU 必填";
-      if (lower.includes("category")) return "一级分类无效或为空，请填写后台已有分类";
-      if (lower.includes("subcategory")) return "二级分类无效，请填写该一级分类下的二级分类";
-      if (lower.includes("price")) return "价格必须是数字，不能带 € 或文字";
-      if (lower.includes("stock")) return "库存必须是数字";
-      if (lower.includes("vat")) return "VAT 必须是数字";
-      if (lower.includes("duplicate key") || lower.includes("unique")) return "SKU 重复或违反唯一约束";
-      if (lower.includes("invalid input syntax")) return "字段格式不正确，请检查数字、布尔值或 JSON";
-      if (lower.includes("violates row-level security")) return "数据库权限不足，请检查后台 service role 配置";
-      if (lower.includes("column") && lower.includes("does not exist")) return `数据库缺少字段：${part}`;
-      return part;
-    })
-    .join("；");
+  return configurationUnavailable();
 }
 
 export async function POST(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "products:write"))) {
-    return unauthorized();
+  const authorized = await authorize(request);
+  if (authorized.response) return authorized.response;
+  if (!(await isFeatureEnabledUncached("csv_import"))) return featureDisabledResponse("csv_import");
+  if (process.env.USE_PRODUCT_RPC !== "true" || process.env.USE_CSV_IMPORT_RPC !== "true") {
+    return configurationUnavailable();
   }
-  if (!(await isFeatureEnabled("csv_import"))) return featureDisabledResponse("csv_import");
+
+  let form: Awaited<ReturnType<typeof readProductCsvFormData>>;
+  try {
+    form = await readProductCsvFormData(request, { requireOperationId: true });
+  } catch (error) {
+    if (error instanceof CsvInputError) return inputError(error);
+    return NextResponse.json(
+      { error: "CSV request could not be parsed.", code: "CSV_INVALID_REQUEST", operationSafeToDiscard: true },
+      { status: 400 },
+    );
+  }
 
   const supabase = getSupabaseAdminClient();
-  if (!supabase) {
-    return unavailable();
-  }
+  if (!supabase) return configurationUnavailable();
+  const actor = adminActorFromContext(authorized.context!);
 
-  const body = (await request.json()) as { rows?: ImportRow[] };
-  const rows = Array.isArray(body.rows) ? body.rows : [];
-  const batchId = randomUUID();
-
-  const validRows: ValidImportRow[] = [];
-  const results: ImportResult[] = [];
-  const erpSyncErrors: ErpSyncError[] = [];
-
-  rows.forEach((row, index) => {
-    const rowNumber = Number(row.rowNumber || index + 2);
-    const { errors, mutation } = validateProductPayload(
-      row as AdminProductPayload,
-    );
-
-    if (!mutation) {
-      results.push({
-        rowNumber,
-        sku: typeof row.sku === "string" ? row.sku : "",
-        ok: false,
-        message: readableImportMessage(errors.join("; ")),
-        translated: false,
-      });
-      return;
-    }
-
-    const sizeStock = parseCsvSizeStock(row.size_stock);
-    if (sizeStock) {
-      (mutation as Record<string, unknown>).size_stock = sizeStock;
-      (mutation as Record<string, unknown>).stock = Object.values(sizeStock).reduce(
-        (sum, qty) => sum + qty,
-        0,
-      );
-    }
-
-    validRows.push({ rowNumber, mutation, variantProcurement: parseCsvVariantProcurement(row) });
+  // The idempotency fingerprint must only depend on the frozen user payload.
+  // Database preview versions are concurrency tokens for a newly-created Job;
+  // they change after a successful import and therefore must not participate in
+  // replay identity.
+  const payloadHash = stablePayloadHash({
+    schemaVersion: CSV_IMPORT_SCHEMA_VERSION,
+    fileHash: form.fileHash,
+    importMode: form.importMode,
+    inventoryMode: form.inventoryMode,
+    rows: form.parsed.rows,
   });
 
-  const translateResults = await batchTranslateRows(
-    validRows.map((row) => row.mutation),
-    3,
-  );
-
-  validRows.forEach(({ mutation }, index) => {
-    const translated = translateResults[index];
-    if (!translated) return;
-
-    if (!mutation.name_en && translated.name_en) mutation.name_en = translated.name_en;
-    if (!mutation.description_en && translated.description_en) {
-      mutation.description_en = translated.description_en;
-    }
-    if (!mutation.name_gr && translated.name_gr) mutation.name_gr = translated.name_gr;
-    if (!mutation.description_gr && translated.description_gr) {
-      mutation.description_gr = translated.description_gr;
-    }
-  });
-
-  const lastIndexBySku = new Map<string, number>();
-  validRows.forEach((row, index) => {
-    lastIndexBySku.set(skuKey(row.mutation.sku), index);
-  });
-
-  const rowsToUpsert = validRows.filter((row, index) => {
-    return lastIndexBySku.get(skuKey(row.mutation.sku)) === index;
-  });
-
-  if (rowsToUpsert.length > 0) {
-    const { error } = await supabase
-      .from("products")
-      .upsert(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        rowsToUpsert.map((row) => row.mutation as any),
-        { onConflict: "sku" },
-      );
-
-    if (error) {
-      validRows.forEach((row, index) => {
-        const translated = translateResults[index];
-        results.push({
-          rowNumber: row.rowNumber,
-          sku: row.mutation.sku,
-          ok: false,
-          message: readableImportMessage(error.message),
-          translated: translated?.translated ?? false,
-          translateError: translated?.translateError,
-        });
-      });
-    } else {
-      const affectedSkus = Array.from(
-        new Set(rowsToUpsert.map((row) => row.mutation.sku.trim()).filter(Boolean)),
-      );
-
-      if (affectedSkus.length > 0) {
-        const { data: affectedProducts, error: affectedProductsError } = await supabase
-          .from("products")
-          .select("id, sku")
-          .in("sku", affectedSkus);
-
-        if (affectedProductsError) {
-          erpSyncErrors.push({
-            sku: affectedSkus.join(", "),
-            message: affectedProductsError.message,
-          });
-        } else {
-          for (const product of affectedProducts || []) {
-            const productId = Number(product.id);
-            const productSku = typeof product.sku === "string" ? product.sku : "";
-
-            if (!Number.isFinite(productId)) {
-              erpSyncErrors.push({
-                sku: productSku,
-                message: "Invalid product ID for ERP inventory sync.",
-              });
-              continue;
-            }
-
-            try {
-              const importedRow = rowsToUpsert.find((row) => skuKey(row.mutation.sku) === skuKey(productSku));
-              await syncProductInventoryFromLegacy({
-                productId,
-                variantProcurement: importedRow?.variantProcurement,
-                reason: "CSV 导入同步库存",
-                sourceType: "csv_import",
-                sourceId: batchId,
-                movementType: "correction",
-                idempotencyKey: `csv_import:${batchId}:${productId}`,
-                createdBy: "admin",
-              });
-            } catch (syncError) {
-              erpSyncErrors.push({
-                sku: productSku,
-                productId,
-                message:
-                  syncError instanceof Error
-                    ? syncError.message
-                    : "ERP inventory sync failed.",
-              });
-            }
-          }
-
-          const syncedSkuSet = new Set(
-            (affectedProducts || [])
-              .map((product) => (typeof product.sku === "string" ? product.sku : ""))
-              .filter(Boolean),
-          );
-          affectedSkus
-            .filter((sku) => !syncedSkuSet.has(sku))
-            .forEach((sku) => {
-              erpSyncErrors.push({
-                sku,
-                message: "Product was upserted but could not be loaded for ERP sync.",
-              });
-            });
-        }
+  try {
+    const existing = await loadProductImportJob(supabase as any, {
+      operationId: form.operationId,
+      limit: 50,
+    });
+    if (existing) {
+      if (existing.job.payload_hash !== payloadHash) {
+        return NextResponse.json(
+          {
+            error: "This operation ID is already attached to different CSV content.",
+            code: "CSV_IMPORT_OPERATION_CONFLICT",
+            operationSafeToDiscard: false,
+          },
+          { status: 409 },
+        );
       }
-
-      validRows.forEach((row, index) => {
-        const translated = translateResults[index];
-        const isLastDuplicate = lastIndexBySku.get(skuKey(row.mutation.sku)) === index;
-        const parts: string[] = [
-          isLastDuplicate ? "已导入" : "已跳过：同一 CSV 中后面的相同 SKU 已覆盖",
-        ];
-        if (translated?.translated) parts.push("已翻译");
-
-        results.push({
-          rowNumber: row.rowNumber,
-          sku: row.mutation.sku,
-          ok: true,
-          message: parts.join("；"),
-          translated: translated?.translated ?? false,
-          translateError: translated?.translateError,
-        });
-      });
+      return NextResponse.json(
+        { ...existing, fileHash: form.fileHash, payloadHash, replayed: true },
+        { status: Number(existing.job.pending_rows || 0) > 0 ? 202 : 200 },
+      );
     }
+  } catch {
+    return configurationUnavailable();
   }
 
-  results.sort((a, b) => a.rowNumber - b.rowNumber);
+  if (!(await productImportRuntimeReady(supabase))) return configurationUnavailable();
 
-  if (results.some((result) => result.ok) && rowsToUpsert.length > 0) {
-    invalidateProductsCache();
+  let preparedRows: Awaited<ReturnType<typeof prepareProductImportRows>>;
+  try {
+    preparedRows = await prepareProductImportRows(supabase as any, form.parsed.rows, {
+      importMode: form.importMode,
+      inventoryMode: form.inventoryMode,
+    });
+  } catch {
+    return configurationUnavailable();
   }
 
-  const translatedCount = results.filter((result) => result.translated).length;
-  const translateFailureCount = results.filter(
-    (result) => result.translateError,
-  ).length;
+  const { data: startData, error: startError } = await (supabase as any).rpc(
+    "product_import_start_rpc",
+    {
+      p_client_request_id: form.operationId,
+      p_payload_hash: payloadHash,
+      p_filename: form.filename,
+      p_import_mode: form.importMode,
+      p_inventory_mode: form.inventoryMode,
+      p_rows: preparedRows,
+      p_actor: actor,
+      p_source: "admin_csv_import",
+    },
+  );
+  if (startError) return startFailure(startError);
+  const job = startData?.job || startData;
+  const jobId = typeof job?.id === "string" ? job.id : "";
+  if (!jobId) {
+    return NextResponse.json(
+      {
+        error: "The import job may have been created but returned an unreadable result. Recover it with the same operation ID.",
+        code: "CSV_IMPORT_RESULT_UNKNOWN",
+        operationSafeToDiscard: false,
+      },
+      { status: 503 },
+    );
+  }
 
-  return NextResponse.json({
-    successCount: results.filter((result) => result.ok).length,
-    failureCount: results.filter((result) => !result.ok).length,
-    translatedCount,
-    translateFailureCount,
-    erpSyncWarning:
-      erpSyncErrors.length > 0
-        ? "CSV 已导入，但部分商品 ERP 库存同步失败，请运行对账 SQL 检查。"
-        : undefined,
-    erpSyncErrors,
-    results,
-  });
+  try {
+    const processed = await processProductImportJob(supabase as any, jobId, actor);
+    if (processed.processed > 0) {
+      try { invalidateProductsCache(); } catch { /* A durable Job remains authoritative. */ }
+    }
+    const view = await loadProductImportJob(supabase as any, { jobId, limit: 50 });
+    return NextResponse.json(
+      { ...view, fileHash: form.fileHash, payloadHash, replayed: startData?.replayed === true },
+      { status: processed.job?.pending_rows > 0 ? 202 : 200 },
+    );
+  } catch {
+    return NextResponse.json(
+      {
+        error: "The import job exists, but processing status must be recovered before retrying.",
+        code: "CSV_IMPORT_PROCESSING_UNAVAILABLE",
+        jobId,
+        operationSafeToDiscard: false,
+      },
+      { status: 503 },
+    );
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const authorized = await authorize(request);
+  if (authorized.response) return authorized.response;
+  if (!(await isFeatureEnabledUncached("csv_import"))) return featureDisabledResponse("csv_import");
+  const operationId = new URL(request.url).searchParams.get("operationId")?.trim() || "";
+  if (!operationId) {
+    return NextResponse.json(
+      { error: "operationId is required.", code: "INVALID_ARGUMENT", operationSafeToDiscard: true },
+      { status: 400 },
+    );
+  }
+  const supabase = getSupabaseAdminClient();
+  if (!supabase) return configurationUnavailable();
+  try {
+    const view = await loadProductImportJob(supabase as any, { operationId, limit: 50 });
+    if (!view) {
+      return NextResponse.json(
+        { error: "Import job not found.", code: "CSV_IMPORT_JOB_NOT_FOUND", operationSafeToDiscard: true },
+        { status: 404 },
+      );
+    }
+    return NextResponse.json(view);
+  } catch {
+    return configurationUnavailable();
+  }
 }

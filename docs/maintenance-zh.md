@@ -53,6 +53,9 @@ NEXT_PUBLIC_SUPABASE_URL=     # Supabase 项目 URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY= # Supabase 匿名 key
 ADMIN_PASSWORD=               # 后台密码
 SUPABASE_SERVICE_ROLE_KEY=    # Supabase 服务角色 key（后台写操作）
+USE_POS_RPC=true              # POS 事务 RPC；缺失时写入 fail closed
+USE_PRODUCT_RPC=true          # 商品事务 RPC；CSV 也依赖它
+USE_CSV_IMPORT_RPC=true       # CSV Job / 逐行事务 RPC；缺失时返回 503
 DEEPSEEK_API_KEY=             # DeepSeek 翻译 API key
 ```
 
@@ -84,7 +87,7 @@ DEEPSEEK_API_KEY=             # DeepSeek 翻译 API key
 3. 检查 Vercel 日志 Runtime Logs
 
 ### Supabase 数据备份
-免费版不支持自动备份。建议定期使用后台「导出 CSV」备份商品数据。店铺设置需手动记录。
+后台「导出 CSV」只导出商品资料，不能替代 PostgreSQL 灾难恢复备份，也不包含全部订单、设置、账号和 Storage 对象。正式上线前应另行制定 Supabase 数据库与 Storage 的备份、恢复和演练方案。
 
 ### 线上自动监控
 项目已包含 GitHub Actions 定时检查：`.github/workflows/site-monitor.yml`。
@@ -108,7 +111,15 @@ BASE_URL=https://你的域名.vercel.app npm run check:skroutz
 ### 老客户升级 → migrations
 已有真实数据的客户不能执行完整 `client-init.sql`。正常升级使用尚未应用的 `supabase/migrations`；只有具体升级说明明确要求时才使用 `supabase/patches/` 专用补丁。
 
-P1 migrations 已按 `20260715100000` POS checkout、`20260715100001` POS void、`20260715102000` 事务库存、`20260715110000` 开发者凭据的顺序排列。老客户正常使用 `db push --dry-run` 核对计划后再执行 `db push`，不要手工伪造 migration history。
+事务 migrations 依次包含 P1 POS/库存/开发者凭据、`20260715143949_transactional_product_operations.sql` 商品事务，以及 `20260716100000_transactional_csv_import_jobs.sql` CSV Job 与逐行事务。老客户必须先备份并确认目标 project ref，再使用 `db push --dry-run` 核对计划后执行 `db push`；不要执行 `client-init.sql`，也不要手工伪造 migration history。部署代码前在 Vercel 同时设置 `USE_PRODUCT_RPC=true` 和 `USE_CSV_IMPORT_RPC=true`，否则 CSV 写入会以 503 fail closed。
+
+### CSV 导入中断恢复
+
+- 先完成整份文件预检和可选翻译预览，再创建持久 Job。
+- 浏览器刷新、网络超时或响应丢失时，不要重新上传并生成另一业务 ID；重新进入 CSV 页面恢复原 Job。
+- `partial` 或 `failed` Job 应下载失败行并使用“重试失败行”；已成功行不会重复执行。
+- 不要手工修改 `product_import_jobs`、`product_import_rows` 或库存表来伪造成功状态。
+- 后台商品 CSV 导出只是商品资料导出，不是完整数据库备份。
 
 ### 新客户初始化 → client-init.sql
 新客户执行 `supabase/client-init.sql` 后，developer credential 保持未初始化。维护者在自己的电脑运行：
