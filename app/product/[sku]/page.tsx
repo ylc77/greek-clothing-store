@@ -208,7 +208,7 @@ export default async function ProductPage({
             {backLabel}
           </Link>
           <span className="text-stone-300">/</span>
-          <span className="min-h-10 min-w-0 flex-1 rounded-full bg-stone-100 px-3 py-2 text-ink sm:flex-none">
+          <span className="min-h-10 min-w-0 flex-1 overflow-hidden rounded-full bg-stone-100 px-3 py-2 text-ink">
             <span className="line-clamp-1">{productName(product, language)}</span>
           </span>
         </div>

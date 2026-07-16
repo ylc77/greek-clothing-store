@@ -50,6 +50,11 @@ assert.match(
   /className="flex min-w-0 flex-col rounded-3xl/,
   "the product information grid item must allow shrinking on narrow viewports",
 );
+assert.match(
+  productPage,
+  /className="min-h-10 min-w-0 flex-1 overflow-hidden rounded-full/,
+  "the product breadcrumb must not restore min-content width at tablet breakpoints",
+);
 
 const publicBoundary = read("lib/product-data-boundary.ts");
 for (const exportName of [
