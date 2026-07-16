@@ -1,11 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { NextRequest } from "next/server";
+import {
+  adminHasPermission,
+  getAdminAuthContextFromRequest,
+} from "@/lib/admin-auth";
+import { shapeInventoryOverviewForRole } from "@/lib/admin-data-boundary";
+import { adminPrivateJson, applyAdminPrivateCache } from "@/lib/admin-response";
 import { getInventoryOverview } from "@/lib/erp-inventory";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
+export const dynamic = "force-dynamic";
 
 function parseBoolean(value: string | null) {
   if (value === null) return false;
@@ -13,8 +16,16 @@ function parseBoolean(value: string | null) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "inventory:read"))) return unauthorized();
-  if (!(await isFeatureEnabled("inventory"))) return featureDisabledResponse("inventory");
+  const authContext = await getAdminAuthContextFromRequest(request);
+  if (!authContext) {
+    return adminPrivateJson({ error: "Unauthorized", code: "UNAUTHORIZED" }, { status: 401 });
+  }
+  if (!adminHasPermission(authContext, "inventory:read")) {
+    return adminPrivateJson({ error: "Forbidden", code: "FORBIDDEN" }, { status: 403 });
+  }
+  if (!(await isFeatureEnabled("inventory"))) {
+    return applyAdminPrivateCache(featureDisabledResponse("inventory"));
+  }
 
   const url = new URL(request.url);
   try {
@@ -29,9 +40,14 @@ export async function GET(request: NextRequest) {
       offset: Number(url.searchParams.get("offset")) || undefined,
     });
 
-    return NextResponse.json(result);
+    return adminPrivateJson(shapeInventoryOverviewForRole(result, authContext.role));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to load inventory overview.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[inventory] failed to load overview", {
+      code: String((error as { code?: unknown } | null)?.code || "INVENTORY_DATA_UNAVAILABLE"),
+    });
+    return adminPrivateJson(
+      { error: "Inventory data is temporarily unavailable.", code: "INVENTORY_DATA_UNAVAILABLE" },
+      { status: 503 },
+    );
   }
 }
