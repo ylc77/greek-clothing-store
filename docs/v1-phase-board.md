@@ -8,7 +8,7 @@
 | 阶段 | 分支 | 状态 | 当前出口条件 |
 |---|---|---|---|
 | 风险矩阵/看板 | `codex/hardening-p2-public-data-boundary` | 完成 | 风险均有证据等级、完成证据和停止条件。 |
-| 5A 公开数据边界 | `codex/hardening-p2-public-data-boundary` | 进行中 | JSON-LD、匿名列权限、角色 DTO、缓存、静态门禁、三条数据库路径和 Preview 全部通过并合并。 |
+| 5A 公开数据边界 | `codex/hardening-p2-public-data-boundary` | 本地门禁完成 | JSON-LD、匿名列权限、角色 DTO、缓存、静态门禁和数据库安装路径已本地通过；仍需 Draft PR、CI、隔离 Preview、清理签核和合并。 |
 | 5B 图片与 Storage | `codex/hardening-p2-storage-image-security` | 等待 5A 合并 | MIME/magic bytes、Sharp、资源限制、Storage 补偿、SSRF、永久删除、orphan 对账通过。 |
 | 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 等待 5B 合并 | 共享限流/预算/并发/超时/PII、登录防爆破、Token 生命周期和状态码矩阵通过。 |
 | 6A 渠道/SEO/法律 | `codex/hardening-p2-channels-seo-legal` | 等待 5C 合并 | Skroutz Validator、EL/EN 原始 HTML、法律双语、安全头和可访问性通过。 |
@@ -30,15 +30,15 @@
 
 ## 5A 工作包
 
-- [ ] JSON-LD 恶意字段测试和安全 serializer。
-- [ ] 公开 Storefront/AI/Skroutz/Sitemap DTO。
-- [ ] 数据库列级公开权限或安全公开接口；匿名采购字段读取必须失败。
-- [ ] `procurement:read`、`procurement:cost`、`procurement:write` 权限边界。
-- [ ] Products/Inventory/Suppliers 按角色塑形。
-- [ ] 角色响应 `private, no-store`，缓存交叉请求测试。
-- [ ] 静态门禁禁止公开 `select("*")` 与未批准危险 HTML helper。
-- [ ] 单元、Route、数据库权限矩阵和浏览器原始 HTML 测试。
-- [ ] migration/client-init/legacy 安装与安全门禁。
+- [x] JSON-LD 恶意字段测试和安全 serializer。
+- [x] 公开 Storefront/AI/Skroutz/Sitemap DTO。
+- [x] 数据库列级公开权限或安全公开接口；匿名采购字段读取必须失败。
+- [x] `procurement:read`、`procurement:cost`、`procurement:write` 权限边界。
+- [x] Products/Inventory/Suppliers 按角色塑形。
+- [x] 角色响应 `private, no-store`，缓存交叉请求测试。
+- [x] 静态门禁禁止公开 `select("*")` 与未批准危险 HTML helper。
+- [x] 单元、Route、数据库权限矩阵和浏览器原始 HTML 测试。
+- [x] migration/client-init/legacy 安装与安全门禁。
 - [ ] Draft PR、CI、Preview、清理、签核、标签和 merge commit。
 
 ## 发布版本判定占位
