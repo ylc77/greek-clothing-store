@@ -44,6 +44,7 @@ Detailed evidence: `docs/v1-phase-5c-local-verification.md`.
 
 - confirm branch-only Preview uses the dedicated test Supabase and no production/customer project
 - create a fresh Git deployment after adding branch-scoped security variables; redeploying an older deployment may retain its previous environment snapshot
+- omit the optional emergency password in Preview unless that exact branch has a separately verified strong value; use Supabase Auth accounts for the role matrix
 - apply all 18 migrations and verify private table/RPC grants
 - test AI consent, bounded public context, limit/budget failures and provider-unavailable fail-closed behavior
 - prove emergency and developer rate blocks survive separate browser/server instances without leaking credentials

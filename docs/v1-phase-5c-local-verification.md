@@ -60,6 +60,7 @@
 3. GitHub 四个 required jobs 在 Ubuntu Runner 全绿。
 4. 使用一对一隔离 Supabase/Vercel Preview 复验 consent、限流、登录封禁、Token 刷新/登出、角色状态码和三种视口。
    分支环境变量变更后必须由新的 Git deployment 验收；旧 deployment 的 Redeploy 可能继续使用原环境快照。
+   Preview 默认不继承或复用紧急 owner 密码，角色验收使用隔离 Supabase Auth 测试账号。
 5. Preview 测试数据、临时账号、Cookie、环境变量和部署快照凭据清理为零。
 6. 完成单人维护者签核、CI/Preview 标签和 merge commit。
 
