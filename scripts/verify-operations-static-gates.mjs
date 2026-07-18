@@ -4,6 +4,7 @@ import path from "node:path";
 
 const root = process.cwd();
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
+const normalizeLineEndings = (value) => value.replace(/\r\n?/g, "\n");
 const migrations = fs.readdirSync(path.join(root, "supabase", "migrations")).filter((name) => name.endsWith(".sql")).sort();
 const operationsMigrations = migrations.filter((name) => /^\d+_operations_reporting_audit_barcode\.sql$/.test(name));
 assert.deepEqual(operationsMigrations, ["20260718105030_operations_reporting_audit_barcode.sql"]);
@@ -108,6 +109,10 @@ const snapshotParts = migrations.map((name) => [
   `-- END MIGRATION: ${name}`,
   "",
 ].join("\n"));
-assert.equal(read("supabase/client-init.sql"), `${headerLines.join("\n")}\n${snapshotParts.join("\n")}`, "client-init.sql drifted from migrations");
+assert.equal(
+  normalizeLineEndings(read("supabase/client-init.sql")),
+  normalizeLineEndings(`${headerLines.join("\n")}\n${snapshotParts.join("\n")}`),
+  "client-init.sql drifted from migrations",
+);
 
 console.log(`Operations static gates passed for ${migrations.length} ordered migrations.`);
