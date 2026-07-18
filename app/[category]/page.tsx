@@ -4,6 +4,7 @@ import { CategoryPage } from "@/components/category-page";
 import { categoryLabels, getLanguage, subcategoryLabels } from "@/lib/i18n";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
+import { buildLanguageAlternates } from "@/lib/storefront-seo";
 import { isProductCategory } from "@/lib/types";
 
 type CategoryRouteProps = {
@@ -41,9 +42,20 @@ export async function generateMetadata({
   const title = `${pageLabel} | ${settings.business_name}`;
   return {
     title,
-    description: `Browse ${pageLabel.toLowerCase()} at ${settings.business_name}.`,
-    alternates: { canonical: `${siteUrl()}/${category}${selectedSubcategory ? `?subcategory=${encodeURIComponent(selectedSubcategory)}` : ""}` },
-    openGraph: { title, siteName: settings.business_name },
+    description: language === "en"
+      ? `Browse ${pageLabel.toLowerCase()} at ${settings.business_name}.`
+      : `Δείτε ${pageLabel.toLowerCase()} στο ${settings.business_name}.`,
+    alternates: buildLanguageAlternates(
+      `/${category}`,
+      language,
+      { subcategory: selectedSubcategory },
+      siteUrl(),
+    ),
+    openGraph: {
+      title,
+      siteName: settings.business_name,
+      url: buildLanguageAlternates(`/${category}`, language, { subcategory: selectedSubcategory }, siteUrl()).canonical,
+    },
   };
 }
 

@@ -21,6 +21,7 @@ import { getFeatureSettings } from "@/lib/features";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 import { serializeJsonForHtmlScript } from "@/lib/serialize-json-for-html-script";
+import { buildLanguageAlternates } from "@/lib/storefront-seo";
 
 type ProductPageProps = {
   params: Promise<{ sku: string }>;
@@ -62,11 +63,17 @@ export async function generateMetadata({
   const title = `${productName(product, language)} | ${settings.business_name}`;
   const description =
     productDescription(product, language) || productName(product, language);
-  const url = `${siteUrl()}/product/${encodeURIComponent(product.sku)}`;
+  const alternates = buildLanguageAlternates(
+    `/product/${encodeURIComponent(product.sku)}`,
+    language,
+    {},
+    siteUrl(),
+  );
+  const url = alternates.canonical;
   return {
     title,
     description,
-    alternates: { canonical: url },
+    alternates,
     openGraph: {
       title,
       description,
@@ -312,7 +319,12 @@ export default async function ProductPage({
               price: Number(product.price).toFixed(2),
               priceCurrency: "EUR",
               availability: stockQty > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
-              url: `${siteUrl()}/product/${encodeURIComponent(product.sku)}`,
+              url: buildLanguageAlternates(
+                `/product/${encodeURIComponent(product.sku)}`,
+                language,
+                {},
+                siteUrl(),
+              ).canonical,
             },
             brand: product.brand ? { "@type": "Brand", name: product.brand.trim() } : undefined,
           }),
