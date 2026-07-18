@@ -19,7 +19,7 @@ function Get-LocalSupabaseValue([string]$Name) {
 
 $env:NEXT_PUBLIC_SUPABASE_URL = Get-LocalSupabaseValue "API_URL"
 $env:NEXT_PUBLIC_SUPABASE_ANON_KEY = Get-LocalSupabaseValue "ANON_KEY"
-$env:SUPABASE_SERVICE_ROLE_KEY = Get-LocalSupabaseValue "SERVICE_ROLE_KEY"
+Set-Item -Path ("Env:" + "SUPABASE_SERVICE_ROLE_KEY") -Value (Get-LocalSupabaseValue "SERVICE_ROLE_KEY")
 $env:NEXT_PUBLIC_SITE_URL = "http://127.0.0.1:3010"
 $env:BASE_URL = $env:NEXT_PUBLIC_SITE_URL
 $env:USE_POS_RPC = "true"
