@@ -1,16 +1,18 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$sourceConfig = Join-Path $repoRoot "supabase\config.toml"
+$sourceConfig = Join-Path (Join-Path $repoRoot "supabase") "config.toml"
+$temporaryRoot = [System.IO.Path]::GetTempPath()
 $token = "AUDIT_BACKUP_6B"
 $targetProjectRef = "local-restore"
-$targetRoot = Join-Path $env:TEMP ("clothing-6b-restore-target-" + [guid]::NewGuid().ToString("N"))
-$backupRoot = Join-Path $env:TEMP ("clothing-6b-backup-" + [guid]::NewGuid().ToString("N"))
+$targetRoot = Join-Path $temporaryRoot ("clothing-6b-restore-target-" + [guid]::NewGuid().ToString("N"))
+$backupRoot = Join-Path $temporaryRoot ("clothing-6b-backup-" + [guid]::NewGuid().ToString("N"))
 $targetStarted = $false
 $startedAt = Get-Date
 
 function Assert-TemporaryPath([string]$Path) {
-  $temporary = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+  $trimCharacters = [char[]]@([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+  $temporary = [System.IO.Path]::GetFullPath($temporaryRoot).TrimEnd($trimCharacters) + [System.IO.Path]::DirectorySeparatorChar
   $resolved = [System.IO.Path]::GetFullPath($Path)
   if (!$resolved.StartsWith($temporary, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Refusing to manage a path outside the operating-system temporary directory"
@@ -95,7 +97,8 @@ try {
   New-Item -ItemType Directory -Path (Join-Path $targetRoot "supabase") -Force | Out-Null
   $config = [System.IO.File]::ReadAllText($sourceConfig, [System.Text.Encoding]::UTF8)
   $config = $config.Replace('project_id = "clothing_web"', 'project_id = "clothing_6b_restore_target"').Replace('5532', '5632')
-  [System.IO.File]::WriteAllText((Join-Path $targetRoot "supabase\config.toml"), $config, (New-Object System.Text.UTF8Encoding($false)))
+  $targetConfig = Join-Path (Join-Path $targetRoot "supabase") "config.toml"
+  [System.IO.File]::WriteAllText($targetConfig, $config, (New-Object System.Text.UTF8Encoding($false)))
 
   npx supabase start --workdir $targetRoot | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "Unable to start isolated restore Supabase" }

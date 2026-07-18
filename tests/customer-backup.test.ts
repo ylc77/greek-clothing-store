@@ -46,9 +46,12 @@ test("backup paths cannot escape the backup root", () => {
 test("backup and restore CLIs fail closed on project identity and non-empty targets", () => {
   const backup = fs.readFileSync(path.join(process.cwd(), "scripts/customer-backup.ts"), "utf8");
   const restore = fs.readFileSync(path.join(process.cwd(), "scripts/customer-restore.ts"), "utf8");
+  const drill = fs.readFileSync(path.join(process.cwd(), "scripts/verify-operations-backup-restore.ps1"), "utf8");
   assert.match(backup, /path\.join\(process\.cwd\(\), "supabase", "\.temp", "project-ref"\)/);
   assert.match(backup, /linked Supabase project ref does not match/);
   assert.match(restore, /RESTORE_AUTH_NOT_EMPTY/);
   assert.match(restore, /RESTORE_STORAGE_NOT_EMPTY/);
   assert.match(restore, /RESTORE_MIGRATION_HISTORY_NOT_EMPTY/);
+  assert.match(drill, /\[System\.IO\.Path\]::GetTempPath\(\)/);
+  assert.doesNotMatch(drill, /\$env:TEMP/);
 });
