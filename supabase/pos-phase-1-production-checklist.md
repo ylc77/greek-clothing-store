@@ -1,6 +1,6 @@
 # POS Phase 1 Production Checklist
 
-本清单用于 production 执行 `supabase/migrations/20260704_add_pos_phase_1_tables.sql` 前后确认。当前阶段只新增 POS 三张基础表，不实现 POS API，不实现 UI，不接发票，不接 myDATA。
+本清单用于 production 执行 `supabase/migrations/20260704000000_add_pos_phase_1_tables.sql` 前后确认。当前阶段只新增 POS 三张基础表，不实现 POS API，不实现 UI，不接发票，不接 myDATA。
 
 ## 执行前确认
 
@@ -31,7 +31,7 @@
 只执行：
 
 ```txt
-supabase/migrations/20260704_add_pos_phase_1_tables.sql
+supabase/migrations/20260704000000_add_pos_phase_1_tables.sql
 ```
 
 不要执行草案文件到 production，除非已经确认内容完全一致。

@@ -30,7 +30,7 @@ supabase/client-init.sql
 
 执行前确认数据库为空。执行后核对：
 
-- 21 个 migration 版本与当前仓库一致；
+- 26 个 migration 版本与当前仓库一致；
 - `products.id` 为 `bigint`；
 - `product_variants.product_id` 为 `bigint`；
 - `MAIN_STORE` 存在且 active；

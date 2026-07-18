@@ -3,7 +3,7 @@
 ## 身份与目录
 
 - [ ] 当前目录是该客户项目根目录，`git status` 无异常。
-- [ ] `supabase/migrations` 存在并能看到 21 份 migration。
+- [ ] `supabase/migrations` 存在并能看到 26 份 migration。
 - [ ] 已记录客户代号、Supabase ref/region、Vercel project ID、代码 commit/tag，不含秘密。
 - [ ] 资源属于该客户，不复用其他客户数据库、key、密码、域名或备份。
 

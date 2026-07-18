@@ -7,6 +7,30 @@
 -- Generated from the ordered migrations listed below.
 
 -- ============================================================================
+-- BEGIN MIGRATION: 20260611112317_legacy_add_admin_product_fields_and_images_bucket.sql
+-- ============================================================================
+-- Historical compatibility marker for an early dashboard migration that is
+-- already present in the pre-release Production database.
+-- Original migration name: add_admin_product_fields_and_images_bucket
+-- Original statements SHA-256: 34cb3a524fb186a7b10ffc2070ed94cb85ab59a3c989d59e318e1abe6ad2e69f
+-- Clean installs receive the same final shape from 20260702000000_baseline_store_schema.sql.
+select 1;
+
+-- END MIGRATION: 20260611112317_legacy_add_admin_product_fields_and_images_bucket.sql
+
+-- ============================================================================
+-- BEGIN MIGRATION: 20260611113658_legacy_add_product_subcategory.sql
+-- ============================================================================
+-- Historical compatibility marker for an early dashboard migration that is
+-- already present in the pre-release Production database.
+-- Original migration name: add_product_subcategory
+-- Original statements SHA-256: 811ea9f070560862ce91ef42e68b4914b4fe0b56b8774e90f3d7daa8d70b0730
+-- Clean installs receive the same final shape from 20260702000000_baseline_store_schema.sql.
+select 1;
+
+-- END MIGRATION: 20260611113658_legacy_add_product_subcategory.sql
+
+-- ============================================================================
 -- BEGIN MIGRATION: 20260702000000_baseline_store_schema.sql
 -- ============================================================================
 begin;
@@ -232,7 +256,32 @@ commit;
 -- END MIGRATION: 20260702000000_baseline_store_schema.sql
 
 -- ============================================================================
--- BEGIN MIGRATION: 20260703_add_erp_inventory_phase_1.sql
+-- BEGIN MIGRATION: 20260702185738_legacy_add_feed_min_stock.sql
+-- ============================================================================
+-- Historical compatibility marker for an early dashboard migration that is
+-- already present in the pre-release Production database.
+-- Original migration name: add_feed_min_stock_to_business_settings
+-- Original statements SHA-256: 4d82872ef1a1de6ba42654b38ce34655374d60eb71e70d3375d8113337c7e02d
+-- Clean installs receive the same final shape from 20260702000000_baseline_store_schema.sql.
+select 1;
+
+-- END MIGRATION: 20260702185738_legacy_add_feed_min_stock.sql
+
+-- ============================================================================
+-- BEGIN MIGRATION: 20260703123211_legacy_add_erp_inventory_phase_1.sql
+-- ============================================================================
+-- Historical compatibility marker for an early dashboard migration that is
+-- already present in the pre-release Production database.
+-- Original migration name: add_erp_inventory_phase_1
+-- Original statements SHA-256: 45adb1959085efe973f3523daaa2394b255051b21d33346f60633ed83a855380
+-- The maintained idempotent forward reconciliation remains
+-- 20260703130000_add_erp_inventory_phase_1.sql so legacy databases converge safely.
+select 1;
+
+-- END MIGRATION: 20260703123211_legacy_add_erp_inventory_phase_1.sql
+
+-- ============================================================================
+-- BEGIN MIGRATION: 20260703130000_add_erp_inventory_phase_1.sql
 -- ============================================================================
 begin;
 
@@ -477,9 +526,17 @@ inserted_variants as (
     active,
     sort_order
   from all_variants
-  on conflict (variant_sku) do update
+  -- Early customer databases represented ONE SIZE with the product SKU while
+  -- this reconciliation derives a suffixed Variant SKU from size_stock. Match
+  -- the catalog identity constraint so an existing Variant is reused instead
+  -- of attempting to insert a duplicate product/size/color row. Preserve its
+  -- Variant SKU because printed labels and historical records may reference it.
+  on conflict (
+    product_id,
+    (coalesce(size, '')),
+    (coalesce(color, ''))
+  ) do update
   set
-    product_id = excluded.product_id,
     barcode = excluded.barcode,
     size = excluded.size,
     color = excluded.color,
@@ -487,7 +544,7 @@ inserted_variants as (
     active = excluded.active,
     sort_order = excluded.sort_order,
     updated_at = now()
-  returning id, product_id, variant_sku, size
+  returning id, product_id, variant_sku, size, color
 ),
 variant_quantities as (
   select
@@ -496,7 +553,9 @@ variant_quantities as (
     av.quantity
   from inserted_variants iv
   join all_variants av
-    on av.variant_sku = iv.variant_sku
+    on av.product_id = iv.product_id
+   and coalesce(av.size, '') = coalesce(iv.size, '')
+   and coalesce(av.color, '') = coalesce(iv.color, '')
   cross join main_location ml
 ),
 upsert_balances as (
@@ -551,10 +610,10 @@ on conflict (idempotency_key) do nothing;
 
 commit;
 
--- END MIGRATION: 20260703_add_erp_inventory_phase_1.sql
+-- END MIGRATION: 20260703130000_add_erp_inventory_phase_1.sql
 
 -- ============================================================================
--- BEGIN MIGRATION: 20260704_add_pos_phase_1_tables.sql
+-- BEGIN MIGRATION: 20260704000000_add_pos_phase_1_tables.sql
 -- ============================================================================
 begin;
 
@@ -680,7 +739,7 @@ grant select, insert, update, delete on table public.payments to service_role;
 
 commit;
 
--- END MIGRATION: 20260704_add_pos_phase_1_tables.sql
+-- END MIGRATION: 20260704000000_add_pos_phase_1_tables.sql
 
 -- ============================================================================
 -- BEGIN MIGRATION: 20260705000100_add_pos_rpc_functions.sql
@@ -7430,3 +7489,92 @@ grant execute on function public.operations_runtime_health_rpc() to service_role
 commit;
 
 -- END MIGRATION: 20260718105030_operations_reporting_audit_barcode.sql
+
+-- ============================================================================
+-- BEGIN MIGRATION: 20260719100000_reconcile_legacy_inventory_projections.sql
+-- ============================================================================
+begin;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from public.inventory_locations
+    where code = 'MAIN_STORE'
+      and active
+  ) then
+    raise exception 'INVENTORY_RUNTIME_UNAVAILABLE: active MAIN_STORE is required';
+  end if;
+end;
+$$;
+
+-- inventory_balances is authoritative. Older pre-release databases can have
+-- correct balances while the compatibility fields on products still use the
+-- legacy empty ONE SIZE representation. Bring those projections into the same
+-- shape produced by the transactional product and inventory RPCs.
+with expected_projection as (
+  select
+    p.id as product_id,
+    coalesce((
+      select pg_catalog.sum(b.quantity_on_hand)::integer
+      from public.product_variants v
+      join public.inventory_locations l
+        on l.code = 'MAIN_STORE'
+       and l.active
+      join public.inventory_balances b
+        on b.variant_id = v.id
+       and b.location_id = l.id
+      where v.product_id = p.id
+        and v.active
+    ), 0) as stock,
+    coalesce((
+      select pg_catalog.string_agg(
+        pg_catalog.upper(pg_catalog.btrim(coalesce(v.size, 'ONE SIZE'))),
+        ',' order by v.sort_order, v.id
+      )
+      from public.product_variants v
+      where v.product_id = p.id
+        and v.active
+    ), '') as sizes,
+    coalesce((
+      select pg_catalog.jsonb_object_agg(
+        x.size_label,
+        x.quantity_on_hand
+        order by x.sort_order, x.variant_id
+      )
+      from (
+        select
+          pg_catalog.upper(pg_catalog.btrim(coalesce(v.size, 'ONE SIZE'))) as size_label,
+          b.quantity_on_hand,
+          v.sort_order,
+          v.id as variant_id
+        from public.product_variants v
+        join public.inventory_locations l
+          on l.code = 'MAIN_STORE'
+         and l.active
+        join public.inventory_balances b
+          on b.variant_id = v.id
+         and b.location_id = l.id
+        where v.product_id = p.id
+          and v.active
+      ) x
+    ), '{}'::jsonb) as size_stock
+  from public.products p
+)
+update public.products p
+set
+  stock = e.stock,
+  sizes = e.sizes,
+  size_stock = e.size_stock,
+  updated_at = pg_catalog.now()
+from expected_projection e
+where e.product_id = p.id
+  and (
+    p.stock is distinct from e.stock
+    or p.sizes is distinct from e.sizes
+    or p.size_stock is distinct from e.size_stock
+  );
+
+commit;
+
+-- END MIGRATION: 20260719100000_reconcile_legacy_inventory_projections.sql

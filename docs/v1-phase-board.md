@@ -99,7 +99,7 @@
 - [x] 商品/分类、ERP 流水、CSV 失败行、后台标签与订单读取改为显式分页，不再静默截断。
 - [x] 可信备份/校验/恢复 CLI 覆盖角色、schema、应用/Auth data、migration history 和全部 Storage 对象，带 SHA-256 manifest。
 - [x] 独立第二套本地 Supabase 完成完整恢复演练；21 条 migration history、应用 fixture 和 Storage 字节校验通过；多次本地复验均低于 90 秒（最新 82.3 秒），低于 4 小时 RTO。
-- [x] 21 migrations 空库 reset、client-init 空库、legacy upgrade 与重复执行安全通过。
+- [x] 26 migrations 空库 reset、client-init 空库、Production legacy upgrade 与重复执行安全通过。
 - [x] Phase 6B 专项静态、单元、数据库、浏览器、安装与恢复门禁加入现有四项 GitHub CI。
 - [x] 全量既有回归；141 个单元测试、156 个具名集成场景、25 条安装路径断言、生产 build、三视口浏览器、数据库安全、秘密扫描、恢复演练和零残留检查均通过。
 - [x] 精确 HEAD 本地标签 `audit-v1-6b-local-verified-v4`（保留此前标签；在 Linux host-gateway 修复并完整复验后的最终报告提交创建）。
