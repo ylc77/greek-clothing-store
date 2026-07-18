@@ -1,64 +1,55 @@
 # v1.0 发布就绪结论
 
-更新时间：2026-07-18
+更新时间：2026-07-19
 
-发布分支：`codex/release-v1-production-readiness`
+发布基线：`master` / `d3023226754b0f55e2cc8d3e3461a01f55ca0728`
 
-代码基线：`be3205fbe1a7626b9971a1c8f854b0206e7c754c`
+正式案例地址：<https://greek-clothing-store.vercel.app>
 
 ## 结论先行
 
 | 范围 | 状态 | 结论 |
 | --- | --- | --- |
-| Basic 模板 | `READY` | 前台、商品、图片、分类、供应商、尺码库存、库存事务、法律双语、权限和备份恢复均已通过本地、CI 或隔离 Preview 门禁。 |
-| Standard 模板 | `CONDITIONAL` | 软件功能已通过；仍需在交付门店使用真实扫码枪、标签机、连续纸和小票打印机完成硬件验收。 |
-| Advanced 模板 | `CONDITIONAL` | 继承 Standard 的硬件条件；Skroutz 官方 Validator、AI 限流/预算/隐私和维护备份边界已经通过。 |
-| 当前既有 Production 实例 | `BLOCKED` | 这是部署环境阻断，不是隔离 Preview 或代码回归。修复前不得把当前线上地址描述为 v1.0 已上线。 |
+| Basic 模板 | `READY` | 前台、商品、图片、分类、供应商、尺码库存、库存事务、双语页面、权限和备份恢复均已通过本地、CI、隔离 Preview 与正式案例验收。 |
+| Standard 模板 | `CONDITIONAL` | 软件功能已通过；交付每家门店前仍需使用该客户的扫码枪、标签机、连续纸和小票打印机完成硬件验收。 |
+| Advanced 模板 | `CONDITIONAL` | 软件 Skroutz、AI、CSV、POS 与权限门禁已通过；继承 Standard 的真实硬件条件，Skroutz 上报前还必须替换为客户真实品牌、MPN、EAN 与商品合规资料。 |
+| 正式 Vercel / Supabase 案例 | `TECHNICALLY VERIFIED` | 数据库升级、环境变量、密钥、部署、Feed、浏览器、日志和 Daily site monitor 已通过。当前 Legal Settings 尚未发布，案例可展示模板能力，但不能作为真实商家已完成法律合规或可直接营业的证明。 |
 
-`READY` 表示该模板可以按部署手册为新客户建立独立 Supabase/Vercel 项目。它不表示当前旧 Production 环境已经完成升级，也不代表未经测试的真实硬件已经通过。
+## 正式上线证据
 
-## 已完成的发布证据
+- 在任何正式写入前完成数据库、Auth 与 64 个 Storage 对象的受保护备份；在隔离本地 Supabase 完成恢复并继续执行全部 migration。
+- 恢复验收保持 28 个商品、34 个 Variant、34 个余额、41 条库存流水、4 张订单、4 条明细和 4 笔付款；库存对账无异常。
+- 27 份 migration 已在正式 Supabase 顺序登记，本地与远程 history 完全一致；`client-init.sql` 与 migration 链无漂移。
+- 正式数据库的 POS、Inventory、Product、CSV Import 和 Operations runtime health 均为 `ready=true`。
+- `product_reconciliation_rpc` 返回 `healthy=true`，投影差异、缺 Variant、缺余额、初始流水差异和非法预留列表均为空。
+- Vercel Production 已删除弱 `ADMIN_PASSWORD`，配置 `AUTH_RATE_LIMIT_SECRET`、三个事务 RPC 开关以及同一正式 Supabase 项目的 URL、publishable key 和服务端 Secret key。
+- 每客户开发者凭据已初始化并轮换到版本 2；真实浏览器验证 Store Settings、Legal Settings 登录成功，Cookie 为 HttpOnly / Secure / SameSite=Strict，登出后立即失效。
+- 已创建 v1 专用 Supabase Secret key并更新 Vercel；旧默认 Secret key 已撤销，撤销后正式数据库健康检查和首页继续正常。
+- Production deployment `dpl_69KyTrk6ay9a51sK7MLq6JEeotCM` 为 Ready，并绑定正式 Vercel aliases。
+- 首页、分类、商品、Contact、法律页面、sitemap、robots 和严格 Skroutz Feed 检查通过。
+- 390px、768px、1440px 的 Greek/English metadata、安全响应头、无障碍、横向溢出以及标签/小票打印布局检查通过。
+- 未登录调用 Store Settings、商品写入、POS checkout 和库存调整 API 均返回 401，未产生业务写入。
+- 最近 30 分钟 Production 部署无 HTTP 500、无 error 级运行日志。
+- GitHub Daily site monitor 手动运行 `29661228859` 已转绿，包含严格 Feed 和浏览器检查。
+- PR #12 的四项 required CI 和 Vercel Preview 全绿；空库、client-init、旧客户升级、数据库/Storage 恢复和完整事务安全套件均通过。
 
-- 已确认 P0/P1：0 个未解决。
-- 21 份 migration 从空库执行成功；`client-init.sql`、旧库升级 fixture 和重复执行安全检查通过。
-- POS checkout/void、库存调整、Quick Sell、商品创建/编辑和 CSV 行级提交均使用事务 RPC，具备并发、幂等、故障注入和 fail-closed 测试。
-- 全量单元、集成、安装路径、数据库安全、secret scan、typecheck 和 production build 通过，无 skipped 关键测试。
-- 隔离 Preview 使用 `greek-clothing-store-test`（`krlhwwjkgoqzusehxuav`，`eu-west-3`）完成新客户演练：商品、图片、库存、POS、作废、CSV、法律发布、角色和 Feed 均通过。
-- 隔离演练结束后再次执行远程空库 reset：21/21 migrations 匹配；商品、订单、后台账号、Auth 用户、开发者凭据、法律版本和测试 Storage 对象均为 0；`MAIN_STORE` 为 1；默认 Feature 版本为 `advanced`。
-- 数据库 + Storage 备份恢复演练通过，最新完整复验低于 90 秒，低于 4 小时 RTO 目标。
-- GitHub `master` 要求 PR、四项 required checks、分支最新和 conversation resolution；禁止 force push 和删除，required approvals 为 0，符合单维护者流程。
-- Phase 6A 已通过官方 Skroutz Validator；Feed 使用 `MAIN_STORE` 权威库存并排除资料不完整、图片不足或测试商品。
+## 正式案例数据边界
 
-## 当前 Production 只读检查
+- 商家展示名和页脚统一为 `Athens Wardrobe`，用于模板案例展示，不代表已登记的法律主体。
+- 为证明严格 Feed 端到端可运行，仅补齐一个演示商品的品牌、MPN、校验格式 EAN 和已核验图片尺寸；未修改其 SKU、价格、Variant 或库存。
+- 该演示商品资料不得直接用于真实 Skroutz 商家上报。客户交付时必须替换成供应商或品牌方提供的真实标识。
+- 正式验收没有创建、作废或删除订单，没有调整库存，没有上传或删除 Storage 对象。
 
-检查过程中没有执行 migration、写数据库、改环境变量、轮换密钥或触发 Production 部署。
+## 尚未解除的客户交付条件
 
-| 检查项 | 实际结果 | 发布影响 |
-| --- | --- | --- |
-| Vercel Production | 最新部署为 Ready，但所有页面实际返回 HTTP 500 | `BLOCKED` |
-| Vercel 日志 | `ADMIN_PASSWORD` 不符合新的应急密码策略，启动阶段以 `WEAK_PASSWORD` fail closed | `BLOCKED` |
-| Production 环境变量 | 有 `USE_POS_RPC`，缺少 `USE_PRODUCT_RPC`、`USE_CSV_IMPORT_RPC`、`AUTH_RATE_LIMIT_SECRET` | 商品、CSV 和认证安全能力不能正式启用 |
-| Production Supabase | 项目 `clothes store`，ref `rgkdyksyztqaupatiltz`，`eu-west-2` | 仅做只读识别 |
-| migration history | 远程只有 4 个旧版本；当前 21 个本地版本均未登记为已应用 | 不得直接部署当前代码或猜测修复 history |
-| RLS / grants / RPC | 因当前 migration 链未部署，不能视为已验证 | 必须先备份和设计旧库升级演练 |
-| 域名 | 服装店项目只有 Vercel 默认 aliases；`wokdragon.gr` 属于另一个 Vercel 项目 | 不得误绑定或修改其他项目域名 |
-| 监控 | Daily site monitor 已启用，但 2026-07-15 至 2026-07-18 连续失败，报告全部入口为 500 | 修复 Production 后必须手动重跑并转绿 |
-
-## 解除当前 Production 阻断的最小顺序
-
-1. 为 `rgkdyksyztqaupatiltz` 创建受保护的数据库 + Storage 备份，并在隔离项目验证可恢复。
-2. 对照远程 4 个旧 migration 版本和当前 21 个版本制定一次旧库升级 fixture；不要直接运行 `client-init.sql`，也不要手工伪造 migration history。
-3. 在 Vercel Production 配置新的、每客户唯一且符合策略的应急密码，或确认不需要后删除旧应急密码；配置唯一 `AUTH_RATE_LIMIT_SECRET`。
-4. 数据库升级验证成功后设置 `USE_POS_RPC=true`、`USE_PRODUCT_RPC=true`、`USE_CSV_IMPORT_RPC=true`。
-5. 确认 Production 的 Supabase URL、publishable key 和 service/secret key 属于同一项目，service/secret key 只存在于服务端。
-6. 重新部署 Production，验证首页、后台、健康检查、角色、POS、库存、Storage、Feed、日志和 Daily site monitor。
-7. 若要使用客户域名，再单独配置正确域名和 `NEXT_PUBLIC_SITE_URL`；不要改动 `wokdragon.gr` 所属项目。
-
-这些步骤会修改 Production，必须获得维护者单独授权后执行。
+1. Legal Settings 仍显示“法律信息未完成”，尚无正式发布版本。真实商用前必须填写法律主体、AFM/VAT、联系方式、隐私、配送、退货、退款和 14 天撤回权条款，完成五项确认并发布；必要时由希腊/欧盟律师、会计师或合规专业人士审查。
+2. 当前案例使用 Vercel 默认域名。绑定客户域名时需同步更新 `NEXT_PUBLIC_SITE_URL`、DNS、搜索引擎和 Skroutz Feed 地址。
+3. Standard / Advanced 的扫码枪、标签机、连续纸和小票打印机必须按客户真实硬件再次验收。
+4. 本系统 POS 仅记录内部扫码销售并扣减系统库存，不替代真实税务收银机、myDATA、会计系统或支付终端。
 
 ## 发布决定
 
-- 允许创建最终 Draft Release PR：**是**。
-- 允许把当前 Production 描述为 v1.0 已上线：**否**。
-- 允许未经授权修改 Production：**否**。
-- `v1.0.0` 标签与 GitHub Release：在 Release PR、CI、隔离 Preview 和签核通过后创建；如果仍保留 Production 外部阻断，Release 必须明确标记“代码/模板发布，Production deployment not yet verified”。
+- 允许将代码和服装店模板标记为 `v1.0.0`：**是**。
+- 允许把正式 Vercel/Supabase 案例描述为“技术上线已验证”：**是**。
+- 允许把案例描述为“真实商家法律合规和硬件均已完成”：**否**。
+- 允许在未替换真实法律、商品和硬件资料前直接交付客户营业：**否**。
