@@ -10,7 +10,7 @@
 | 风险矩阵/看板 | `codex/hardening-p2-public-data-boundary` | 完成 | 风险均有证据等级、完成证据和停止条件。 |
 | 5A 公开数据边界 | `codex/hardening-p2-public-data-boundary` | 已完成并合并 | PR #6、CI、隔离 Preview、清理、签核、阶段标签和 merge commit `7d943ea` 均完成。 |
 | 5B 图片与 Storage | `codex/hardening-p2-storage-image-security` | 已完成并合并 | PR #7、本地、CI、隔离 Preview、零残留清理、签核和 `v1-phase-5b-merged` 标签均完成；merge commit `23dd67b`。 |
-| 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 本地验证完成，等待 CI/Preview | 共享限流/预算/并发/超时/PII、登录防爆破、Token 生命周期和状态码矩阵已通过本地自动化；尚未声称 Preview 或 Production 通过。 |
+| 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 本地、CI、隔离 Preview 已完成，等待签核合并 | PR #8 精确 HEAD `ce5c699` 的四项 required CI、18-migration 隔离 Preview、8/8 业务验收、三种视口和零残留清理已通过；Production 未验证。 |
 | 6A 渠道/SEO/法律 | `codex/hardening-p2-channels-seo-legal` | 等待 5C 合并 | Skroutz Validator、EL/EN 原始 HTML、法律双语、安全头和可访问性通过。 |
 | 6B 运营/报表/打印 | `codex/hardening-p2-operations-reporting-print` | 等待 6A 合并 | Athens 时区、对账、审计、容量、打印、备份恢复与硬件状态结论完成。 |
 | 7 v1.0 发布门禁 | `codex/release-v1-production-readiness` | 等待 6B 合并 | 全回归、部署/升级/恢复演练、只读生产检查、三版本结论、Release PR、`v1.0.0` 和 GitHub Release。 |
@@ -68,7 +68,9 @@
 - [x] 管理员邮箱统一小写并建立大小写不敏感唯一约束；重复旧数据安全停止而非静默合并。
 - [x] 专项 unit、Route、多实例、预算/并发、PII 日志、数据库权限和四条安装路径测试。
 - [x] 全量既有 P1/4A/4B/5A/5B 回归和本地 build。
-- [ ] Draft PR、GitHub 四项 required CI、隔离 Preview、零残留清理、签核、标签和 merge commit。
+- [x] Draft PR 和精确 HEAD 的 GitHub 四项 required CI。
+- [x] 隔离 Preview 8/8 业务验收、390/768/1440 浏览器检查、日志扫描和零残留清理。
+- [ ] 单人维护者签核、CI/Preview 标签和 merge commit。
 
 ## 发布版本判定占位
 

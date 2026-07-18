@@ -40,18 +40,18 @@ Phase 5C replaces process-local AI and password-abuse controls with shared datab
 
 Detailed evidence: `docs/v1-phase-5c-local-verification.md`.
 
-## Required Preview acceptance before merge
+## Preview acceptance
 
-- confirm branch-only Preview uses the dedicated test Supabase and no production/customer project
-- create a fresh Git deployment after adding branch-scoped security variables; redeploying an older deployment may retain its previous environment snapshot
-- omit the optional emergency password in Preview unless that exact branch has a separately verified strong value; use Supabase Auth accounts for the role matrix
-- apply all 18 migrations and verify private table/RPC grants
-- test AI consent, bounded public context, limit/budget failures and provider-unavailable fail-closed behavior
-- prove emergency and developer rate blocks survive separate browser/server instances without leaking credentials
-- test owner/staff/inventory/readonly direct API matrix and Supabase token refresh/sign-out
-- inspect Vercel/Supabase logs for passwords, tokens, service keys, measurements, and full sensitive bodies
-- verify 390px, 768px, and 1440px without auth loops, hydration errors, or overflow
-- remove every test row, account, credential, Cookie, branch environment variable, and deployment snapshot secret
+- exact HEAD `ce5c6993d5894117eec5e95b36a692977f545820` deployed to isolated Vercel Preview `dpl_9cCawhuhM1M8gXsuegBMF2UxpFqd`
+- Preview used only `greek-clothing-store-test` (`krlhwwjkgoqzusehxuav`, `eu-west-3`) with 18 ordered migrations
+- private table/RPC grants, server-authoritative product projection and owner/staff/inventory/readonly direct API matrix passed
+- AI consent, bounded context, shared replay/concurrency, provider-unavailable and budget/limit failure boundaries passed
+- Developer session Cookie hardening, credential rotation, old-session invalidation and employee Supabase token refresh/sign-out passed
+- 390px, 768px and 1440px checks had no horizontal overflow, hydration error or blocking console error
+- Vercel log scan found no password, token, service key, Cookie or measurement leakage
+- all prefixed products, accounts, credentials, limiter rows, AI leases and Storage fixtures were removed; final residue counts were zero
+
+Detailed evidence: `docs/v1-phase-5c-preview-verification.md`.
 
 ## Scope exclusions
 
@@ -59,4 +59,4 @@ This PR does not address Phase 6A feed/SEO/legal/accessibility work, Phase 6B re
 
 Current conclusion:
 
-> Local integration verified. GitHub CI, isolated Preview, and Production are not yet verified.
+> Local integration, exact-HEAD GitHub CI, and isolated Vercel Preview acceptance verified. Production deployment is not verified.
