@@ -38,7 +38,7 @@ export function ProductCard({ product, language }: { product: Product; language:
           {name}
         </p>
         <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <p className="text-lg font-black leading-none text-terracotta sm:text-xl">
+          <p className="text-lg font-black leading-none text-[#a14b2f] sm:text-xl sm:text-terracotta">
             €{Number(product.price).toFixed(2)}
           </p>
           <span className="max-w-full truncate rounded-full bg-stone-100 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-stone-600 sm:max-w-[45%]">
