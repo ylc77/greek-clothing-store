@@ -6416,3 +6416,21 @@ grant execute on function public.legal_settings_publish_rpc(jsonb, text) to serv
 commit;
 
 -- END MIGRATION: 20260718064715_transactional_legal_settings_publish.sql
+
+-- ============================================================================
+-- BEGIN MIGRATION: 20260718073554_expose_public_image_dimensions.sql
+-- ============================================================================
+begin;
+
+-- Image dimensions are non-sensitive storefront metadata used to enforce the
+-- public Skroutz image-quality contract. Keep the grant column-scoped so no
+-- procurement, internal barcode, or concurrency metadata becomes public.
+alter table public.products enable row level security;
+revoke select (image_width, image_height) on table public.products from anon, authenticated;
+grant select (image_width, image_height) on table public.products to anon, authenticated;
+
+notify pgrst, 'reload schema';
+
+commit;
+
+-- END MIGRATION: 20260718073554_expose_public_image_dimensions.sql
