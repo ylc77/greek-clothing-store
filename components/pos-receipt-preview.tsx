@@ -180,7 +180,7 @@ export function PosReceiptPreview({
             <section className="space-y-1">
               <div className="flex justify-between gap-3">
                 <span>{copy.order}</span>
-                <span className="text-right font-bold">{order.order_number}</span>
+                <span className="min-w-0 break-all text-right font-bold">{order.order_number}</span>
               </div>
               <div className="flex justify-between gap-3">
                 <span>{copy.date}</span>
@@ -188,7 +188,7 @@ export function PosReceiptPreview({
               </div>
               <div className="flex justify-between gap-3">
                 <span>{copy.cashier}</span>
-                <span className="text-right">{order.created_by || "-"}</span>
+                <span className="min-w-0 break-all text-right">{order.created_by || "-"}</span>
               </div>
               <div className="flex justify-between gap-3">
                 <span>{copy.payment}</span>

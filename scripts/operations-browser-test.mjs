@@ -70,7 +70,7 @@ const order = {
   discount_total: 0,
   total: 39.9,
   currency: "EUR",
-  created_by: "password:owner",
+  created_by: "account:owner:2d5409d8-604f-45db-a7ee-00450c60e006",
   notes: "AUDIT 6B",
   created_at: createdAt,
   completed_at: createdAt,
