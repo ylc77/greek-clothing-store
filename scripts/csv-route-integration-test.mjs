@@ -100,7 +100,7 @@ async function startApp(local, csvRpcEnabled) {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`Next dev exited early\n${redactLogs(logs.join(""), local)}`);
     try {
-      const response = await fetch(`${APP_URL}/admin`);
+      const response = await fetch(`${APP_URL}/admin`, { signal: AbortSignal.timeout(5000) });
       if (response.status < 500) return { child, logs };
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -138,6 +138,7 @@ async function request(pathname, options = {}) {
     method: options.method || (body === undefined ? "GET" : "POST"),
     headers,
     body,
+    signal: options.signal || AbortSignal.timeout(30_000),
   });
   const contentType = response.headers.get("content-type") || "";
   const data = contentType.includes("application/json")

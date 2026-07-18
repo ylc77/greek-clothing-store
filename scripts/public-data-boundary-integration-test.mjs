@@ -89,7 +89,7 @@ async function startApp(local) {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`Next dev exited early\n${redactLogs(logs.join(""), local)}`);
     try {
-      const response = await fetch(`${APP_URL}/admin`);
+      const response = await fetch(`${APP_URL}/admin`, { signal: AbortSignal.timeout(5000) });
       if (response.status < 500) return { child, logs };
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -108,7 +108,11 @@ async function stopApp(server) {
 async function request(pathname, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (options.role) headers["x-admin-password"] = PASSWORDS[options.role];
-  const response = await fetch(`${APP_URL}${pathname}`, { method: options.method || "GET", headers });
+  const response = await fetch(`${APP_URL}${pathname}`, {
+    method: options.method || "GET",
+    headers,
+    signal: options.signal || AbortSignal.timeout(30_000),
+  });
   const contentType = response.headers.get("content-type") || "";
   const data = contentType.includes("application/json")
     ? await response.json().catch(() => ({}))
@@ -145,6 +149,14 @@ function assertMissing(object, fields, label) {
 const local = readLocalEnvironment();
 const service = createClient(local.API_URL, local.SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
+  global: {
+    fetch: (input, init = {}) => fetch(input, {
+      ...init,
+      signal: init.signal
+        ? AbortSignal.any([init.signal, AbortSignal.timeout(30_000)])
+        : AbortSignal.timeout(30_000),
+    }),
+  },
 });
 let previousFeature;
 let server;
@@ -269,7 +281,9 @@ try {
   });
 
   await runCase("raw product HTML keeps stored script payload inside parseable JSON-LD", async () => {
-    const response = await fetch(`${APP_URL}/product/${encodeURIComponent(`${PREFIX}PRODUCT`)}?lang=en`);
+    const response = await fetch(`${APP_URL}/product/${encodeURIComponent(`${PREFIX}PRODUCT`)}?lang=en`, {
+      signal: AbortSignal.timeout(30_000),
+    });
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.equal((html.match(/type="application\/ld\+json"/g) || []).length, 1);

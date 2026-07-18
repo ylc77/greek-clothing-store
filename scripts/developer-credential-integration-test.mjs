@@ -182,7 +182,7 @@ async function startApp() {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error("Next dev exited before developer credential tests started");
     try {
-      const response = await fetch(`${APP_URL}/admin/settings`);
+      const response = await fetch(`${APP_URL}/admin/settings`, { signal: AbortSignal.timeout(5000) });
       if (response.status < 500) return { child, logs };
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 500));

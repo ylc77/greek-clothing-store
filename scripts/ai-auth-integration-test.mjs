@@ -65,6 +65,14 @@ function readLocalEnvironment() {
 const local = readLocalEnvironment();
 const service = createClient(local.API_URL, local.SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
+  global: {
+    fetch: (input, init = {}) => fetch(input, {
+      ...init,
+      signal: init.signal
+        ? AbortSignal.any([init.signal, AbortSignal.timeout(30_000)])
+        : AbortSignal.timeout(30_000),
+    }),
+  },
 });
 
 function redact(value) {
@@ -225,7 +233,7 @@ async function startApp(options = {}) {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`Next dev exited early\n${redact(logs.join(""))}`);
     try {
-      const response = await fetch(`${APP_URL}/admin`);
+      const response = await fetch(`${APP_URL}/admin`, { signal: AbortSignal.timeout(5000) });
       if (response.status < 500) return { child, logs };
     } catch {}
     await delay(400);
@@ -249,6 +257,7 @@ async function jsonRequest(pathname, options = {}) {
     method: options.method || (options.body === undefined ? "GET" : "POST"),
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: options.signal || AbortSignal.timeout(30_000),
   });
   const data = await response.json().catch(() => ({}));
   return { status: response.status, data, headers: response.headers };
