@@ -38,6 +38,8 @@ test("backup manifests verify database and Storage hashes and reject tampering",
 test("backup paths cannot escape the backup root", () => {
   assert.throws(() => resolveManifestFile("C:/backup", "../secret"), /unsafe|escapes/);
   assert.throws(() => resolveManifestFile("C:/backup", "C:/secret"), /unsafe/);
+  assert.throws(() => resolveManifestFile("C:/backup", "/etc/passwd"), /unsafe/);
+  assert.throws(() => resolveManifestFile("C:/backup", "\\\\server\\share\\secret"), /unsafe/);
   assert.equal(storageObjectFile("product-images", "catalog/a b.webp"), "storage/product-images/catalog/a%20b.webp");
 });
 

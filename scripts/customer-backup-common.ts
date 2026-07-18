@@ -48,8 +48,15 @@ export function storageObjectFile(bucket: string, objectPath: string) {
 }
 
 export function resolveManifestFile(backupRoot: string, relativeFile: string) {
-  if (!relativeFile || path.isAbsolute(relativeFile)) throw new Error("backup manifest contains an unsafe file path");
   const normalized = relativeFile.replace(/\\/g, "/");
+  if (
+    !normalized ||
+    path.posix.isAbsolute(normalized) ||
+    path.win32.isAbsolute(relativeFile) ||
+    /^[a-zA-Z]:\//.test(normalized)
+  ) {
+    throw new Error("backup manifest contains an unsafe file path");
+  }
   if (normalized.split("/").some((segment) => segment === ".." || segment === "")) {
     throw new Error("backup manifest contains an unsafe file path");
   }
