@@ -83,7 +83,7 @@
 - [x] 20 migrations 空库 reset、client-init、legacy upgrade、并发、故障注入和清理测试。
 - [x] Phase 6A 专项静态、单元、数据库和浏览器检查加入现有四项 GitHub CI。
 - [x] 全量既有回归。
-- [ ] 精确 HEAD 本地标签。
+- [x] 精确 HEAD 本地标签 `audit-v1-6a-local-verified`（创建于本地全量门禁通过后的报告提交）。
 - [ ] Draft PR 与四项 required CI。
 - [ ] 隔离 Preview、官方 Skroutz Validator、严格线上监控和零残留清理。
 - [ ] 单人维护者签核、CI/Preview 标签和 merge commit。
