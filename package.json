@@ -69,7 +69,12 @@
     "test:channels-browser": "node scripts/channels-seo-legal-browser-test.mjs",
     "test:channels-browser-local": "node scripts/run-powershell.mjs scripts/run-channels-browser-local.ps1",
     "test:legal-publish-integration": "node scripts/run-powershell.mjs scripts/verify-legal-publish-integration.ps1",
-    "check:channels-static": "node scripts/verify-channels-static-gates.mjs"
+    "check:channels-static": "node scripts/verify-channels-static-gates.mjs",
+    "test:operations-unit": "node --experimental-strip-types --test tests/operations-reporting.test.ts",
+    "test:operations-integration": "node scripts/operations-reporting-integration-test.mjs",
+    "check:operations-static": "node scripts/verify-operations-static-gates.mjs",
+    "check:operations-db-security": "node scripts/verify-operations-database-security.mjs",
+    "test:operations-install-paths": "node scripts/run-powershell.mjs scripts/verify-operations-install-paths.ps1"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",
