@@ -1,6 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import {
+  formatAthensDateTime,
+  formatEuroForPrint,
+  localizedPrintCopy,
+  localizedPrintProductName,
+  type PrintLanguage,
+} from "@/lib/operations-print";
 
 type ReceiptOrder = {
   id?: string;
@@ -26,6 +33,8 @@ type ReceiptItem = {
   variant_sku?: string;
   barcode?: string | null;
   name?: string;
+  name_en?: string;
+  name_gr?: string;
   size?: string | null;
   color?: string | null;
   quantity?: number;
@@ -44,8 +53,7 @@ type ReceiptPayment = {
 };
 
 type StoreSettings = {
-  store_name?: string | null;
-  name?: string | null;
+  business_name?: string | null;
   address?: string | null;
   phone?: string | null;
   whatsapp?: string | null;
@@ -57,13 +65,15 @@ export function PosReceiptPreview({
   items,
   payments,
   storeSettings,
+  language,
   paperWidth = "80mm",
   onClose,
 }: {
   order: ReceiptOrder;
   items: ReceiptItem[];
   payments: ReceiptPayment[];
-  storeSettings?: StoreSettings | null;
+  storeSettings: StoreSettings;
+  language: PrintLanguage;
   paperWidth?: "58mm" | "80mm";
   onClose: () => void;
 }) {
@@ -72,23 +82,15 @@ export function PosReceiptPreview({
   const currency = order.currency || payments[0]?.currency || "EUR";
   const subtotal = order.subtotal ?? items.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
   const discount = order.discount_total ?? 0;
-  const storeName = storeSettings?.store_name || storeSettings?.name || "clothing store";
+  const storeName = storeSettings.business_name?.trim() || "-";
   const contact = storeSettings?.whatsapp || storeSettings?.phone || "";
   const widthClass = selectedPaperWidth === "58mm" ? "w-[58mm]" : "w-[80mm]";
+  const copy = localizedPrintCopy(language);
 
   function money(value: number | undefined) {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Number(value || 0));
-  }
-
-  function dateTime(value: string | null | undefined) {
-    if (!value) return "-";
-    return new Intl.DateTimeFormat("en-GB", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(value));
+    return currency === "EUR"
+      ? formatEuroForPrint(value, language)
+      : new Intl.NumberFormat(language === "el" ? "el-GR" : "en-GB", { style: "currency", currency }).format(Number(value || 0));
   }
 
   return (
@@ -161,7 +163,7 @@ export function PosReceiptPreview({
           <article className={`pos-receipt-print-root ${widthClass} bg-white px-4 py-5 font-mono text-[11px] leading-relaxed text-stone-950 shadow-sm`}>
             {isVoided ? (
               <div className="mb-3 border-2 border-stone-950 px-2 py-1 text-center text-sm font-black">
-                VOIDED / 已作废
+                {copy.voided}
               </div>
             ) : null}
 
@@ -169,32 +171,31 @@ export function PosReceiptPreview({
               <h1 className="text-base font-black">{storeName}</h1>
               {storeSettings?.address ? <p className="mt-1 break-words text-[10px]">{storeSettings.address}</p> : null}
               {contact ? <p className="mt-1 break-words text-[10px]">{contact}</p> : null}
-              <p className="mt-3 text-sm font-black">Order Receipt / 销售小票</p>
-              <p className="mt-1 text-[10px] font-bold">This receipt is not a tax invoice.</p>
-              <p className="text-[10px] font-bold">该小票不是正式税务发票。</p>
+              <p className="mt-3 text-sm font-black">{copy.receiptTitle}</p>
+              <p className="mt-1 text-[10px] font-bold">{copy.notTaxInvoice}</p>
             </header>
 
             <div className="my-3 border-t border-dashed border-stone-500" />
 
             <section className="space-y-1">
               <div className="flex justify-between gap-3">
-                <span>Order</span>
+                <span>{copy.order}</span>
                 <span className="text-right font-bold">{order.order_number}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span>Date</span>
-                <span className="text-right">{dateTime(order.created_at)}</span>
+                <span>{copy.date}</span>
+                <span className="text-right">{formatAthensDateTime(order.created_at, language)}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span>Cashier</span>
-                <span className="text-right">{order.created_by || "admin"}</span>
+                <span>{copy.cashier}</span>
+                <span className="text-right">{order.created_by || "-"}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span>Payment</span>
+                <span>{copy.payment}</span>
                 <span className="text-right">{payments[0]?.method || "-"}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span>Status</span>
+                <span>{copy.status}</span>
                 <span className="text-right">{order.status}</span>
               </div>
             </section>
@@ -204,7 +205,7 @@ export function PosReceiptPreview({
             <section className="space-y-3">
               {items.map((item, index) => (
                 <div key={item.id || `${item.variant_sku}-${index}`}>
-                  <p className="font-black">{item.name || item.variant_sku || "Item"}</p>
+                  <p className="font-black">{localizedPrintProductName(item, language)}</p>
                   <p className="break-words text-[10px] text-stone-600">
                     {item.variant_sku || item.product_sku || "-"}
                     {item.size ? ` / ${item.size}` : ""}
@@ -224,15 +225,15 @@ export function PosReceiptPreview({
 
             <section className="space-y-1">
               <div className="flex justify-between gap-3">
-                <span>Subtotal</span>
+                <span>{copy.subtotal}</span>
                 <span>{money(subtotal)}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span>Discount</span>
+                <span>{copy.discount}</span>
                 <span>{money(discount)}</span>
               </div>
               <div className="flex justify-between gap-3 border-t border-stone-300 pt-2 text-sm font-black">
-                <span>Total</span>
+                <span>{copy.total}</span>
                 <span>{money(Number(order.total || 0))}</span>
               </div>
             </section>
@@ -240,15 +241,15 @@ export function PosReceiptPreview({
             {order.notes ? (
               <>
                 <div className="my-3 border-t border-dashed border-stone-500" />
-                <p className="break-words text-[10px]">Notes: {order.notes}</p>
+                <p className="break-words text-[10px]">{copy.notes}: {order.notes}</p>
               </>
             ) : null}
 
             <div className="my-3 border-t border-dashed border-stone-500" />
 
             <footer className="text-center text-[10px] font-bold">
-              <p>Thank you / Ευχαριστούμε</p>
-              <p className="mt-2">For returns or help, please contact the store.</p>
+              <p>{copy.thanks}</p>
+              <p className="mt-2">{copy.help}</p>
             </footer>
           </article>
         </div>

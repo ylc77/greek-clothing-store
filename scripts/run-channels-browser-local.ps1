@@ -74,8 +74,12 @@ try {
     throw "Local production server did not become ready: $details"
   }
 
-  & npm.cmd run test:channels-browser
-  if ($LASTEXITCODE -ne 0) { throw "Channel browser checks failed." }
+  if ($env:OPERATIONS_BROWSER_ONLY -ne "true") {
+    & npm.cmd run test:channels-browser
+    if ($LASTEXITCODE -ne 0) { throw "Channel browser checks failed." }
+  }
+  & npm.cmd run test:operations-browser
+  if ($LASTEXITCODE -ne 0) { throw "Operations browser print checks failed." }
 } finally {
   if ($server -and -not $server.HasExited) {
     Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue

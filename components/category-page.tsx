@@ -8,7 +8,7 @@ import type { BusinessSettings } from "@/lib/settings";
 import { isProductSubcategory, subcategoryList, type ProductCategory } from "@/lib/types";
 import type { Language } from "@/lib/i18n";
 
-function categoryHref(category: ProductCategory, language: Language, subcategory?: string) {
+function categoryHref(category: ProductCategory, language: Language, subcategory?: string, page?: number) {
   const params = new URLSearchParams();
 
   if (language === "en") {
@@ -19,6 +19,10 @@ function categoryHref(category: ProductCategory, language: Language, subcategory
     params.set("subcategory", subcategory);
   }
 
+  if (page && page > 1) {
+    params.set("page", String(page));
+  }
+
   const query = params.toString();
   return `/${category}${query ? `?${query}` : ""}`;
 }
@@ -27,12 +31,14 @@ export async function CategoryPage({
   category,
   language,
   selectedSubcategory,
+  page,
   title,
   settings,
 }: {
   category: ProductCategory;
   language: Language;
   selectedSubcategory?: string;
+  page?: number;
   title: string;
   settings: BusinessSettings;
 }) {
@@ -41,7 +47,8 @@ export async function CategoryPage({
     selectedSubcategory && isProductSubcategory(category, selectedSubcategory)
       ? selectedSubcategory
       : undefined;
-  const { products, error } = await getProductsByCategory(category, activeSubcategory);
+  const currentPage = Math.max(1, Math.trunc(Number(page) || 1));
+  const { products, error, total = 0, hasNextPage, hasPreviousPage } = await getProductsByCategory(category, activeSubcategory, currentPage);
   const subcategories = Array.from(
     new Set([
       ...(subcategoryList[category] || []),
@@ -70,7 +77,7 @@ export async function CategoryPage({
               <h1 className="mt-2 text-3xl font-black tracking-tight text-ink sm:text-5xl">{title}</h1>
             </div>
             <p className="w-fit rounded-full bg-stone-100 px-4 py-2 text-sm font-black text-stone-600">
-              {products.length} {t.items}
+              {total} {t.items}
             </p>
           </div>
         </div>
@@ -117,11 +124,28 @@ export async function CategoryPage({
             {t.noCategoryProducts}
           </div>
         ) : (
-          <div className={products.length === 1 ? "grid max-w-sm grid-cols-1 gap-4 sm:gap-5" : "grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4"}>
-            {products.map((product) => (
-              <ProductCard key={product.sku} product={product} language={language} />
-            ))}
-          </div>
+          <>
+            <div className={products.length === 1 ? "grid max-w-sm grid-cols-1 gap-4 sm:gap-5" : "grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4"}>
+              {products.map((product) => (
+                <ProductCard key={product.sku} product={product} language={language} />
+              ))}
+            </div>
+            {hasPreviousPage || hasNextPage ? (
+              <nav aria-label={language === "el" ? "Σελίδες προϊόντων" : "Product pages"} className="mt-8 flex items-center justify-center gap-3">
+                {hasPreviousPage ? (
+                  <Link className="min-h-11 rounded-full border border-stone-200 bg-white px-5 py-3 text-sm font-black text-ink" href={categoryHref(category, language, activeSubcategory, currentPage - 1)}>
+                    {language === "el" ? "Προηγούμενη" : "Previous"}
+                  </Link>
+                ) : null}
+                <span className="rounded-full bg-stone-100 px-4 py-3 text-sm font-bold text-stone-600">{currentPage}</span>
+                {hasNextPage ? (
+                  <Link className="min-h-11 rounded-full border border-stone-200 bg-white px-5 py-3 text-sm font-black text-ink" href={categoryHref(category, language, activeSubcategory, currentPage + 1)}>
+                    {language === "el" ? "Επόμενη" : "Next"}
+                  </Link>
+                ) : null}
+              </nav>
+            ) : null}
+          </>
         )}
       </section>
       <SiteFooter language={language} settings={settings} />
