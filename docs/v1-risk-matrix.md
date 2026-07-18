@@ -1,7 +1,7 @@
 # v1.0 剩余风险矩阵
 
 初始审查基线：`origin/master` at `49aeb93afd1ea08e41c692af9acbddb6b169a10a`
-当前 6A 工作基线：`origin/master` at `b30e3efd5b8c2fc0b24a89835fc4988c1d14a9a6`
+当前 6B 工作基线：`origin/master` at `0c390572260bf5aa46de341d9eceab58d4b9d0bb`
 建立日期：2026-07-16
 执行顺序：5A → 5B → 5C → 6A → 6B → 7
 
@@ -36,11 +36,11 @@
 | 6A-02 | 6A | P2 | 已修复并通过本地 | 当前语言主要依赖查询参数和 hydration 前脚本设置 `lang`，原始 HTML 的 canonical/hreflang/语言 URL 不完整。 | Greek 默认和 `?lang=en` 的首页、联系页及全部法律页原始 HTML `lang`、canonical、reciprocal hreflang、x-default 与 sitemap 测试通过。 |
 | 6A-03 | 6A | P2 | 已确认并修复，通过本地 | Legal Settings 的 GR/EN 独立内容、发布完整性、Cookie/AI 身体数据/第三方服务说明原先不足。 | 双语独立归一化和必填测试、事务发布并发/回滚/权限测试、Privacy/Cookie/Terms 等页面原始 HTML 测试通过；仍需 Preview 发布和呈现复验。 |
 | 6A-04 | 6A | P2 | 已确认并修复，通过本地 | 安全响应头、后台 noindex、表单 label/aria 与键盘访问原先未按全站矩阵验证，并发现对比度/标签缺口。 | CSP nonce、安全头、robots/noindex、390/768/1440 serious/critical axe、横向溢出和后台键盘登录测试通过；已加入 GitHub CI。 |
-| 6B-01 | 6B | P2 | 已确认 | POS 日报未使用 `Europe/Athens` IANA 时区，查询和展示存在 DST/午夜边界错误风险；订单列表存在固定 `.limit(500)`。 | 冬/夏令时和切换日数据库聚合测试；1000+ 订单分页总额正确。 |
-| 6B-02 | 6B | P2 | 待验证假设 | 健康检查对部分订单明细、付款、sale/void movement 的逐 Variant 不一致覆盖不足。 | 故障 fixture 均被 reconciliation 检出，修复后对账为 0。 |
-| 6B-03 | 6B | P2 | 待验证假设 | 部分操作 actor 仍可能统一写 `admin`；缺少 append-only actor/user/role/auth-type 审计事件。 | owner/staff/inventory/developer 操作均记录真实 actor，审计表不可由普通角色修改。 |
-| 6B-04 | 6B | P2 | 待验证假设 | 标签、小票和导出可能仍含固定店名/单语文本；标签数量、价格、条码与连续纸布局需验证。 | 店铺配置驱动 GR/EN 输出，按件数打印；浏览器打印快照及硬件门禁记录完成。 |
-| 6B-05 | 6B | P2 | 已确认 | 当前“备份”主要是商品 CSV 导出，不是数据库和 Storage 的可恢复灾备。 | 数据库备份、Storage 清单/备份、隔离恢复演练、完整校验、RPO/RTO 记录。 |
+| 6B-01 | 6B | P2 | 已修复并通过本地 | POS 日报未使用 `Europe/Athens` IANA 时区，查询和展示存在 DST/午夜边界错误风险；订单列表存在固定 `.limit(500)`。 | 冬/夏令时、DST 切换日和雅典午夜测试通过；数据库聚合与 1,005 条订单分页结果正确，后台默认日期和时间展示均使用雅典时区。 |
+| 6B-02 | 6B | P2 | 已确认并修复，通过本地 | 动态故障 fixture 证实旧健康检查无法完整覆盖部分明细、付款、sale/void movement 的逐 Variant 不一致。 | 缺明细、缺付款、sale/void 数量错误均被 reconciliation 检出；修复 fixture 后全部归零。 |
+| 6B-03 | 6B | P2 | 已确认并修复，通过本地 | 旧审计记录只保存自由文本 actor，部分路径无法稳定区分 user/role/auth type，且缺少统一 append-only 边界。 | owner/staff/inventory/developer/system actor 结构化记录测试通过；审计表对普通角色和 service role 均不可更新/删除。 |
+| 6B-04 | 6B | P2 | 自动化部分已修复并通过；真实硬件待验 | 标签、小票和导出原先可能含固定店名/单语文本；标签数量、价格、条码与连续纸布局需验证。 | 店铺配置驱动 GR/EN 输出，标签默认按现有库存份数；390/768/1440 的 40×30mm 标签、58/80mm 小票、条码和 Chromium PDF 通过。连续纸物理偏移与打印质量保留为 6B-06。 |
+| 6B-05 | 6B | P2 | 已修复并通过本地恢复演练 | 当前“备份”主要是商品 CSV 导出，不是数据库和 Storage 的可恢复灾备。 | 可信 CLI 生成四份数据库 dump、全部 Storage 对象和 SHA-256 manifest；第二套空白本地 Supabase 恢复 21 条 migration history、应用 fixture 和字节一致对象，耗时 68.3 秒，清理归零。 |
 | 6B-06 | 6B | 外部门禁 | 未执行 | 扫码枪、标签机、连续纸偏移、小票打印和离线解码必须使用真实硬件；自动化不能替代。 | 真实硬件验收记录；缺失时 Standard/Advanced 必须标记 `CONDITIONAL` 或 `BLOCKED`。 |
 | 7-01 | 7 | 发布门禁 | 未执行 | 尚未执行 5A–6B 后的全量回归、新客户部署、两种旧客户升级、真实备份恢复和只读 Production 检查。 | 所有发布清单逐项有当前 SHA 和环境证据，无 skipped 关键测试。 |
 

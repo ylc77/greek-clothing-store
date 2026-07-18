@@ -107,7 +107,28 @@ npm run storage:recover -- --project-ref 客户项目ref
 3. 检查 Vercel 日志 Runtime Logs
 
 ### Supabase 数据备份
-后台「导出 CSV」只导出商品资料，不能替代 PostgreSQL 灾难恢复备份，也不包含全部订单、设置、账号和 Storage 对象。正式上线前应另行制定 Supabase 数据库与 Storage 的备份、恢复和演练方案。
+后台「维护 CSV 导出」只导出商品资料，不能替代 PostgreSQL 灾难恢复备份，也不包含全部订单、设置、账号和 Storage 对象。
+
+维护者完整备份流程：
+
+```powershell
+npm run customer:backup -- --project-ref 客户项目ref --output D:\encrypted-backups\客户代号\日期时间
+npm run customer:backup:verify -- --backup D:\encrypted-backups\客户代号\日期时间
+```
+
+执行前必须确认当前仓库已 link 到同一个 project ref，并只在维护者本机环境提供 `NEXT_PUBLIC_SUPABASE_URL` 与 `SUPABASE_SERVICE_ROLE_KEY`。不要把 key 写入命令行、备份目录、报告或 Git。备份完成后应看到角色、schema、应用/Auth data、migration history 四份数据库 dump、Storage 对象和 `manifest.json`；任何 SHA-256 校验失败都视为不可用备份。
+
+恢复只能面向全新的隔离 Supabase，禁止直接覆盖客户生产项目：
+
+```powershell
+# 在维护者本机环境提供隔离目标 URL、service key 和 SUPABASE_DB_URL；确认 Docker Desktop 正常
+# 不要把数据库连接字符串或 key 写入命令、文档、备份目录或日志
+npm run customer:restore -- --project-ref 目标测试项目ref --backup D:\encrypted-backups\客户代号\日期时间
+```
+
+恢复工具会检查数据库连接中的 project ref 与参数一致，并在任何写入前拒绝已有应用关系、Auth 用户、migration history 或 Storage 对象的目标；同时要求输入 `RESTORE 目标项目ref`。数据库密码只经一次性 PostgreSQL 客户端容器的标准输入传递。恢复后必须运行 migration 状态、RPC health、POS/库存对账、商品/订单数量、图片清单及公开图片抽查；通过前不得切换域名或导入真实流量。
+
+运维目标：RPO ≤ 24 小时、RTO ≤ 4 小时。每天做完整数据库 + Storage 备份；migration、大批量导入和客户交接前额外备份；至少保留 7 份每日、4 份每周、3 份每月加密异地副本。至少每季度做一次隔离恢复演练并记录源 project ref、目标 project ref、备份时间、恢复耗时、对象数量、对账结果和清理结果。Supabase 数据库备份不包含 Storage 文件本体，因此两者必须作为同一个恢复点共同保存和演练。
 
 ### 线上自动监控
 项目已包含 GitHub Actions 定时检查：`.github/workflows/site-monitor.yml`。

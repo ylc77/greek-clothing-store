@@ -109,6 +109,8 @@ Vercel → Settings → Domains → 添加自定义域名
 - [ ] 图片上传正常
 - [ ] CSV 预检、三种商品模式、两种库存模式、Job 恢复和失败行下载正常
 - [ ] 商品 CSV 导出完整；已确认它不是数据库灾难恢复备份
+- [ ] 维护者已执行数据库 + Storage 完整备份，`customer:backup:verify` 通过
+- [ ] 已在空白隔离项目执行一次恢复演练；数据库对账与 Storage 清单一致
 - [ ] /feed.xml 可公网访问
 - [ ] 店铺设置已填写完整（名称、联系方式、地址、营业时间）
 - [ ] WhatsApp / Instagram / Google Maps 链接已更新
