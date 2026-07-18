@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { Suspense, type ReactNode } from "react";
 import { getFeatureSettings } from "@/lib/features";
+import { localizedLegalText } from "@/lib/legal-localization";
 import { getPublishedLegalSettings } from "@/lib/legal-settings";
 import "./globals.css";
 
@@ -45,8 +46,8 @@ export default async function RootLayout({
             <ChatLauncher />
           </Suspense>
         ) : null}
-        <CookieConsentBanner config={{
-          essentialDescription: legal.settings.essentialStorageDescription,
+        <CookieConsentBanner language={language} config={{
+          essentialDescription: localizedLegalText(legal.settings.localized, "essentialStorageDescription", language),
           analyticsEnabled: legal.settings.analyticsEnabled,
           monitoringEnabled: legal.settings.errorMonitoringEnabled,
           advertisingEnabled: legal.settings.advertisingEnabled,
