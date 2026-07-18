@@ -3790,16 +3790,18 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <form className="mt-6 space-y-4" onSubmit={handleLogin}>
             {loginError ? <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-bold text-red-600">{loginError}</p> : null}
             {initialFeatures.staff_accounts ? <div className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-1">
-              <button className={`rounded-xl px-3 py-2 text-xs font-black ${loginMode === "account" ? "bg-white text-ink shadow-sm" : "text-stone-500"}`} onClick={() => setLoginMode("account")} type="button">员工账号</button>
-              <button className={`rounded-xl px-3 py-2 text-xs font-black ${loginMode === "password" ? "bg-white text-ink shadow-sm" : "text-stone-500"}`} onClick={() => setLoginMode("password")} type="button">应急密码</button>
+              <button className={`rounded-xl px-3 py-2 text-xs font-black ${loginMode === "account" ? "bg-white text-ink shadow-sm" : "text-stone-700"}`} onClick={() => setLoginMode("account")} type="button">员工账号</button>
+              <button className={`rounded-xl px-3 py-2 text-xs font-black ${loginMode === "password" ? "bg-white text-ink shadow-sm" : "text-stone-700"}`} onClick={() => setLoginMode("password")} type="button">应急密码</button>
             </div> : <p className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-bold leading-5 text-stone-500">当前客户版本未启用员工账号，请使用 owner 应急密码。</p>}
             {initialFeatures.staff_accounts && loginMode === "account" ? (
               <>
-                <input className="input text-center" onChange={e => setLoginEmail(e.target.value)} type="email" value={loginEmail} placeholder="员工邮箱" />
-                <input className="input text-center" onChange={e => setAccountPassword(e.target.value)} type="password" value={accountPassword} placeholder="账号密码" />
+                <label className="sr-only" htmlFor="admin-login-email">员工邮箱</label>
+                <input aria-label="员工邮箱" autoComplete="username" className="input text-center" id="admin-login-email" onChange={e => setLoginEmail(e.target.value)} type="email" value={loginEmail} placeholder="员工邮箱" />
+                <label className="sr-only" htmlFor="admin-account-password">账号密码</label>
+                <input aria-label="账号密码" autoComplete="current-password" className="input text-center" id="admin-account-password" onChange={e => setAccountPassword(e.target.value)} type="password" value={accountPassword} placeholder="账号密码" />
               </>
             ) : (
-              <input className="input text-center" onChange={e => setPassword(e.target.value)} type="password" value={password} placeholder="管理员应急密码" />
+              <><label className="sr-only" htmlFor="admin-emergency-password">管理员应急密码</label><input aria-label="管理员应急密码" autoComplete="current-password" className="input text-center" id="admin-emergency-password" onChange={e => setPassword(e.target.value)} type="password" value={password} placeholder="管理员应急密码" /></>
             )}
             <button className="w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50" disabled={loginLoading}>
               {loginLoading ? "登录中..." : "登录"}

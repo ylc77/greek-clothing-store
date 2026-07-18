@@ -191,7 +191,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             <p className="mt-2">{error}</p>
           </div>
         ) : products.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-stone-300 bg-white py-16 text-center text-stone-400">
+          <div className="rounded-lg border border-dashed border-stone-300 bg-white py-16 text-center text-stone-600">
             {t.noProducts}
           </div>
         ) : (

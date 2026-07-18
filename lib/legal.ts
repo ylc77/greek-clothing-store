@@ -1,4 +1,5 @@
 import type { LegalProviderKey } from "@/lib/legal-settings";
+import type { Language } from "@/lib/i18n";
 
 export const providerNames: Record<LegalProviderKey, string> = {
   supabase: "Supabase",
@@ -13,18 +14,15 @@ export const providerNames: Record<LegalProviderKey, string> = {
   deepseek: "DeepSeek",
 };
 
-const commonLinks = [
-  { href: "/privacy-policy", label: "Privacy Policy" },
-  { href: "/terms-of-service", label: "Terms of Sale" },
-  { href: "/cookie-policy", label: "Cookie Policy" },
-  { href: "/contact", label: "Contact" },
-] as const;
-
-export function getLegalLinks() {
+export function getLegalLinks(language: Language) {
+  const en = language === "en";
   return [
-    ...commonLinks,
-    { href: "/shipping-policy", label: "Shipping Policy" },
-    { href: "/return-policy", label: "Return Policy" },
-    { href: "/refund-policy", label: "Refund Policy" },
+    { href: "/privacy-policy", label: en ? "Privacy Policy" : "Πολιτική Απορρήτου" },
+    { href: "/terms-of-service", label: en ? "Terms of Sale" : "Όροι Πώλησης" },
+    { href: "/cookie-policy", label: en ? "Cookie Policy" : "Πολιτική Cookies" },
+    { href: "/contact", label: en ? "Contact" : "Επικοινωνία" },
+    { href: "/shipping-policy", label: en ? "Shipping Policy" : "Πολιτική Αποστολής" },
+    { href: "/return-policy", label: en ? "Return Policy" : "Πολιτική Επιστροφών" },
+    { href: "/refund-policy", label: en ? "Refund Policy" : "Πολιτική Επιστροφής Χρημάτων" },
   ];
 }
