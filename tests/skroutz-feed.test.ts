@@ -160,6 +160,27 @@ test("Skroutz feed excludes unknown manufacturers, non-English copy, and undersi
   assert.deepEqual(assembleSkroutzFeedProducts([product({ image_width: 1000, image_height: 999 })], variants, balances), []);
 });
 
+test("Skroutz feed excludes sized products whose saleable stock cannot be mapped to a size variation", () => {
+  const variants = [
+    variant(),
+    variant({
+      id: "22222222-2222-4222-8222-222222222222",
+      variant_sku: "DRESS-001-UNKNOWN",
+      size: null,
+    }),
+  ];
+  const balances = [
+    balance({ quantity_reserved: 0 }),
+    balance({
+      variant_id: "22222222-2222-4222-8222-222222222222",
+      quantity_on_hand: 2,
+      quantity_reserved: 0,
+    }),
+  ];
+
+  assert.deepEqual(assembleSkroutzFeedProducts([product()], variants, balances), []);
+});
+
 test("Skroutz feed retains more than one Supabase page of products", () => {
   const products = Array.from({ length: 1_005 }, (_, index) => product({
     id: index + 1,

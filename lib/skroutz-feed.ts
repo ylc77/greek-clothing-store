@@ -287,14 +287,22 @@ export function assembleSkroutzFeedProducts(
     const productVariants = variantsByProduct.get(String(product.id)) || [];
     const feedVariants: SkroutzFeedVariation[] = [];
     let totalAvailable = 0;
+    let hasUnmappedSizedStock = false;
     for (const variant of productVariants) {
       const available = mainStoreBalances.get(text(variant.id)) || 0;
-      totalAvailable += available;
       const size = field(variant.size, 64);
-      if (!sized || available <= 0 || !size) continue;
+      if (!sized) {
+        totalAvailable += available;
+        continue;
+      }
+      if (available <= 0) continue;
       const variantId = field(variant.variant_sku, 200);
-      if (!variantId) continue;
+      if (!size || !variantId) {
+        hasUnmappedSizedStock = true;
+        break;
+      }
       const barcode = field(variant.barcode, 13);
+      totalAvailable += available;
       feedVariants.push({
         id: variantId,
         availability: field(product.availability || "In stock", 60),
@@ -307,7 +315,9 @@ export function assembleSkroutzFeedProducts(
       });
     }
 
-    if (totalAvailable < requiredStock || (sized && feedVariants.length === 0)) continue;
+    if (hasUnmappedSizedStock
+      || totalAvailable < requiredStock
+      || (sized && feedVariants.length === 0)) continue;
     const availableSizes = feedVariants.map((variant) => variant.size);
     result.push({
       id: sku,
