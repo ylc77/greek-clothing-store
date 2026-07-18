@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { XMLParser } from "fast-xml-parser";
 
 import {
   assembleSkroutzFeedProducts,
@@ -8,6 +9,7 @@ import {
   type SkroutzBalanceRow,
   type SkroutzProductRow,
   type SkroutzVariantRow,
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
 } from "../lib/skroutz-feed.ts";
 
 function product(overrides: Partial<SkroutzProductRow> = {}): SkroutzProductRow {
@@ -110,10 +112,12 @@ test("Skroutz feed uses authoritative MAIN_STORE availability and emits only sal
 test("Skroutz feed strips XML 1.0 control characters and escapes markup", () => {
   assert.equal(stripInvalidXmlCharacters("A\u0000B\u0008C\tD"), "ABC\tD");
   const assembled = assembleSkroutzFeedProducts(
-    [product({ name_en: "Dress\u0000 & <Summer>", description_en: "Safe\u0008 text" })],
+    [product({ name_en: "Dress\u0000 & <Summer>", description_en: "Safe\u0008 text", brand: null })],
     [variant()],
     [balance({ quantity_reserved: 0 })],
     1,
+    "https://example.invalid",
+    "Store & Co",
   );
   const xml = buildSkroutzFeed(assembled, "Store & Co", new Date("2026-07-18T12:34:00.000Z"));
   assert.doesNotMatch(xml, /\u0000|\u0008/);
@@ -165,4 +169,8 @@ test("Skroutz feed retains more than one Supabase page of products", () => {
   const xml = buildSkroutzFeed(assembled, "Example Store", new Date("2026-07-18T12:34:00.000Z"));
   assert.equal((xml.match(/<product>/g) || []).length, 1_005);
   assert.match(xml, /<id>SKU-1005<\/id>/);
+  const parsed = new XMLParser().parse(xml) as {
+    mywebstore?: { products?: { product?: unknown[] } };
+  };
+  assert.equal(parsed.mywebstore?.products?.product?.length, 1_005);
 });
