@@ -3,6 +3,7 @@ node_modules/
 .tools/
 .env.local
 .env*.local
+backups/
 *.log
 tsconfig.tsbuildinfo
 
