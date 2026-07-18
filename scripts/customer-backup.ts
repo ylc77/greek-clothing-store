@@ -119,6 +119,7 @@ async function main() {
     { file: "database/roles.sql", flags: ["--role-only"] },
     { file: "database/schema.sql", flags: [] },
     { file: "database/data.sql", flags: ["--data-only", "--use-copy", "--schema", "public,app_private,auth"] },
+    { file: "database/migration-schema.sql", flags: ["--schema", "supabase_migrations"] },
     { file: "database/migration-history.sql", flags: ["--data-only", "--use-copy", "--schema", "supabase_migrations"] },
   ];
   for (const spec of databaseSpecs) {

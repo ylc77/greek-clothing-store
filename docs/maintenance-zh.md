@@ -116,7 +116,7 @@ npm run customer:backup -- --project-ref 客户项目ref --output D:\encrypted-b
 npm run customer:backup:verify -- --backup D:\encrypted-backups\客户代号\日期时间
 ```
 
-执行前必须确认当前仓库已 link 到同一个 project ref，并只在维护者本机环境提供 `NEXT_PUBLIC_SUPABASE_URL` 与 `SUPABASE_SERVICE_ROLE_KEY`。不要把 key 写入命令行、备份目录、报告或 Git。备份完成后应看到角色、schema、应用/Auth data、migration history 四份数据库 dump、Storage 对象和 `manifest.json`；任何 SHA-256 校验失败都视为不可用备份。
+执行前必须确认当前仓库已 link 到同一个 project ref，并只在维护者本机环境提供 `NEXT_PUBLIC_SUPABASE_URL` 与 `SUPABASE_SERVICE_ROLE_KEY`。不要把 key 写入命令行、备份目录、报告或 Git。备份完成后应看到角色、应用 schema、应用/Auth data、migration schema、migration history 五份数据库 dump、Storage 对象和 `manifest.json`；任何 SHA-256 校验失败都视为不可用备份。
 
 恢复只能面向全新的隔离 Supabase，禁止直接覆盖客户生产项目：
 
