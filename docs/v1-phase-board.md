@@ -12,7 +12,7 @@
 | 5B 图片与 Storage | `codex/hardening-p2-storage-image-security` | 已完成并合并 | PR #7、本地、CI、隔离 Preview、零残留清理、签核和 `v1-phase-5b-merged` 标签均完成；merge commit `23dd67b`。 |
 | 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 已完成并合并 | PR #8、本地、CI、隔离 Preview、清理、签核和阶段标签均完成；merge commit `b30e3ef`。 |
 | 6A 渠道/SEO/法律 | `codex/hardening-p2-channels-seo-legal` | 已完成并合并 | PR #9、本地、CI、隔离 Preview、官方 Skroutz Validator、严格监控、零残留清理、签核和阶段标签均完成；merge commit `0c39057`。 |
-| 6B 运营/报表/打印 | `codex/hardening-p2-operations-reporting-print` | 全量本地门禁已通过，等待 CI/Preview | 21 migrations、141 单元测试、156 具名集成场景、25 安装路径断言、三视口打印、秘密扫描及数据库 + Storage 恢复演练均通过；真实硬件仍是外部门禁。 |
+| 6B 运营/报表/打印 | `codex/hardening-p2-operations-reporting-print` | 本地与隔离 Preview 已通过，等待最终 exact-head CI/签核 | 21 migrations、141 单元测试、156 具名集成场景、25 安装路径断言、1,005 订单分页、三视口/58mm/80mm 打印、对账/审计/条码、秘密扫描及数据库 + Storage 恢复演练均通过；Preview 零残留，真实硬件仍是外部门禁。 |
 | 7 v1.0 发布门禁 | `codex/release-v1-production-readiness` | 等待 6B 合并 | 全回归、部署/升级/恢复演练、只读生产检查、三版本结论、Release PR、`v1.0.0` 和 GitHub Release。 |
 
 ## 每阶段固定门禁
@@ -103,7 +103,8 @@
 - [x] Phase 6B 专项静态、单元、数据库、浏览器、安装与恢复门禁加入现有四项 GitHub CI。
 - [x] 全量既有回归；141 个单元测试、156 个具名集成场景、25 条安装路径断言、生产 build、三视口浏览器、数据库安全、秘密扫描、恢复演练和零残留检查均通过。
 - [x] 精确 HEAD 本地标签 `audit-v1-6b-local-verified-v4`（保留此前标签；在 Linux host-gateway 修复并完整复验后的最终报告提交创建）。
-- [ ] Draft PR、四项 required CI、隔离 Preview 和零残留清理。
+- [x] Draft PR、隔离 Preview、1,005 订单容量、Supabase Advisors、日志和零残留清理。
+- [ ] 报告提交后的 exact-head 四项 required CI。
 - [ ] 单人维护者签核、CI/Preview 标签和 merge commit。
 - [ ] 真实扫码枪、标签机、连续纸偏移、小票打印和离线解码（外部门禁；未完成时 Standard/Advanced 不得标记正式 READY）。
 
