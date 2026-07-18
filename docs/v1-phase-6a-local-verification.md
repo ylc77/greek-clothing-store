@@ -6,7 +6,7 @@ Branch: `codex/hardening-p2-channels-seo-legal`
 
 Base: `b30e3efd5b8c2fc0b24a89835fc4988c1d14a9a6` (`origin/master`, Phase 5C merge commit)
 
-Verified implementation HEAD before this report: `b927ee0`
+Final evidence anchor: annotated tag `audit-v1-6a-local-verified`
 
 ## Scope completed locally
 
@@ -24,12 +24,18 @@ Verified implementation HEAD before this report: `b927ee0`
 
 | Check | Result |
 |---|---|
-| `npm run check:channels-static` | PASS; 19 ordered migrations and exact `client-init.sql` snapshot verified |
+| `npm ci` | PASS; 127 packages installed, 0 vulnerabilities |
+| `npm run check:channels-static` | PASS; 20 ordered migrations and exact `client-init.sql` snapshot verified |
 | `npm run test:channels-unit` | PASS; 14/14 tests |
 | `npm run typecheck` | PASS |
 | `npm run test:legal-publish-integration` | PASS; grants, concurrent publish, rollback, and cleanup |
 | `npm run test:channels-browser-local` | PASS; production build plus all raw HTML, header, axe, keyboard, and viewport checks |
-| `npm run test:ai-auth-install-paths` | PASS; ordered migrations, client-init, unique legacy upgrade, and duplicate-email safe stop |
+| All P1/4A/4B/5A/5B/5C/6A unit suites | PASS; 127/127 named tests |
+| All database/route integration suites | PASS; 149/149 named cases plus the legal publish concurrency/rollback suite |
+| All six installation-path suites | PASS; 22 named clean/client-init/legacy assertions |
+| Database security and advisors | PASS; all gates passed and advisors returned no issues |
+| Storage reconciliation and cleanup | PASS; 0 objects, references, orphans, missing objects, and pending cleanup |
+| Developer secret scan | PASS across 345 source, migration, documentation, test, snapshot, and browser-bundle files |
 | `git diff --check` | PASS |
 
 The first installation-path invocation was interrupted by the command runner timeout. A second invocation overlapped the first process cleanup and lost its temporary container. After confirming that no test process or test container remained, a clean invocation passed all four installation assertions. This was a local test-runner lifecycle issue, not a migration failure.
@@ -37,7 +43,7 @@ The first installation-path invocation was interrupted by the command runner tim
 ## Local database evidence
 
 - Local Supabase uses the checked-in 5532x ports and PostgreSQL 17.
-- All 19 migrations previously passed `npx supabase db reset --local --no-seed` from an empty database after the legal RPC correction.
+- The complete 20-migration chain passed `npx supabase db reset --local --no-seed` from an empty database after adding the legal RPC and image-dimension column grant.
 - Legal publish RPC access is service-role only; anonymous and authenticated execution is revoked.
 - Concurrent legal publishes generate unique sequential versions under one advisory transaction lock.
 - Injected snapshot failure rolls back the settings update and version row together.
@@ -48,7 +54,7 @@ The first installation-path invocation was interrupted by the command runner tim
 The following are intentionally not claimed as complete locally:
 
 1. Deploy this exact branch to an isolated Vercel Preview connected only to `greek-clothing-store-test` (`krlhwwjkgoqzusehxuav`).
-2. Apply the current 19 migrations to that isolated test project and verify the legal publish RPC grants and runtime behavior.
+2. Apply the current 20 migrations to that isolated test project and verify the legal publish RPC grants and runtime behavior.
 3. Create temporary `AUDIT_6A_` products with genuine English copy, brand, MPN, EAN, color, images over 1,000 pixels, additional fashion images, Variants, and `MAIN_STORE` balances.
 4. Verify `/feed.xml` through the strict monitor and the official Skroutz XML Validator.
 5. Verify Greek/English storefront, legal publishing, Cookie preferences, security headers, accessibility, and the admin readiness messages in Preview.
@@ -63,6 +69,6 @@ The production Daily site monitor failure is not yet declared fixed. The workflo
 
 Local gate: **PASS**
 
-Draft PR readiness: **READY AFTER final full regression and branch synchronization check**
+Draft PR readiness: **READY after branch synchronization check**
 
 Merge readiness: **BLOCKED until GitHub CI and isolated Preview acceptance, including the official Skroutz Validator**

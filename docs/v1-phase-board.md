@@ -11,7 +11,7 @@
 | 5A 公开数据边界 | `codex/hardening-p2-public-data-boundary` | 已完成并合并 | PR #6、CI、隔离 Preview、清理、签核、阶段标签和 merge commit `7d943ea` 均完成。 |
 | 5B 图片与 Storage | `codex/hardening-p2-storage-image-security` | 已完成并合并 | PR #7、本地、CI、隔离 Preview、零残留清理、签核和 `v1-phase-5b-merged` 标签均完成；merge commit `23dd67b`。 |
 | 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 已完成并合并 | PR #8、本地、CI、隔离 Preview、清理、签核和阶段标签均完成；merge commit `b30e3ef`。 |
-| 6A 渠道/SEO/法律 | `codex/hardening-p2-channels-seo-legal` | 本地实现与专项门禁已通过，等待全回归、CI 和隔离 Preview | 19 migrations、Feed/SEO/法律单元与集成测试、生产 build、三视口浏览器检查和三条安装路径已通过；官方 Skroutz Validator 与线上监控仍须在 Preview 验收。 |
+| 6A 渠道/SEO/法律 | `codex/hardening-p2-channels-seo-legal` | 全量本地门禁已通过，等待 CI 和隔离 Preview | 20 migrations、127 单元测试、149 具名集成场景、22 安装路径断言、生产 build、三视口浏览器、权限、advisors、对账、秘密扫描和清理均通过；官方 Skroutz Validator 与线上监控仍须在 Preview 验收。 |
 | 6B 运营/报表/打印 | `codex/hardening-p2-operations-reporting-print` | 等待 6A 合并 | Athens 时区、对账、审计、容量、打印、备份恢复与硬件状态结论完成。 |
 | 7 v1.0 发布门禁 | `codex/release-v1-production-readiness` | 等待 6B 合并 | 全回归、部署/升级/恢复演练、只读生产检查、三版本结论、Release PR、`v1.0.0` 和 GitHub Release。 |
 
@@ -80,9 +80,10 @@
 - [x] Greek/English 原始 HTML `lang`、canonical、reciprocal hreflang、sitemap 和 robots/noindex。
 - [x] CSP nonce、安全响应头、390/768/1440 axe、横向溢出和后台键盘登录检查。
 - [x] 独立 Greek/English 法律内容、双语发布校验和 service-role-only 事务发布 RPC。
-- [x] 19 migrations 空库 reset、client-init、legacy upgrade、并发、故障注入和清理测试。
+- [x] 20 migrations 空库 reset、client-init、legacy upgrade、并发、故障注入和清理测试。
 - [x] Phase 6A 专项静态、单元、数据库和浏览器检查加入现有四项 GitHub CI。
-- [ ] 全量既有回归和精确 HEAD 本地标签。
+- [x] 全量既有回归。
+- [ ] 精确 HEAD 本地标签。
 - [ ] Draft PR 与四项 required CI。
 - [ ] 隔离 Preview、官方 Skroutz Validator、严格线上监控和零残留清理。
 - [ ] 单人维护者签核、CI/Preview 标签和 merge commit。

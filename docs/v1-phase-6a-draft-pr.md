@@ -38,7 +38,7 @@ Phase 6A hardens the storefront channel, SEO, legal, monitoring, and accessibili
 - `npm run test:ai-auth-install-paths`
 - `git diff --check`
 
-All listed checks passed. The production build completed successfully. The ordered migration chain, generated client snapshot, legacy upgrade fixture, legal publish concurrency, rollback, and cleanup checks passed.
+All listed checks pass at the final local gate. The production build completes successfully. The 20-migration ordered chain, generated client snapshot, legacy upgrade fixture, legal publish concurrency, rollback, and cleanup checks pass.
 
 ## Required before merge
 
