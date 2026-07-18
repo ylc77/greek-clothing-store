@@ -42,6 +42,14 @@ import {
   normalizeLabelCopies,
   type PrintLanguage,
 } from "@/lib/operations-print";
+import {
+  addVisibleVariantsToSelection,
+  barcodeIsPresent,
+  clearBarcodeLabelQueue,
+  getBarcodeLabelSelectionSummary,
+  selectVisibleMissingBarcodes,
+} from "@/lib/barcode-label-selection";
+import { MAX_BULK_BARCODE_VARIANTS } from "@/lib/barcode-bulk-request";
 
 /* ── Types ───────────────────────────────────────────────── */
 type AdminProductVariant = {
@@ -867,7 +875,7 @@ export function AdminDashboard({
   const [tab, setTab] = useState<Tab>("stockLookup");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [autoCompletingId, setAutoCompletingId] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<{ open: boolean; title: string; desc: string; confirmText: string; variant: "danger"|"success"|"default"; action: () => void; prompt?: boolean; promptValue?: string }>({ open: false, title: "", desc: "", confirmText: "确认", variant: "default", action: () => {} });
+  const [confirm, setConfirm] = useState<{ open: boolean; title: string; desc: ReactNode; confirmText: string; variant: "danger"|"success"|"default"; action: () => void; prompt?: boolean; promptValue?: string }>({ open: false, title: "", desc: "", confirmText: "确认", variant: "default", action: () => {} });
   const [newMainFile, setNewMainFile] = useState<File | null>(null); const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
   const [sizeStock, setSizeStock] = useState<Record<string, number>>({});
   const [variantProcurement, setVariantProcurement] = useState<Record<string, VariantProcurement>>({});
@@ -1400,20 +1408,31 @@ export function AdminDashboard({
   }, [labelProductGroups, labelProductId]);
 
   const labelAvailableSizes = useMemo(() => {
-    if (!selectedLabelProduct) return [];
-    return sortSizeKeys(Array.from(new Set(selectedLabelProduct.items.map(item => item.size || "ONE SIZE"))));
-  }, [selectedLabelProduct]);
+    return sortSizeKeys(Array.from(new Set(labelProductOptions.flatMap(group => group.items.map(item => item.size || "ONE SIZE")))));
+  }, [labelProductOptions]);
 
-  const filteredLabelItems = useMemo(() => {
-    if (!selectedLabelProduct) return [];
-    return selectedLabelProduct.items.filter(item => {
+  const visibleLabelItems = useMemo(() => {
+    return labelProductOptions.flatMap(group => group.items).filter(item => {
       if (labelSizeFilter && (item.size || "ONE SIZE") !== labelSizeFilter) return false;
-      if (labelOnlyMissingBarcode && item.barcode) return false;
+      if (labelOnlyMissingBarcode && barcodeIsPresent(item.barcode)) return false;
       if (labelStockFilter === "in_stock" && item.quantity_on_hand <= 0) return false;
       if (labelStockFilter === "out_of_stock" && item.quantity_on_hand > 0) return false;
       return true;
     });
-  }, [selectedLabelProduct, labelSizeFilter, labelOnlyMissingBarcode, labelStockFilter]);
+  }, [labelProductOptions, labelSizeFilter, labelOnlyMissingBarcode, labelStockFilter]);
+
+  const visibleLabelVariantIds = useMemo(() => new Set(visibleLabelItems.map(item => item.variant_id)), [visibleLabelItems]);
+
+  const visibleLabelProductGroups = useMemo(() => {
+    return labelProductOptions
+      .map(group => ({ ...group, items: group.items.filter(item => visibleLabelVariantIds.has(item.variant_id)) }))
+      .filter(group => group.items.length > 0);
+  }, [labelProductOptions, visibleLabelVariantIds]);
+
+  const filteredLabelItems = useMemo(() => {
+    if (!selectedLabelProduct) return [];
+    return selectedLabelProduct.items.filter(item => visibleLabelVariantIds.has(item.variant_id));
+  }, [selectedLabelProduct, visibleLabelVariantIds]);
 
   const selectedLabelItems = useMemo(() => {
     return inventoryItems.filter(item => selectedLabelVariantIds.has(item.variant_id));
@@ -1425,6 +1444,18 @@ export function AdminDashboard({
       0,
     );
   }, [selectedLabelItems, labelCopyCounts]);
+
+  const labelSelectionSummary = useMemo(() => getBarcodeLabelSelectionSummary({
+    visibleItems: visibleLabelItems,
+    allItems: inventoryItems,
+    selectedVariantIds: selectedLabelVariantIds,
+    copyCounts: labelCopyCounts,
+  }), [visibleLabelItems, inventoryItems, selectedLabelVariantIds, labelCopyCounts]);
+
+  const selectedMissingBarcodeItems = useMemo(
+    () => selectedLabelItems.filter(item => !barcodeIsPresent(item.barcode)),
+    [selectedLabelItems],
+  );
 
   const selectedLabelGroups = useMemo(() => {
     return labelProductGroups
@@ -2431,6 +2462,32 @@ export function AdminDashboard({
       return next;
     });
   }
+  function selectAllVisibleLabelVariants() {
+    setSelectedLabelVariantIds(current => addVisibleVariantsToSelection(current, visibleLabelItems));
+    setLabelMessage(`已将当前筛选结果的 ${visibleLabelItems.length} 个规格加入选择。`);
+  }
+  function selectOnlyVisibleMissingBarcodes() {
+    const missingItems = visibleLabelItems.filter(item => !barcodeIsPresent(item.barcode));
+    if (missingItems.length === 0) {
+      setLabelMessage("当前筛选结果没有缺少 Barcode 的规格。");
+      toast("当前筛选结果没有缺少 Barcode 的规格。", "err");
+      return;
+    }
+    setSelectedLabelVariantIds(current => selectVisibleMissingBarcodes(current, visibleLabelItems));
+    setLabelMessage(`已将当前筛选结果中缺少 Barcode 的 ${missingItems.length} 个规格加入选择。`);
+  }
+  function cancelLabelSelection() {
+    const cleared = clearBarcodeLabelQueue();
+    setSelectedLabelVariantIds(cleared.selectedVariantIds);
+    setLabelCopyCounts(cleared.copyCounts);
+    setLabelPreviewItems(cleared.previewItems);
+    try {
+      productOperationIds().cancel("barcode-generate");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "无法清除 Barcode 操作状态", "err");
+    }
+    setLabelMessage("已取消全部选择，并清空待打印队列和打印数量。");
+  }
   function chooseLabelProduct(productId: string) {
     setLabelProductId(productId);
     setLabelSizeFilter("");
@@ -2492,17 +2549,51 @@ export function AdminDashboard({
       supplier_sku: item.supplier_sku,
     };
   }
-  async function generateSelectedBarcodes() {
-    const variantIds = Array.from(selectedLabelVariantIds);
+  function confirmGenerateSelectedBarcodes() {
+    if (selectedLabelItems.length === 0) {
+      toast("请先选择需要生成 Barcode 的规格", "err");
+      return;
+    }
+    if (selectedMissingBarcodeItems.length === 0) {
+      const message = "已选规格全部已有 Barcode，不会发送生成请求。";
+      setLabelMessage(message);
+      toast(message, "err");
+      return;
+    }
+    if (selectedMissingBarcodeItems.length > MAX_BULK_BARCODE_VARIANTS) {
+      const message = `单次最多生成 ${MAX_BULK_BARCODE_VARIANTS} 个规格，请先缩小筛选范围或减少选择。`;
+      setLabelMessage(message);
+      toast(message, "err");
+      return;
+    }
+    const variantIds = selectedMissingBarcodeItems.map(item => item.variant_id).sort();
+    setConfirm({
+      open: true,
+      title: "确认批量生成缺失 Barcode？",
+      desc: (
+        <div className="space-y-2">
+          <p>已选择 {labelSelectionSummary.selectedProductCount} 件商品，共 {labelSelectionSummary.selectedVariantCount} 个规格。</p>
+          <p>{labelSelectionSummary.selectedMissingBarcodeCount} 个规格缺少 Barcode，将按 Variant SKU 生成。</p>
+          <p>{labelSelectionSummary.selectedExistingBarcodeCount} 个已有 Barcode 的规格将被跳过，不会覆盖。</p>
+        </div>
+      ),
+      confirmText: "确认生成",
+      variant: "default",
+      action: () => {
+        setConfirm(current => ({ ...current, open: false }));
+        void generateSelectedBarcodes(variantIds);
+      },
+    });
+  }
+  async function generateSelectedBarcodes(variantIds: string[]) {
     if (variantIds.length === 0) {
-      toast("请先选择需要生成条码的变体", "err");
+      toast("没有缺少 Barcode 的已选规格", "err");
       return;
     }
     const operationScope = "barcode-generate";
     const fingerprint = createProductOperationFingerprint({
       variantIds: [...variantIds].sort(),
       mode: "variant_sku",
-      force: false,
     });
     let operationId = "";
     setLabelGenerating(true);
@@ -2515,15 +2606,14 @@ export function AdminDashboard({
         body: JSON.stringify({
           variantIds,
           mode: "variant_sku",
-          force: false,
           clientRequestId: operationId,
         }),
       });
       productOperationIds().complete(operationScope, operationId);
-      const errors = Array.isArray(result.errors) ? result.errors : [];
-      const message = `已生成 ${Number(result.generatedCount || 0)} 个，跳过 ${Number(result.skippedCount || 0)} 个，失败 ${errors.length} 个。`;
+      const failed = Number(result.failed || 0);
+      const message = `已生成 ${Number(result.generated || 0)} 个，跳过已有 Barcode ${Number(result.skippedExisting || 0)} 个，失败 ${failed} 个。`;
       setLabelMessage(message);
-      toast(message, errors.length > 0 ? "err" : "ok");
+      toast(message, failed > 0 ? "err" : "ok");
       await loadLabelInventoryData();
     } catch (error) {
       if (operationId) handleProductOperationFailure(operationScope, operationId, error);
@@ -5842,11 +5932,17 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={inventoryLoading} onClick={() => void loadLabelInventoryData()} type="button">刷新</button>
-                  <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={selectedLabelVariantIds.size === 0 || labelGenerating} onClick={() => void generateSelectedBarcodes()} type="button">
-                    {labelGenerating ? "生成中..." : "生成选中 barcode"}
+                  <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={visibleLabelItems.length === 0} onClick={selectAllVisibleLabelVariants} type="button">
+                    全选当前结果（{visibleLabelItems.length}）
+                  </button>
+                  <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={visibleLabelItems.length === 0} onClick={selectOnlyVisibleMissingBarcodes} type="button">
+                    仅选缺少 Barcode
+                  </button>
+                  <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={selectedMissingBarcodeItems.length === 0 || labelGenerating} onClick={confirmGenerateSelectedBarcodes} type="button">
+                    {labelGenerating ? "生成中..." : `批量生成缺失 Barcode（${selectedMissingBarcodeItems.length}）`}
                   </button>
                   <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={selectedLabelItems.length === 0} onClick={openLabelPreview} type="button">打印标签（{selectedLabelCopies} 张）</button>
-                  <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={selectedLabelVariantIds.size === 0} onClick={() => setSelectedLabelVariantIds(new Set())} type="button">清空选择</button>
+                  <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={selectedLabelVariantIds.size === 0} onClick={cancelLabelSelection} type="button">取消选择</button>
                 </div>
               </div>
               {inventoryError ? <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{inventoryError}</p> : null}
@@ -5877,7 +5973,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-black text-stone-600">尺码筛选</span>
-                  <select className="input" data-label-size-filter disabled={!selectedLabelProduct} value={labelSizeFilter} onChange={e => setLabelSizeFilter(e.target.value)}>
+                  <select className="input" data-label-size-filter value={labelSizeFilter} onChange={e => setLabelSizeFilter(e.target.value)}>
                     <option value="">全部尺码</option>
                     {labelAvailableSizes.map(size => <option key={size} value={size}>{size}</option>)}
                   </select>
@@ -5913,9 +6009,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-stone-500">
-                <span className="rounded-full bg-stone-100 px-3 py-1.5">显示商品 {labelProductOptions.length} / {labelProductGroups.length} 件</span>
-                <span className="rounded-full bg-stone-100 px-3 py-1.5">当前显示 {filteredLabelItems.length} 个规格</span>
-                <span className="rounded-full bg-stone-100 px-3 py-1.5 text-ink">已选 {selectedLabelVariantIds.size} 个规格，共 {selectedLabelCopies} 张</span>
+                <span className="rounded-full bg-stone-100 px-3 py-1.5">当前显示：{labelSelectionSummary.visibleProductCount} 件商品 / {labelSelectionSummary.visibleVariantCount} 个规格</span>
+                <span className="rounded-full bg-stone-100 px-3 py-1.5 text-ink">已选择：{labelSelectionSummary.selectedProductCount} 件商品 / {labelSelectionSummary.selectedVariantCount} 个规格</span>
+                <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800">缺少 Barcode：{labelSelectionSummary.visibleMissingBarcodeCount} 个规格</span>
+                <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-800">已有 Barcode：{labelSelectionSummary.visibleExistingBarcodeCount} 个规格</span>
+                <span className="rounded-full bg-blue-50 px-3 py-1.5 text-blue-800">已选待生成：{labelSelectionSummary.selectedMissingBarcodeCount} / 已有将跳过：{labelSelectionSummary.selectedExistingBarcodeCount}</span>
+                <span className="rounded-full bg-stone-900 px-3 py-1.5 text-white">预计打印：{labelSelectionSummary.estimatedPrintCopies} 张</span>
               </div>
             </div>
 
@@ -5925,13 +6024,13 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <h3 className="text-lg font-black text-ink">选择商品</h3>
                   <p className="mt-1 text-xs text-stone-500">默认显示全部商品；可使用一级分类、二级分类或搜索缩小范围。</p>
                 </div>
-                <p className="text-xs font-black text-stone-400">{labelProductOptions.length} 件商品</p>
+                <p className="text-xs font-black text-stone-400">{visibleLabelProductGroups.length} 件商品</p>
               </div>
               {inventoryLoading ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">正在加载标签商品...</p> : null}
-              {!inventoryLoading && labelProductOptions.length === 0 ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">当前分类或搜索条件下没有商品</p> : null}
-              {!inventoryLoading && labelProductOptions.length > 0 ? (
+              {!inventoryLoading && visibleLabelProductGroups.length === 0 ? <p className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm font-bold text-stone-400">当前筛选条件下没有商品规格</p> : null}
+              {!inventoryLoading && visibleLabelProductGroups.length > 0 ? (
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-label-product-grid>
-                  {labelProductOptions.map(group => {
+                  {visibleLabelProductGroups.map(group => {
                     const selected = labelProductId === String(group.productId);
                     const selectedCount = group.items.filter(item => selectedLabelVariantIds.has(item.variant_id)).length;
                     const totalStock = group.items.reduce((sum, item) => sum + item.quantity_on_hand, 0);

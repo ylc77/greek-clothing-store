@@ -35,6 +35,7 @@ const functions = [
   "public.pos_daily_report_rpc(date,integer,integer)",
   "public.pos_search_rpc(text,integer)",
   "public.variant_barcodes_apply_rpc(text,jsonb,text,text)",
+  "public.variant_barcodes_generate_missing_rpc(text,jsonb,text)",
   "public.operations_runtime_health_rpc()",
 ];
 

@@ -73,6 +73,7 @@ begin
     'public.pos_daily_report_rpc(date,integer,integer)',
     'public.pos_search_rpc(text,integer)',
     'public.variant_barcodes_apply_rpc(text,jsonb,text,text)',
+    'public.variant_barcodes_generate_missing_rpc(text,jsonb,text)',
     'public.operations_runtime_health_rpc()'
   ] loop
     if pg_catalog.to_regprocedure(signature) is null then raise exception 'missing %', signature; end if;
@@ -114,6 +115,8 @@ $allMigrations = Get-ChildItem -LiteralPath $migrationsDirectory -Filter "*.sql"
 $operations = @($allMigrations | Where-Object { $_.Name -match '^\d+_operations_reporting_audit_barcode\.sql$' })
 if ($operations.Count -ne 1) { throw "Expected exactly one operations migration" }
 $operationsMigration = $operations[0]
+$bulkBarcodeMigration = @($allMigrations | Where-Object { $_.Name -eq '20260719120000_transactional_bulk_barcode_generation.sql' })
+if ($bulkBarcodeMigration.Count -ne 1) { throw "Expected transactional bulk Barcode migration" }
 $projectionMigration = @($allMigrations | Where-Object { $_.Name -eq '20260719100000_reconcile_legacy_inventory_projections.sql' })
 if ($projectionMigration.Count -ne 1) { throw "Expected legacy inventory projection reconciliation migration" }
 if ($operationsMigration.Name -ge $projectionMigration[0].Name) { throw "Operations migration must sort before legacy projection reconciliation" }
@@ -133,12 +136,14 @@ try {
 
   Start-TestContainer $containers[2]
   foreach ($migration in $allMigrations) {
-    if ($migration.Name -ne $operationsMigration.Name) { Invoke-SqlFile $containers[2] $migration.FullName }
+    if ($migration.Name -ne $operationsMigration.Name -and $migration.Name -ne $bulkBarcodeMigration[0].Name) { Invoke-SqlFile $containers[2] $migration.FullName }
   }
   $legacyActor = "account:owner:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
   Invoke-SqlText $containers[2] "insert into public.audit_logs(actor,action,entity,entity_id) values ('$legacyActor','legacy_event','legacy','legacy-preserved');" "legacy audit fixture"
   Invoke-SqlFile $containers[2] $operationsMigration.FullName
   Invoke-SqlFile $containers[2] $operationsMigration.FullName
+  Invoke-SqlFile $containers[2] $bulkBarcodeMigration[0].FullName
+  Invoke-SqlFile $containers[2] $bulkBarcodeMigration[0].FullName
   Assert-OperationsBoundary $containers[2] "legacy upgrade"
   $legacyAssertion = @"
 do `$`$ begin

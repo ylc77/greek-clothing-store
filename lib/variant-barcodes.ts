@@ -124,41 +124,60 @@ export async function updateVariantBarcode({
 }
 
 export type GenerateVariantBarcodesResult = {
-  generatedCount: number;
-  skippedCount: number;
-  errors: Array<{ variantId: string; variantSku?: string; message: string }>;
-  updatedVariants: VariantBarcodeRow[];
+  ok: boolean;
+  requested: number;
+  generated: number;
+  skippedExisting: number;
+  failed: number;
+  items: Array<{
+    variantId: string;
+    variantSku?: string;
+    barcode?: string;
+    status: "generated" | "skipped_existing" | "failed";
+    code?: string;
+    message?: string;
+  }>;
   alreadyProcessed: boolean;
 };
 
-export async function generateBarcodesForVariants({
+export async function generateMissingBarcodesForVariants({
   variantIds,
-  mode,
   clientRequestId,
   actor,
 }: {
-  variantIds: unknown;
-  mode: unknown;
+  variantIds: string[];
   clientRequestId: string;
   actor: string;
-  force?: boolean;
 }): Promise<GenerateVariantBarcodesResult> {
-  const ids = uniqueStrings(variantIds);
-  const selectedMode = cleanText(mode) || "variant_sku";
-  if (selectedMode !== "variant_sku") throw new VariantBarcodeError('Only mode "variant_sku" is supported.');
+  const ids = uniqueStrings(variantIds).sort();
   if (ids.length === 0) throw new VariantBarcodeError("variantIds is required. Please select variants explicitly.");
+  const requestId = cleanText(clientRequestId);
+  const cleanActor = cleanText(actor);
+  if (!requestId) throw new VariantBarcodeError("clientRequestId is required.");
+  if (!cleanActor) throw new VariantBarcodeError("actor is required.");
 
-  const result = await applyBarcodes({
-    clientRequestId,
-    assignments: ids.map((variantId) => ({ variant_id: variantId })),
-    mode: "variant_sku",
-    actor,
+  const { data, error } = await adminClient().rpc("variant_barcodes_generate_missing_rpc", {
+    p_client_request_id: requestId,
+    p_variant_ids: ids,
+    p_actor: cleanActor,
   });
+  if (error || !data) throw mapRpcError(error);
+  const result = data as {
+    ok: boolean;
+    requested: number;
+    generated: number;
+    skipped_existing: number;
+    failed: number;
+    items: GenerateVariantBarcodesResult["items"];
+    already_processed: boolean;
+  };
   return {
-    generatedCount: result.generated_count,
-    skippedCount: result.skipped_count,
-    errors: [],
-    updatedVariants: result.updated_variants,
+    ok: result.ok,
+    requested: result.requested,
+    generated: result.generated,
+    skippedExisting: result.skipped_existing,
+    failed: result.failed,
+    items: result.items,
     alreadyProcessed: result.already_processed,
   };
 }
