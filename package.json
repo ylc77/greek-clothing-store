@@ -68,7 +68,8 @@
     "test:channels-unit": "node --experimental-strip-types --test tests/skroutz-feed.test.ts tests/storefront-seo-security.test.ts tests/legal-localization.test.ts tests/legal-publish-transaction.test.ts",
     "test:channels-browser": "node scripts/channels-seo-legal-browser-test.mjs",
     "test:channels-browser-local": "node scripts/run-powershell.mjs scripts/run-channels-browser-local.ps1",
-    "test:legal-publish-integration": "node scripts/run-powershell.mjs scripts/verify-legal-publish-integration.ps1"
+    "test:legal-publish-integration": "node scripts/run-powershell.mjs scripts/verify-legal-publish-integration.ps1",
+    "check:channels-static": "node scripts/verify-channels-static-gates.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",
