@@ -37,7 +37,7 @@ Phase 6B hardens operational reporting, reconciliation, audit identity, barcode 
 - 25/25 installation-path assertions across seven suites.
 - 21-migration empty reset, exact `client-init.sql`, and relevant legacy upgrades.
 - Production build and 390/768/1440 browser gates.
-- Four database backup files plus one real Storage object restored byte-for-byte in 68.3 seconds.
+- Four database backup files plus one real Storage object restored byte-for-byte in 68.7 seconds.
 - Database security, advisors, reconciliation, cleanup, typecheck, npm audit, secret scan across 365 files, and `git diff --check` all pass.
 
 The detailed evidence is in `docs/v1-phase-6b-local-verification.md`.
