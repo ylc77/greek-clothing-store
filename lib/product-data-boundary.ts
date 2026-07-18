@@ -158,6 +158,8 @@ export const SKROUTZ_PRODUCT_COLUMNS = [
   "image_url",
   "image_urls",
   "additional_image_urls",
+  "image_width",
+  "image_height",
   "brand",
   "ean",
   "vat",

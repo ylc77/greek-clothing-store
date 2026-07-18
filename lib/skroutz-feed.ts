@@ -11,6 +11,8 @@ export type SkroutzProductRow = {
   image_url: string | null;
   image_urls: string[] | string | null;
   additional_image_urls: string | null;
+  image_width: number | string | null;
+  image_height: number | string | null;
   brand: string | null;
   ean: string | null;
   vat: number | string | null;
@@ -217,7 +219,7 @@ export function assembleSkroutzFeedProducts(
   balances: SkroutzBalanceRow[],
   minStock = 1,
   siteOrigin = "https://example.invalid",
-  fallbackBrand = "Fashion Boutique",
+  _fallbackBrand = "Fashion Boutique",
 ) {
   if (!isHttpsUrl(siteOrigin)) return [];
   const requiredStock = Math.max(1, Math.trunc(finiteNumber(minStock, 1)));
@@ -246,13 +248,19 @@ export function assembleSkroutzFeedProducts(
     const categoryKey = text(product.category).toLowerCase();
     const sized = SIZED_CATEGORIES.has(categoryKey);
     const fashion = FASHION_CATEGORIES.has(categoryKey);
-    const name = field(product.name_en || product.name_gr, 300);
-    const description = field(product.description_en || product.description_gr, 10_000);
+    const rawName = field(product.name_en, 300);
+    const description = field(product.description_en, 10_000);
     const image = field(product.image_url, 400);
     const ean = field(product.ean, 13);
     const mpn = field(product.mpn, 80);
     const color = field(product.color, 100);
-    const brand = field(product.brand || fallbackBrand, 100);
+    const brand = field(product.brand, 100);
+    const name = field(
+      rawName && brand && !rawName.toLocaleLowerCase("en").includes(brand.toLocaleLowerCase("en"))
+        ? `${brand} ${rawName}`
+        : rawName,
+      300,
+    );
     const category = field(productCategory(product), 250);
     const price = finiteNumber(product.price);
     const link = productLink(siteOrigin, sku);
@@ -270,6 +278,7 @@ export function assembleSkroutzFeedProducts(
       || !validEan(ean)
       || !isHttpsUrl(image)
       || !isHttpsUrl(link)
+      || Math.max(finiteNumber(product.image_width), finiteNumber(product.image_height)) <= 1000
       || (fashion && !color)
       || (sized && additionalImages.length === 0)) {
       continue;

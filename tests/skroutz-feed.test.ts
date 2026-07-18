@@ -26,6 +26,8 @@ function product(overrides: Partial<SkroutzProductRow> = {}): SkroutzProductRow 
     image_url: "https://cdn.example.test/dress.webp",
     image_urls: ["https://cdn.example.test/dress-back.webp"],
     additional_image_urls: null,
+    image_width: 1200,
+    image_height: 1500,
     brand: "Example Brand",
     ean: "5201234567890",
     vat: 24,
@@ -107,12 +109,13 @@ test("Skroutz feed uses authoritative MAIN_STORE availability and emits only sal
   assert.doesNotMatch(xml, /<size>L<\/size>/);
   assert.match(xml, /<quantity>2<\/quantity>/);
   assert.match(xml, /<variationid>DRESS-001-S<\/variationid>/);
+  assert.match(xml, /<name>Example Brand Summer Dress<\/name>/);
 });
 
 test("Skroutz feed strips XML 1.0 control characters and escapes markup", () => {
   assert.equal(stripInvalidXmlCharacters("A\u0000B\u0008C\tD"), "ABC\tD");
   const assembled = assembleSkroutzFeedProducts(
-    [product({ name_en: "Dress\u0000 & <Summer>", description_en: "Safe\u0008 text", brand: null })],
+    [product({ name_en: "Dress\u0000 & <Summer>", description_en: "Safe\u0008 text", brand: "Store & Co" })],
     [variant()],
     [balance({ quantity_reserved: 0 })],
     1,
@@ -146,6 +149,15 @@ test("Skroutz feed excludes insecure URLs, test SKUs, and products below minimum
   );
 
   assert.deepEqual(rows, []);
+});
+
+test("Skroutz feed excludes unknown manufacturers, non-English copy, and undersized images", () => {
+  const variants = [variant()];
+  const balances = [balance({ quantity_reserved: 0 })];
+  assert.deepEqual(assembleSkroutzFeedProducts([product({ brand: null })], variants, balances), []);
+  assert.deepEqual(assembleSkroutzFeedProducts([product({ name_en: null })], variants, balances), []);
+  assert.deepEqual(assembleSkroutzFeedProducts([product({ description_en: null })], variants, balances), []);
+  assert.deepEqual(assembleSkroutzFeedProducts([product({ image_width: 1000, image_height: 999 })], variants, balances), []);
 });
 
 test("Skroutz feed retains more than one Supabase page of products", () => {
