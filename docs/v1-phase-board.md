@@ -13,7 +13,7 @@
 | 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 已完成并合并 | PR #8、本地、CI、隔离 Preview、清理、签核和阶段标签均完成；merge commit `b30e3ef`。 |
 | 6A 渠道/SEO/法律 | `codex/hardening-p2-channels-seo-legal` | 已完成并合并 | PR #9、本地、CI、隔离 Preview、官方 Skroutz Validator、严格监控、零残留清理、签核和阶段标签均完成；merge commit `0c39057`。 |
 | 6B 运营/报表/打印 | `codex/hardening-p2-operations-reporting-print` | 已完成并合并 | 21 migrations、141 单元测试、156 具名集成场景、25 安装路径断言、1,005 订单分页、三视口/58mm/80mm 打印、对账/审计/条码、秘密扫描及数据库 + Storage 恢复演练均通过；Preview 零残留，merge commit `be3205f`。 |
-| 7 v1.0 发布门禁 | `codex/release-v1-production-readiness` | 本地全回归和隔离新客户演练已通过；Production 外部阻断已记录 | Release 文档和 Draft PR 可继续；现有 Production 的弱应急密码、缺失环境变量和旧 migration history 修复需要单独授权。 |
+| 7 v1.0 发布门禁 | `master` | 本地、CI、隔离 Preview、正式 Supabase/Vercel、严格 Feed、浏览器和 Daily monitor 已通过 | 技术模板可发布；真实客户仍需补齐法律主体资料与门店硬件验收。 |
 
 ## 每阶段固定门禁
 
@@ -112,7 +112,7 @@
 
 | 版本 | 当前状态 | 说明 |
 |---|---|---|
-| Basic | `READY` | 代码/模板、本地全回归、隔离新客户演练、升级 fixture 和恢复演练通过；当前旧 Production 实例仍是独立部署阻断。 |
+| Basic | `READY` | 代码/模板、本地全回归、隔离新客户演练、正式案例、升级 fixture 和恢复演练通过；客户商用前仍需发布真实法律资料。 |
 | Standard | `CONDITIONAL` | 继承 Basic；软件 POS/CSV/员工/条码门禁通过，真实扫码枪、标签机、连续纸和小票硬件尚未验收。 |
 | Advanced | `CONDITIONAL` | 继承 Standard；Skroutz Validator 和 AI 安全门禁通过，仍受相同真实硬件条件约束。 |
 
