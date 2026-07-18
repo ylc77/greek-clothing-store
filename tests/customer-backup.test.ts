@@ -52,6 +52,7 @@ test("backup and restore CLIs fail closed on project identity and non-empty targ
   assert.match(restore, /RESTORE_AUTH_NOT_EMPTY/);
   assert.match(restore, /RESTORE_STORAGE_NOT_EMPTY/);
   assert.match(restore, /RESTORE_MIGRATION_HISTORY_NOT_EMPTY/);
+  assert.match(restore, /host\.docker\.internal:host-gateway/);
   assert.match(drill, /\[System\.IO\.Path\]::GetTempPath\(\)/);
   assert.doesNotMatch(drill, /\$env:TEMP/);
 });

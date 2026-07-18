@@ -82,8 +82,12 @@ function databaseTarget(options: Options) {
 function runDatabaseFile(target: ReturnType<typeof databaseTarget>, file: string) {
   return new Promise<void>((resolve, reject) => {
     const mount = `type=bind,source=${path.resolve(file)},target=/restore/input.sql,readonly`;
+    const localHostGateway = process.platform === "linux" && target.host === "host.docker.internal"
+      ? ["--add-host", "host.docker.internal:host-gateway"]
+      : [];
     const child = spawn("docker", [
       "run", "--rm", "-i",
+      ...localHostGateway,
       "--mount", mount,
       "--env", `PGHOST=${target.host}`,
       "--env", `PGPORT=${target.port}`,
