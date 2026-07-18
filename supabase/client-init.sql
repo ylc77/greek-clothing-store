@@ -6348,7 +6348,7 @@ begin
     pg_catalog.hashtextextended('legal-settings-publish', 0)
   );
 
-  select pg_catalog.coalesce(pg_catalog.max(version_number), 0) + 1
+  select coalesce(pg_catalog.max(version_number), 0) + 1
     into v_version_number
   from public.legal_settings_versions;
 
