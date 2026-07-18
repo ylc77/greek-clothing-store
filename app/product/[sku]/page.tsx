@@ -281,7 +281,7 @@ export default async function ProductPage({
             </div>
 
             {/* Purchase note */}
-            <p className="mt-4 text-xs leading-relaxed text-stone-400">
+            <p className="mt-4 text-xs leading-relaxed text-stone-600">
               {featureSettings.features.skroutz_feed && settings.enable_skroutz ? t.purchaseNote : t.purchaseContactNote}
             </p>
 
@@ -292,7 +292,7 @@ export default async function ProductPage({
                 <div className="mt-3 grid gap-2 sm:grid-cols-2 sm:gap-x-4">
                   {detailItems.map((d) => (
                     <p key={d.label} className="flex items-start justify-between gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs sm:bg-transparent sm:px-0 sm:py-0 sm:text-sm">
-                      <span className="shrink-0 text-stone-400">{d.label}</span>
+                      <span className="shrink-0 text-stone-600">{d.label}</span>
                       <span className="min-w-0 [overflow-wrap:anywhere] text-right font-bold text-stone-700">{d.value}</span>
                     </p>
                   ))}
