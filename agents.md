@@ -271,3 +271,15 @@ Emergency environment passwords are optional but, when configured, must be at le
 
 Admin authorization responses follow one matrix: unauthenticated is 401, authenticated but unauthorized is 403, disabled feature is 403 with `FEATURE_DISABLED`, shared security/RPC capability unavailable is 503, and an active rate block is 429. Supabase employee sessions must listen for token refresh and sign-out, refresh the server authorization context, and clear local credentials on logout. An environment owner password never grants a developer-only session.
 
+
+\---
+
+
+\## 19. Legacy product image URL column compatibility
+
+
+The original customer database was observed with `public.products.image_urls` as `text[]`, while the current baseline and transactional product RPC contract use a JSONB string array. That mismatch makes `product_update_rpc` fail closed at runtime with `CASE types text[] and jsonb cannot be matched`; do not bypass the RPC with a direct product update.
+
+
+`20260719110000_normalize_legacy_product_image_urls.sql` converts the legacy array to JSONB without changing its URLs and enforces the array contract. Keep the legacy product installation fixture exercising this conversion and a metadata-only RPC call. New product migrations and customer upgrades must preserve `image_urls` as a non-null JSONB array.
+

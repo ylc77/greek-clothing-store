@@ -117,12 +117,33 @@ $$;
 
 function Add-LegacyFixture([string]$Container) {
   $fixture = @'
+create function public.audit_jsonb_to_text_array(value jsonb)
+returns text[]
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(pg_catalog.array_agg(item), array[]::text[])
+  from pg_catalog.jsonb_array_elements_text(value) as items(item)
+$$;
+
+alter table public.products drop constraint if exists products_image_urls_check;
+alter table public.products drop constraint if exists products_image_urls_json_array_check;
+alter table public.products alter column image_urls drop default;
+alter table public.products
+  alter column image_urls type text[]
+  using public.audit_jsonb_to_text_array(image_urls);
+alter table public.products alter column image_urls set default array[]::text[];
+drop function public.audit_jsonb_to_text_array(jsonb);
+
 insert into public.products (
   id, sku, name_cn, name_gr, name_en, category, subcategory, price,
   stock, sizes, size_stock, image_url, image_urls, color, is_active
 ) values (
   910000000001, 'AUDIT_PRODUCT_LEGACY_001', 'Legacy product', 'Legacy product', 'Legacy product',
-  'audit', 'legacy', 19.90, 4, 'M', '{"M":4}'::jsonb, '', '[]'::jsonb, 'black', true
+  'audit', 'legacy', 19.90, 4, 'M', '{"M":4}'::jsonb, '',
+  array['https://cdn.example.test/legacy-front.jpg', 'https://cdn.example.test/legacy-back.jpg'],
+  'black', true
 );
 
 insert into public.product_variants (
@@ -206,7 +227,16 @@ begin
       and sku = 'AUDIT_PRODUCT_LEGACY_001'
       and stock = 4
       and size_stock = '{"M":4}'::jsonb
+      and image_urls = '["https://cdn.example.test/legacy-front.jpg", "https://cdn.example.test/legacy-back.jpg"]'::jsonb
   ) then raise exception 'legacy product ID or stock projection changed'; end if;
+
+  if (
+    select pg_catalog.format_type(a.atttypid, a.atttypmod)
+    from pg_catalog.pg_attribute a
+    where a.attrelid = 'public.products'::pg_catalog.regclass
+      and a.attname = 'image_urls'
+      and not a.attisdropped
+  ) <> 'jsonb' then raise exception 'legacy image_urls was not normalized to jsonb'; end if;
 
   if not exists (
     select 1 from public.product_variants
@@ -249,6 +279,34 @@ begin
       and product_id = 910000000001
       and variant_id = 'aaaaaaaa-0000-4000-8000-000000000001'
   ) then raise exception 'legacy order item references changed'; end if;
+end;
+$$;
+
+set role service_role;
+select public.product_update_rpc(
+  'AUDIT_PRODUCT_LEGACY_METADATA_UPDATE_001',
+  910000000001,
+  1,
+  1,
+  '{"brand":"Athens Wardrobe"}'::jsonb,
+  null,
+  'audit-product-install-path',
+  'legacy-image-urls-regression'
+);
+reset role;
+
+do $$
+begin
+  if not exists (
+    select 1 from public.products
+    where id = 910000000001
+      and brand = 'Athens Wardrobe'
+      and metadata_version = 2
+      and structure_version = 1
+      and stock = 4
+      and size_stock = '{"M":4}'::jsonb
+      and image_urls = '["https://cdn.example.test/legacy-front.jpg", "https://cdn.example.test/legacy-back.jpg"]'::jsonb
+  ) then raise exception 'metadata-only RPC failed after legacy image_urls normalization'; end if;
 end;
 $$;
 '@
