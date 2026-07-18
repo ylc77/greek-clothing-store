@@ -1,6 +1,6 @@
 # v1.0 阶段看板
 
-当前 5C 基线：`23dd67b1b93cc3fadbab8842fcf470ae1bf36b79`（5B merge commit；建立 5C 分支时的最新 `origin/master`）
+当前 6A 基线：`b30e3efd5b8c2fc0b24a89835fc4988c1d14a9a6`（5C merge commit；建立 6A 分支时的最新 `origin/master`）
 总原则：每阶段独立分支、独立 PR，测试先行，本地 → CI → 隔离 Preview → 清理 → 单人维护者签核 → merge commit。
 
 ## 当前状态
@@ -10,8 +10,8 @@
 | 风险矩阵/看板 | `codex/hardening-p2-public-data-boundary` | 完成 | 风险均有证据等级、完成证据和停止条件。 |
 | 5A 公开数据边界 | `codex/hardening-p2-public-data-boundary` | 已完成并合并 | PR #6、CI、隔离 Preview、清理、签核、阶段标签和 merge commit `7d943ea` 均完成。 |
 | 5B 图片与 Storage | `codex/hardening-p2-storage-image-security` | 已完成并合并 | PR #7、本地、CI、隔离 Preview、零残留清理、签核和 `v1-phase-5b-merged` 标签均完成；merge commit `23dd67b`。 |
-| 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 本地、CI、隔离 Preview 已完成，等待签核合并 | PR #8 精确 HEAD `ce5c699` 的四项 required CI、18-migration 隔离 Preview、8/8 业务验收、三种视口和零残留清理已通过；Production 未验证。 |
-| 6A 渠道/SEO/法律 | `codex/hardening-p2-channels-seo-legal` | 等待 5C 合并 | Skroutz Validator、EL/EN 原始 HTML、法律双语、安全头和可访问性通过。 |
+| 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 已完成并合并 | PR #8、本地、CI、隔离 Preview、清理、签核和阶段标签均完成；merge commit `b30e3ef`。 |
+| 6A 渠道/SEO/法律 | `codex/hardening-p2-channels-seo-legal` | 本地实现与专项门禁已通过，等待全回归、CI 和隔离 Preview | 19 migrations、Feed/SEO/法律单元与集成测试、生产 build、三视口浏览器检查和三条安装路径已通过；官方 Skroutz Validator 与线上监控仍须在 Preview 验收。 |
 | 6B 运营/报表/打印 | `codex/hardening-p2-operations-reporting-print` | 等待 6A 合并 | Athens 时区、对账、审计、容量、打印、备份恢复与硬件状态结论完成。 |
 | 7 v1.0 发布门禁 | `codex/release-v1-production-readiness` | 等待 6B 合并 | 全回归、部署/升级/恢复演练、只读生产检查、三版本结论、Release PR、`v1.0.0` 和 GitHub Release。 |
 
@@ -70,14 +70,29 @@
 - [x] 全量既有 P1/4A/4B/5A/5B 回归和本地 build。
 - [x] Draft PR 和精确 HEAD 的 GitHub 四项 required CI。
 - [x] 隔离 Preview 8/8 业务验收、390/768/1440 浏览器检查、日志扫描和零残留清理。
+- [x] 单人维护者签核、CI/Preview 标签和 merge commit。
+
+## 6A 工作包
+
+- [x] Feed 使用服务端公开投影、`MAIN_STORE` 权威余额和扣除预留后的可售库存。
+- [x] 测试/Demo、无英文资料、无真实品牌/MPN/EAN、非 HTTPS、图片尺寸不足和尺码映射不完整的商品不进入 Feed。
+- [x] Feed XML、1,000+ 分页、数量/Variant 一致性和 Skroutz crawler 监控测试。
+- [x] Greek/English 原始 HTML `lang`、canonical、reciprocal hreflang、sitemap 和 robots/noindex。
+- [x] CSP nonce、安全响应头、390/768/1440 axe、横向溢出和后台键盘登录检查。
+- [x] 独立 Greek/English 法律内容、双语发布校验和 service-role-only 事务发布 RPC。
+- [x] 19 migrations 空库 reset、client-init、legacy upgrade、并发、故障注入和清理测试。
+- [x] Phase 6A 专项静态、单元、数据库和浏览器检查加入现有四项 GitHub CI。
+- [ ] 全量既有回归和精确 HEAD 本地标签。
+- [ ] Draft PR 与四项 required CI。
+- [ ] 隔离 Preview、官方 Skroutz Validator、严格线上监控和零残留清理。
 - [ ] 单人维护者签核、CI/Preview 标签和 merge commit。
 
 ## 发布版本判定占位
 
 | 版本 | 当前状态 | 说明 |
 |---|---|---|
-| Basic | `BLOCKED` | 5A–6B 安全、法律双语和备份恢复尚未完成。 |
+| Basic | `BLOCKED` | 5A–5C 已完成，6A 尚待 Preview，6B 备份恢复和最终发布门禁尚未完成。 |
 | Standard | `BLOCKED` | 继承 Basic；真实扫码枪、标签机和小票硬件尚未验收。 |
-| Advanced | `BLOCKED` | 继承 Standard；Skroutz 官方 Validator 与 AI 滥用防护尚未完成。 |
+| Advanced | `BLOCKED` | 继承 Standard；Skroutz 官方 Validator、6B 运营门禁和最终发布验收尚未完成。 |
 
 只有阶段 7 的当前证据可以把这些状态改为 `READY` 或 `CONDITIONAL`。未完成真实硬件验收时，不得把 Standard/Advanced 描述为正式可交付。
