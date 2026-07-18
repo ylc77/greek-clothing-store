@@ -4,14 +4,44 @@ import test from "node:test";
 import { AdminPasswordConfigurationError, configuredAdminPasswordRole, timingSafePasswordMatch, validateAdminPasswordEnvironment } from "../lib/admin-password-security.ts";
 
 function password(role: string) {
-  return `Audit-${role}-${"7Z!".repeat(8)}`;
+  return `Emergency${role}20260719`;
 }
 
-test("rejects weak and duplicated configured role passwords", () => {
+function rejectsWeak(value: string) {
   assert.throws(
-    () => validateAdminPasswordEnvironment({ ADMIN_PASSWORD: "short" }),
+    () => validateAdminPasswordEnvironment({ ADMIN_PASSWORD: value }),
     (error: unknown) => error instanceof AdminPasswordConfigurationError && error.code === "WEAK_PASSWORD",
   );
+}
+
+test("accepts a 16-character password containing letters and digits without a symbol", () => {
+  const value = "SecureAccess2026";
+  assert.equal(value.length, 16);
+  assert.deepEqual(validateAdminPasswordEnvironment({ ADMIN_PASSWORD: value }), { owner: value });
+});
+
+test("rejects emergency passwords shorter than 16 characters", () => {
+  rejectsWeak("SecureAccess202");
+});
+
+test("rejects emergency passwords containing only letters", () => {
+  rejectsWeak("LettersOnlyAccess");
+});
+
+test("rejects emergency passwords containing only digits", () => {
+  rejectsWeak("1234567890123456");
+});
+
+test("rejects emergency passwords with leading or trailing whitespace", () => {
+  rejectsWeak(" SecureAccess2026");
+  rejectsWeak("SecureAccess2026 ");
+});
+
+test("rejects emergency passwords containing a common weak-password term", () => {
+  rejectsWeak("PasswordAccess2026");
+});
+
+test("rejects one emergency password reused by different admin roles", () => {
   const duplicate = password("duplicate");
   assert.throws(
     () => validateAdminPasswordEnvironment({ ADMIN_PASSWORD: duplicate, ADMIN_STAFF_PASSWORD: duplicate }),

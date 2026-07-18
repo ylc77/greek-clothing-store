@@ -30,11 +30,10 @@ export function timingSafePasswordMatch(provided: string, expected: string) {
 
 function validateStrength(variable: string, value: string) {
   if (
-    value.length < 20
+    value.length < 16
     || value.trim() !== value
     || !/[a-z]/i.test(value)
     || !/\d/.test(value)
-    || !/[^a-z0-9]/i.test(value)
     || /(change.?me|password|admin123|default|example|your.?password)/i.test(value)
   ) {
     throw new AdminPasswordConfigurationError(
