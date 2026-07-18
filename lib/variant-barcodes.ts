@@ -1,8 +1,8 @@
-// This module must only run on the server. Never import it from client components.
+// Server-only transactional Variant barcode boundary.
 
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
-type VariantBarcodeRow = {
+export type VariantBarcodeRow = {
   id: string;
   variant_sku: string | null;
   barcode: string | null;
@@ -10,21 +10,20 @@ type VariantBarcodeRow = {
 
 export class VariantBarcodeError extends Error {
   status: number;
+  code: string;
 
-  constructor(message: string, status = 400) {
+  constructor(message: string, status = 400, code = "BARCODE_INVALID_ARGUMENT") {
     super(message);
     this.name = "VariantBarcodeError";
     this.status = status;
+    this.code = code;
   }
 }
 
 function adminClient() {
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
-    throw new VariantBarcodeError(
-      "Admin Supabase is not configured. Add SUPABASE_SERVICE_ROLE_KEY and ADMIN_PASSWORD.",
-      500,
-    );
+    throw new VariantBarcodeError("服务端 Supabase 未配置，条码写入已阻断。", 503, "BARCODE_RPC_UNAVAILABLE");
   }
   return supabase as any;
 }
@@ -35,133 +34,93 @@ function cleanText(value: unknown) {
 
 function uniqueStrings(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
-  return Array.from(
-    new Set(
-      values
-        .map((value) => cleanText(value))
-        .filter(Boolean),
-    ),
-  );
+  return Array.from(new Set(values.map(cleanText).filter(Boolean)));
 }
 
 export function generateBarcodeFromVariantSku(variantSku: string) {
   const barcode = cleanText(variantSku);
-  if (!barcode) {
-    throw new VariantBarcodeError("Variant SKU is required to generate barcode.", 400);
-  }
+  if (!barcode) throw new VariantBarcodeError("Variant SKU is required to generate barcode.");
   return barcode;
 }
 
-export async function hasStockMovementsForVariant(variantId: string) {
-  const supabase = adminClient();
-  const { data, error } = await supabase
-    .from("stock_movements")
-    .select("id")
-    .eq("variant_id", variantId)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    throw new VariantBarcodeError(`Failed to check stock movements: ${error.message}`, 500);
+function mapRpcError(error: { message?: string; code?: string } | null) {
+  const message = String(error?.message || "");
+  if (message.includes("BARCODE_ALREADY_IN_USE") || message.includes("BARCODE_OPERATION_CONFLICT")) {
+    return new VariantBarcodeError("条码已被其他 Variant 使用，或该业务 ID 对应了不同请求。", 409, "BARCODE_CONFLICT");
   }
-
-  return Boolean(data);
+  if (message.includes("BARCODE_HISTORY_LOCKED")) {
+    return new VariantBarcodeError("该 Variant 已有库存或销售历史，条码不能再修改。", 409, "BARCODE_HISTORY_LOCKED");
+  }
+  if (message.includes("BARCODE_VARIANT_NOT_FOUND")) {
+    return new VariantBarcodeError("Variant 不存在。", 404, "BARCODE_VARIANT_NOT_FOUND");
+  }
+  if (message.includes("BARCODE_INVALID") || message.includes("BARCODE_DUPLICATE_VARIANT")) {
+    return new VariantBarcodeError("条码请求参数无效。", 400, "BARCODE_INVALID_ARGUMENT");
+  }
+  return new VariantBarcodeError("事务条码 RPC 缺失、无权执行或不可用，未写入任何条码。", 503, "BARCODE_RPC_UNAVAILABLE");
 }
 
-export async function isBarcodeAvailable(barcode: string, excludeVariantId?: string) {
-  const cleanedBarcode = cleanText(barcode);
-  if (!cleanedBarcode) return false;
-
-  const supabase = adminClient();
-  let query = supabase
-    .from("product_variants")
-    .select("id, variant_sku")
-    .eq("barcode", cleanedBarcode)
-    .limit(1);
-
-  if (excludeVariantId) {
-    query = query.neq("id", excludeVariantId);
-  }
-
-  const { data, error } = await query.maybeSingle();
-  if (error) {
-    throw new VariantBarcodeError(`Failed to check barcode uniqueness: ${error.message}`, 500);
-  }
-
-  return !data;
-}
-
-async function getVariant(variantId: string): Promise<VariantBarcodeRow> {
-  const supabase = adminClient();
-  const { data, error } = await supabase
-    .from("product_variants")
-    .select("id, variant_sku, barcode")
-    .eq("id", variantId)
-    .maybeSingle();
-
-  if (error) {
-    throw new VariantBarcodeError(`Failed to load variant: ${error.message}`, 500);
-  }
-  if (!data) {
-    throw new VariantBarcodeError("Variant not found.", 404);
-  }
-
-  return data as VariantBarcodeRow;
+async function applyBarcodes({
+  clientRequestId,
+  assignments,
+  mode,
+  actor,
+}: {
+  clientRequestId: string;
+  assignments: Array<{ variant_id: string; barcode?: string }>;
+  mode: "variant_sku" | "explicit";
+  actor: string;
+}) {
+  const requestId = cleanText(clientRequestId);
+  const cleanActor = cleanText(actor);
+  if (!requestId) throw new VariantBarcodeError("clientRequestId is required.");
+  if (!cleanActor) throw new VariantBarcodeError("actor is required.");
+  const { data, error } = await adminClient().rpc("variant_barcodes_apply_rpc", {
+    p_client_request_id: requestId,
+    p_assignments: assignments,
+    p_mode: mode,
+    p_actor: cleanActor,
+  });
+  if (error || !data) throw mapRpcError(error);
+  return data as {
+    generated_count: number;
+    skipped_count: number;
+    updated_variants: VariantBarcodeRow[];
+    skipped_variants: VariantBarcodeRow[];
+    already_processed: boolean;
+  };
 }
 
 export async function updateVariantBarcode({
   variantId,
   barcode,
+  clientRequestId,
+  actor,
 }: {
   variantId: string;
   barcode: string;
+  clientRequestId: string;
+  actor: string;
   force?: boolean;
 }) {
   const cleanedVariantId = cleanText(variantId);
   const cleanedBarcode = cleanText(barcode);
+  if (!cleanedVariantId) throw new VariantBarcodeError("Variant ID is required.");
+  if (!cleanedBarcode) throw new VariantBarcodeError("Barcode is required.");
 
-  if (!cleanedVariantId) {
-    throw new VariantBarcodeError("Variant ID is required.", 400);
-  }
-  if (!cleanedBarcode) {
-    throw new VariantBarcodeError("Barcode is required.", 400);
-  }
-
-  const variant = await getVariant(cleanedVariantId);
-  const currentBarcode = cleanText(variant.barcode);
-  if (currentBarcode === cleanedBarcode) {
-    return { variant, updated: false, noChange: true };
-  }
-
-  const available = await isBarcodeAvailable(cleanedBarcode, cleanedVariantId);
-  if (!available) {
-    throw new VariantBarcodeError("Barcode is already used by another variant.", 409);
-  }
-
-  const hasMovements = await hasStockMovementsForVariant(cleanedVariantId);
-  if (hasMovements) {
-    throw new VariantBarcodeError(
-      "This variant already has inventory or sales records, so its barcode cannot be changed directly.",
-      409,
-    );
-  }
-
-  const supabase = adminClient();
-  const { data, error } = await supabase
-    .from("product_variants")
-    .update({
-      barcode: cleanedBarcode,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", cleanedVariantId)
-    .select("id, variant_sku, barcode")
-    .single();
-
-  if (error) {
-    throw new VariantBarcodeError(`Failed to update barcode: ${error.message}`, 500);
-  }
-
-  return { variant: data as VariantBarcodeRow, updated: true, noChange: false };
+  const result = await applyBarcodes({
+    clientRequestId,
+    assignments: [{ variant_id: cleanedVariantId, barcode: cleanedBarcode }],
+    mode: "explicit",
+    actor,
+  });
+  const variant = result.updated_variants[0] || result.skipped_variants[0];
+  return {
+    variant,
+    updated: result.generated_count > 0,
+    noChange: result.generated_count === 0,
+    alreadyProcessed: result.already_processed,
+  };
 }
 
 export type GenerateVariantBarcodesResult = {
@@ -169,107 +128,37 @@ export type GenerateVariantBarcodesResult = {
   skippedCount: number;
   errors: Array<{ variantId: string; variantSku?: string; message: string }>;
   updatedVariants: VariantBarcodeRow[];
+  alreadyProcessed: boolean;
 };
 
 export async function generateBarcodesForVariants({
   variantIds,
   mode,
-  force = false,
+  clientRequestId,
+  actor,
 }: {
   variantIds: unknown;
   mode: unknown;
+  clientRequestId: string;
+  actor: string;
   force?: boolean;
 }): Promise<GenerateVariantBarcodesResult> {
   const ids = uniqueStrings(variantIds);
   const selectedMode = cleanText(mode) || "variant_sku";
+  if (selectedMode !== "variant_sku") throw new VariantBarcodeError('Only mode "variant_sku" is supported.');
+  if (ids.length === 0) throw new VariantBarcodeError("variantIds is required. Please select variants explicitly.");
 
-  if (selectedMode !== "variant_sku") {
-    throw new VariantBarcodeError('Only mode "variant_sku" is supported.', 400);
-  }
-  if (ids.length === 0) {
-    throw new VariantBarcodeError("variantIds is required. Please select variants explicitly.", 400);
-  }
-
-  const supabase = adminClient();
-  const { data, error } = await supabase
-    .from("product_variants")
-    .select("id, variant_sku, barcode")
-    .in("id", ids);
-
-  if (error) {
-    throw new VariantBarcodeError(`Failed to load variants: ${error.message}`, 500);
-  }
-
-  const variants = (data || []) as VariantBarcodeRow[];
-  const foundIds = new Set(variants.map((variant) => variant.id));
-  const errors: GenerateVariantBarcodesResult["errors"] = ids
-    .filter((id) => !foundIds.has(id))
-    .map((id) => ({ variantId: id, message: "Variant not found." }));
-  const updatedVariants: VariantBarcodeRow[] = [];
-  let skippedCount = 0;
-
-  for (const variant of variants) {
-    const existingBarcode = cleanText(variant.barcode);
-    const nextBarcode = generateBarcodeFromVariantSku(cleanText(variant.variant_sku));
-
-    if (existingBarcode && !force) {
-      skippedCount += 1;
-      continue;
-    }
-
-    if (existingBarcode && force) {
-      const hasMovements = await hasStockMovementsForVariant(variant.id);
-      if (hasMovements) {
-        errors.push({
-          variantId: variant.id,
-          variantSku: cleanText(variant.variant_sku),
-          message: "Variant already has stock movements or POS sales; barcode overwrite is not allowed.",
-        });
-        continue;
-      }
-    }
-
-    if (existingBarcode === nextBarcode) {
-      skippedCount += 1;
-      continue;
-    }
-
-    const available = await isBarcodeAvailable(nextBarcode, variant.id);
-    if (!available) {
-      errors.push({
-        variantId: variant.id,
-        variantSku: cleanText(variant.variant_sku),
-        message: `Generated barcode ${nextBarcode} is already used by another variant.`,
-      });
-      continue;
-    }
-
-    const { data: updated, error: updateError } = await supabase
-      .from("product_variants")
-      .update({
-        barcode: nextBarcode,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", variant.id)
-      .select("id, variant_sku, barcode")
-      .single();
-
-    if (updateError) {
-      errors.push({
-        variantId: variant.id,
-        variantSku: cleanText(variant.variant_sku),
-        message: updateError.message,
-      });
-      continue;
-    }
-
-    updatedVariants.push(updated as VariantBarcodeRow);
-  }
-
+  const result = await applyBarcodes({
+    clientRequestId,
+    assignments: ids.map((variantId) => ({ variant_id: variantId })),
+    mode: "variant_sku",
+    actor,
+  });
   return {
-    generatedCount: updatedVariants.length,
-    skippedCount,
-    errors,
-    updatedVariants,
+    generatedCount: result.generated_count,
+    skippedCount: result.skipped_count,
+    errors: [],
+    updatedVariants: result.updated_variants,
+    alreadyProcessed: result.already_processed,
   };
 }

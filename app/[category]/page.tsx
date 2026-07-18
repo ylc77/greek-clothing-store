@@ -14,6 +14,7 @@ type CategoryRouteProps = {
   searchParams: Promise<{
     lang?: string;
     subcategory?: string;
+    page?: string;
   }>;
 };
 
@@ -33,6 +34,7 @@ export async function generateMetadata({
   }
 
   const selectedSubcategory = resolvedSearchParams.subcategory;
+  const page = Math.max(1, Math.trunc(Number(resolvedSearchParams.page) || 1));
   const categoryLabel = categoryLabels[category][language];
   const subcategoryLabel =
     selectedSubcategory && subcategoryLabels[selectedSubcategory]
@@ -48,13 +50,13 @@ export async function generateMetadata({
     alternates: buildLanguageAlternates(
       `/${category}`,
       language,
-      { subcategory: selectedSubcategory },
+      { subcategory: selectedSubcategory, page: page > 1 ? String(page) : undefined },
       siteUrl(),
     ),
     openGraph: {
       title,
       siteName: settings.business_name,
-      url: buildLanguageAlternates(`/${category}`, language, { subcategory: selectedSubcategory }, siteUrl()).canonical,
+      url: buildLanguageAlternates(`/${category}`, language, { subcategory: selectedSubcategory, page: page > 1 ? String(page) : undefined }, siteUrl()).canonical,
     },
   };
 }
@@ -79,6 +81,7 @@ export default async function DynamicCategoryPage({
       category={category}
       language={language}
       selectedSubcategory={resolvedSearchParams.subcategory}
+      page={Math.max(1, Math.trunc(Number(resolvedSearchParams.page) || 1))}
       title={categoryLabels[category][language]}
       settings={settings}
     />

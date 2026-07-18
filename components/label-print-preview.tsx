@@ -1,11 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  formatEuroForPrint,
+  localizedPrintCopy,
+  localizedPrintProductName,
+  type PrintLanguage,
+} from "@/lib/operations-print";
 
 export type LabelSize = "40x30" | "50x30" | "60x40";
 
 export type PrintableVariantLabel = {
   product_name: string;
+  product_name_en?: string;
+  product_name_gr?: string;
   product_sku: string;
   variant_id: string;
   variant_sku: string;
@@ -16,6 +24,7 @@ export type PrintableVariantLabel = {
   quantity_on_hand: number;
   active: boolean;
   supplier_sku?: string | null;
+  print_key?: string;
 };
 
 const labelSizeClass: Record<LabelSize, string> = {
@@ -24,26 +33,26 @@ const labelSizeClass: Record<LabelSize, string> = {
   "60x40": "w-[60mm] min-h-[40mm]",
 };
 
-function formatEuro(value: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "EUR" }).format(Number(value || 0));
-}
-
 export function LabelPrintPreview({
   labels,
   labelSize,
-  storeName = "clothing store",
+  storeName,
+  language,
   showSupplierSku = false,
   onClose,
 }: {
   labels: PrintableVariantLabel[];
   labelSize: LabelSize;
-  storeName?: string;
+  storeName: string;
+  language: PrintLanguage;
   showSupplierSku?: boolean;
   onClose: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [barcodeError, setBarcodeError] = useState("");
   const labelSizeText = useMemo(() => labelSize.replace("x", " x "), [labelSize]);
+  const copy = localizedPrintCopy(language);
+  const pageSize = labelSize === "40x30" ? "40mm 30mm" : labelSize === "50x30" ? "50mm 30mm" : "60mm 40mm";
 
   useEffect(() => {
     let cancelled = false;
@@ -107,10 +116,11 @@ export function LabelPrintPreview({
           .label-page {
             break-inside: avoid;
             page-break-inside: avoid;
+            page-break-after: always;
           }
           @page {
-            margin: 2mm;
-            size: auto;
+            margin: 0;
+            size: ${pageSize};
           }
         }
       `}</style>
@@ -150,13 +160,20 @@ export function LabelPrintPreview({
               return (
                 <article
                   className={`label-page ${labelSizeClass[labelSize]} overflow-hidden bg-white px-[2.5mm] py-[2mm] font-sans text-[9px] leading-tight text-stone-950 shadow-sm`}
-                  key={label.variant_id}
+                  key={label.print_key || label.variant_id}
                 >
                   <div className="flex items-start justify-between gap-1">
                     <p className="truncate text-[8px] font-black uppercase tracking-wide">{storeName}</p>
-                    <p className="shrink-0 text-[9px] font-black">{formatEuro(label.price)}</p>
+                    <p className="shrink-0 text-[9px] font-black">{formatEuroForPrint(label.price, language)}</p>
                   </div>
-                  <p className="mt-1 line-clamp-2 min-h-[18px] text-[10px] font-black">{label.product_name}</p>
+                  <p className="mt-1 line-clamp-2 min-h-[18px] text-[10px] font-black">
+                    {localizedPrintProductName({
+                      name: label.product_name,
+                      name_en: label.product_name_en,
+                      name_gr: label.product_name_gr,
+                      product_sku: label.product_sku,
+                    }, language)}
+                  </p>
                   <p className="truncate text-[8px] font-bold text-stone-500">{label.variant_sku}</p>
                   {showSupplierSku && label.supplier_sku ? (
                     <p className="truncate text-[7px] font-bold text-stone-500">SUP: {label.supplier_sku}</p>
@@ -166,8 +183,8 @@ export function LabelPrintPreview({
                   </div>
                   <p className="mt-0.5 truncate text-center font-mono text-[8px] font-bold">{barcode}</p>
                   <div className="mt-1 flex items-center justify-between gap-2 text-[8px] font-bold">
-                    <span>{label.size ? `Size: ${label.size}` : "Size: -"}</span>
-                    <span className="truncate text-right">{label.color ? `Color: ${label.color}` : ""}</span>
+                    <span>{copy.size}: {label.size || "-"}</span>
+                    <span className="truncate text-right">{label.color ? `${copy.color}: ${label.color}` : ""}</span>
                   </div>
                 </article>
               );

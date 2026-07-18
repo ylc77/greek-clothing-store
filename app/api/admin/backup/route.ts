@@ -57,9 +57,10 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return new Response(result.csv, {
-      headers: createCsvDownloadHeaders(result.filename),
-    });
+    const headers = createCsvDownloadHeaders(result.filename);
+    headers.set("X-Export-Purpose", "maintenance-csv");
+    headers.set("X-Disaster-Recovery", "false");
+    return new Response(result.csv, { headers });
   } catch (error) {
     console.error("[product-export] complete paged export failed", {
       code: String((error as { code?: unknown } | null)?.code || "CSV_EXPORT_FAILED"),

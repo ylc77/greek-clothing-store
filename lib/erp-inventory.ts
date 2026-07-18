@@ -92,6 +92,8 @@ export type InventoryOverviewParams = {
 export type InventoryOverviewItem = {
   product_id: number;
   product_name: string;
+  product_name_en: string;
+  product_name_gr: string;
   product_sku: string;
   category: string;
   subcategory: string;
@@ -560,6 +562,8 @@ async function loadInventoryOverviewRows(): Promise<InventoryOverviewItem[]> {
     return {
       product_id: productId,
       product_name: productDisplayName(product),
+      product_name_en: String(product.name_en || ""),
+      product_name_gr: String(product.name_gr || ""),
       product_sku: String(product.sku || ""),
       category: String(product.category || ""),
       subcategory: String(product.subcategory || ""),
@@ -640,25 +644,23 @@ export async function getInventoryMovements(params: InventoryMovementParams = {}
   const limit = limitValue(params.limit, 100, 500);
   const offset = offsetValue(params.offset);
   const q = (params.q || "").trim().toLowerCase();
-  const fetchLimit = q ? Math.min(1000, Math.max(limit + offset, 200)) : limit + offset;
+  const movementPage = async (from: number, to: number) => {
+    let query = supabase
+      .from("stock_movements")
+      .select("id, variant_id, movement_type, quantity_before, quantity_after, quantity_delta, reason, source_type, source_id, created_by, created_at")
+      .order("created_at", { ascending: false })
+      .range(from, to);
+    if (params.variantId) query = query.eq("variant_id", params.variantId);
+    if (params.movementType) query = query.eq("movement_type", params.movementType);
+    if (params.sourceType) query = query.eq("source_type", params.sourceType);
+    return query;
+  };
 
-  let query = supabase
-    .from("stock_movements")
-    .select("id, variant_id, movement_type, quantity_before, quantity_after, quantity_delta, reason, source_type, source_id, created_by, created_at")
-    .order("created_at", { ascending: false })
-    .range(0, fetchLimit - 1);
-
-  if (params.variantId) {
-    query = query.eq("variant_id", params.variantId);
-  }
-  if (params.movementType) {
-    query = query.eq("movement_type", params.movementType);
-  }
-  if (params.sourceType) {
-    query = query.eq("source_type", params.sourceType);
-  }
-
-  const { data: movements, error: movementsError } = await query;
+  const movementResult = q
+    ? await fetchAllSupabaseRows<Record<string, unknown>>(movementPage)
+    : await movementPage(offset, offset + limit - 1);
+  const movements = movementResult.data;
+  const movementsError = movementResult.error;
   if (movementsError) {
     throw new Error(`Failed to load inventory movements: ${movementsError.message}`);
   }
@@ -668,34 +670,31 @@ export async function getInventoryMovements(params: InventoryMovementParams = {}
   const productIds = new Set<number>();
 
   if (variantIds.length > 0) {
-    const { data: variants, error: variantsError } = await supabase
-      .from("product_variants")
-      .select("id, product_id, variant_sku")
-      .in("id", variantIds);
-
-    if (variantsError) {
-      throw new Error(`Failed to load movement variants: ${variantsError.message}`);
-    }
-
-    for (const variant of variants || []) {
-      variantsById.set(String(variant.id), variant as Record<string, unknown>);
-      productIds.add(Number(variant.product_id));
+    for (let index = 0; index < variantIds.length; index += 200) {
+      const { data: variants, error: variantsError } = await supabase
+        .from("product_variants")
+        .select("id, product_id, variant_sku")
+        .in("id", variantIds.slice(index, index + 200));
+      if (variantsError) throw new Error(`Failed to load movement variants: ${variantsError.message}`);
+      for (const variant of variants || []) {
+        variantsById.set(String(variant.id), variant as Record<string, unknown>);
+        productIds.add(Number(variant.product_id));
+      }
     }
   }
 
   const productsById = new Map<number, Record<string, unknown>>();
   if (productIds.size > 0) {
-    const { data: products, error: productsError } = await supabase
-      .from("products")
-      .select("id, sku, name_cn, name_en, name_gr")
-      .in("id", Array.from(productIds));
-
-    if (productsError) {
-      throw new Error(`Failed to load movement products: ${productsError.message}`);
-    }
-
-    for (const product of products || []) {
-      productsById.set(Number(product.id), product as Record<string, unknown>);
+    const ids = Array.from(productIds);
+    for (let index = 0; index < ids.length; index += 200) {
+      const { data: products, error: productsError } = await supabase
+        .from("products")
+        .select("id, sku, name_cn, name_en, name_gr")
+        .in("id", ids.slice(index, index + 200));
+      if (productsError) throw new Error(`Failed to load movement products: ${productsError.message}`);
+      for (const product of products || []) {
+        productsById.set(Number(product.id), product as Record<string, unknown>);
+      }
     }
   }
 
@@ -733,7 +732,7 @@ export async function getInventoryMovements(params: InventoryMovementParams = {}
   }
 
   return {
-    items: q ? items.slice(offset, offset + limit) : items.slice(offset),
+    items: q ? items.slice(offset, offset + limit) : items,
     total: q ? items.length : undefined,
     limit,
     offset,

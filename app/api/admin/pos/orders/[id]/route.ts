@@ -11,7 +11,7 @@ type RouteContext = {
 };
 
 function unavailable() {
-  return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 500 });
+  return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 503 });
 }
 
 function money(value: unknown) {
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const [{ data: items, error: itemsError }, { data: payments, error: paymentsError }, { data: movements, error: movementsError }] = await Promise.all([
       (supabase as any)
         .from("sales_order_items")
-        .select("id, product_id, variant_id, product_sku, variant_sku, barcode, name, size, color, quantity, unit_price, discount_total, line_total, created_at")
+        .select("id, product_id, variant_id, product_sku, variant_sku, barcode, name, name_en, name_gr, size, color, quantity, unit_price, discount_total, line_total, created_at")
         .eq("order_id", id)
         .order("created_at", { ascending: true }),
       (supabase as any)

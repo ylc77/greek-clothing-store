@@ -262,6 +262,9 @@ npm run developer:rotate -- --project-ref abcdefgh
 - 图片只能由服务端严格校验后写入 `product-images`；对象路径按不可变 product id 和随机 UUID 隔离，旧式或外部 URL 不自动跨商品删除。
 - 图片引用与 Storage 对象通过 `storage_object_operations` 补偿/恢复；永久删除只能调用受历史引用保护的 RPC。`storage:reconcile` 永远只读，`storage:recover` 必须由维护者明确确认目标项目后执行。
 - 后台“导出 CSV”只是完整的商品资料导出，不是 PostgreSQL 灾难恢复备份；数据库备份与恢复仍需单独执行和演练。
+- 完整灾备由维护者在自己的电脑执行：`npm run customer:backup -- --project-ref 客户项目ref --output 受保护的备份目录`。它会生成角色、schema、应用/Auth data 和 migration history 四份数据库 dump，下载全部 Storage 对象，并写入带 SHA-256 的 `manifest.json`；Storage 元数据不与文件本体重复导入，备份目录已被 Git 忽略，也不包含 service key 或数据库密码。
+- 每次恢复前先运行 `npm run customer:backup:verify -- --backup 备份目录`。只允许恢复到已确认的空白隔离 Supabase：在维护者本机环境提供目标 `NEXT_PUBLIC_SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY` 和 `SUPABASE_DB_URL`（不要写进命令或文档），确认 Docker Desktop 正常后运行 `npm run customer:restore -- --project-ref 目标项目ref --backup 备份目录`。工具会在一次性 PostgreSQL 客户端容器的标准输入中传递数据库密码，不写秘密文件或命令参数；命令会再次要求输入 `RESTORE 目标项目ref`，已有应用关系、Auth 用户、migration history 或 Storage 对象的目标都会在写入前被拒绝。
+- v1 运维目标为 RPO 不超过 24 小时、RTO 不超过 4 小时：每天完整备份，migration、大批量导入和客户交接前额外备份；至少保留 7 份每日、4 份每周和 3 份每月加密异地副本，并至少每季度在隔离项目做一次完整恢复演练。RPO/RTO 是必须通过演练持续验证的目标，不是云平台自动保证。
 - `public.developer_access` 空表表示未初始化；有记录时只保存 scrypt hash、随机 credential version、整数 password version 和轮换时间，不保存明文。
 - 新客户运行 `npm run developer:bootstrap -- --project-ref ...`；已有客户升级后统一进入 `must_rotate`，运行 `npm run developer:rotate -- --project-ref ...` 才能重新访问受保护设置。
 - 店铺设置和法律设置不能改回普通 owner/员工权限；相关 API 必须继续要求开发者会话。

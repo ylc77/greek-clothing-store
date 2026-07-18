@@ -11,6 +11,11 @@ import { isProductSubcategory, type Product, type ProductCategory } from "./type
 export type ProductsResult = {
   products: Product[];
   error: string | null;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  hasNextPage?: boolean;
+  hasPreviousPage?: boolean;
 };
 
 /** @deprecated Use getTotalStock from lib/product-stock.ts instead */
@@ -81,7 +86,9 @@ export async function getLatestProducts(limit = 8): Promise<ProductsResult> {
 
 async function getProductsByCategoryRaw(
   category: ProductCategory,
-  subcategory?: string
+  subcategory?: string,
+  page = 1,
+  pageSize = 48,
 ): Promise<ProductsResult> {
   const supabase = getSupabaseClient();
   if (!supabase) {
@@ -93,21 +100,24 @@ async function getProductsByCategoryRaw(
 
   const normalizedCategory = normalizeSlug(category);
   const normalizedSubcategory = subcategory ? normalizeSlug(subcategory) : undefined;
+  const normalizedPage = Math.max(1, Math.trunc(Number(page) || 1));
+  const limit = Math.min(96, Math.max(12, Math.trunc(Number(pageSize) || 48)));
+  const offset = (normalizedPage - 1) * limit;
 
   let query = supabase
     .from("products")
-    .select(PUBLIC_PRODUCT_LIST_SELECT)
+    .select(PUBLIC_PRODUCT_LIST_SELECT, { count: "exact" })
     .ilike("category", normalizedCategory)
     .or("is_active.is.null,is_active.eq.true")
     .gte("stock", 0)
     .order("created_at", { ascending: false })
-    .limit(200);
+    .range(offset, offset + limit - 1);
 
   if (normalizedSubcategory && isProductSubcategory(normalizedCategory, normalizedSubcategory)) {
     query = query.ilike("subcategory", normalizedSubcategory);
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
 
   if (error) {
     return { products: [], error: error.message };
@@ -116,7 +126,16 @@ async function getProductsByCategoryRaw(
   const rows = (data || []) as unknown as Product[];
   const filtered = rows.filter((p) => !isClearlyTestProduct(p));
 
-  return { products: filtered.map(mapProduct), error: null };
+  const total = Number(count || 0);
+  return {
+    products: filtered.map(mapProduct),
+    error: null,
+    total,
+    page: normalizedPage,
+    pageSize: limit,
+    hasNextPage: offset + limit < total,
+    hasPreviousPage: normalizedPage > 1,
+  };
 }
 
 const getProductsByCategoryCached = unstable_cache(
@@ -127,9 +146,11 @@ const getProductsByCategoryCached = unstable_cache(
 
 export async function getProductsByCategory(
   category: ProductCategory,
-  subcategory?: string
+  subcategory?: string,
+  page = 1,
+  pageSize = 48,
 ): Promise<ProductsResult> {
-  return getProductsByCategoryCached(category, subcategory);
+  return getProductsByCategoryCached(category, subcategory, page, pageSize);
 }
 
 async function getProductBySkuRaw(sku: string): Promise<{ product: Product | null; error: string | null }> {

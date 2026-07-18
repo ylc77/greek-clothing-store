@@ -35,6 +35,13 @@ import {
 } from "@/lib/csv-operation-id";
 import type { ProductCsvImportMode, ProductCsvInventoryMode } from "@/lib/csv-import";
 import { PRODUCT_CSV_FIELDS, serializeCsv } from "@/lib/csv-output";
+import type { BusinessSettings } from "@/lib/settings";
+import {
+  formatAthensBusinessDate,
+  formatAthensDateTime,
+  normalizeLabelCopies,
+  type PrintLanguage,
+} from "@/lib/operations-print";
 
 /* ── Types ───────────────────────────────────────────────── */
 type AdminProductVariant = {
@@ -172,6 +179,8 @@ type AdminSession = { role: AdminRole; permissions: AdminPermission[]; authType?
 type InventoryItem = {
   product_id: number;
   product_name: string;
+  product_name_en: string;
+  product_name_gr: string;
   product_sku: string;
   category: string;
   subcategory: string;
@@ -300,6 +309,8 @@ type PosOrderResult = {
     product_sku?: string;
     variant_sku?: string;
     name?: string;
+    name_en?: string;
+    name_gr?: string;
     size?: string | null;
     color?: string | null;
     quantity?: number;
@@ -344,6 +355,8 @@ type PosOrderDetail = {
     variant_sku: string;
     barcode: string | null;
     name: string;
+    name_en: string;
+    name_gr: string;
     size: string | null;
     color: string | null;
     quantity: number;
@@ -392,7 +405,15 @@ type PosDailyReport = {
   paymentMethods: Array<{ method: string; amount: number; count: number }>;
   topItems: Array<{ product_sku: string; variant_sku: string; name: string; quantity: number; total: number }>;
   orders: Array<{ id: string; order_number: string; status: string; payment_status: string; total: number; currency: string; created_at: string; payments_count: number; items_count: number }>;
-  health: { missingPayments: number; missingItems: number; missingSaleMovements: number; missingVoidMovements: number };
+  pagination: { total: number; limit: number; offset: number };
+  health: {
+    issueOrders: number;
+    missingItems: number;
+    itemAmountMismatches: number;
+    paymentMismatches: number;
+    saleMovementMismatches: number;
+    voidMovementMismatches: number;
+  };
 };
 type PosVoidDialogState = {
   order: PosOrderListItem;
@@ -528,12 +549,7 @@ function inventoryIssueCount(data: InventoryReconciliation | null) {
   );
   return reconciliationIssues + (data.runtimeHealth.ready ? 0 : 1);
 }
-function formatAdminDate(value: string) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", { hour12: false });
-}
+function formatAdminDate(value: string) { return formatAthensDateTime(value, "en"); }
 function posStatusLabel(value: string | null | undefined) {
   const labels: Record<string, string> = {
     completed: "已完成",
@@ -803,7 +819,15 @@ function ProductStatusBadges({ product, showSkroutz, showAi }: { product: AdminP
   );
 }
 /* ── Main component ──────────────────────────────────────── */
-export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { initialFeatures?: FeatureFlags }) {
+export function AdminDashboard({
+  initialFeatures = defaultAdminFeatures,
+  initialFeatureSettingsConfigured = false,
+  initialPrintSettings,
+}: {
+  initialFeatures?: FeatureFlags;
+  initialFeatureSettingsConfigured?: boolean;
+  initialPrintSettings: BusinessSettings;
+}) {
   const { toast } = useToast();
   const [password, setPassword] = useState(""); const [activePassword, setActivePassword] = useState("");
   const [loginMode, setLoginMode] = useState<"account" | "password">(initialFeatures.staff_accounts ? "account" : "password");
@@ -812,6 +836,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const [adminAuthToken, setAdminAuthToken] = useState("");
   const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
   const [adminFeatures, setAdminFeatures] = useState<FeatureFlags>(initialFeatures);
+  const [featureSettingsFallback, setFeatureSettingsFallback] = useState(!initialFeatureSettingsConfigured);
   const [commonTabKeys, setCommonTabKeys] = useState<Tab[]>(defaultCommonTabKeys);
   const [commonTabsReady, setCommonTabsReady] = useState(false);
   const [customizingCommonTabs, setCustomizingCommonTabs] = useState(false);
@@ -910,6 +935,8 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const [labelOnlyMissingBarcode, setLabelOnlyMissingBarcode] = useState(false);
   const [labelSize, setLabelSize] = useState<LabelSize>("50x30");
   const [labelShowSupplierSku, setLabelShowSupplierSku] = useState(false);
+  const [printLanguage, setPrintLanguage] = useState<PrintLanguage>("el");
+  const [labelCopyCounts, setLabelCopyCounts] = useState<Record<string, number>>({});
   const [selectedLabelVariantIds, setSelectedLabelVariantIds] = useState<Set<string>>(new Set());
   const [labelGenerating, setLabelGenerating] = useState(false);
   const [labelMessage, setLabelMessage] = useState("");
@@ -930,6 +957,8 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const [posLastOrder, setPosLastOrder] = useState<PosOrderResult | null>(null);
   const [posView, setPosView] = useState<PosOrdersView>("checkout");
   const [posOrders, setPosOrders] = useState<PosOrderListItem[]>([]);
+  const [posOrdersTotal, setPosOrdersTotal] = useState(0);
+  const [posOrdersOffset, setPosOrdersOffset] = useState(0);
   const [posOrdersLoading, setPosOrdersLoading] = useState(false);
   const [posOrdersMessage, setPosOrdersMessage] = useState("");
   const [posOrderQ, setPosOrderQ] = useState("");
@@ -941,8 +970,9 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const [posVoidDialog, setPosVoidDialog] = useState<PosVoidDialogState | null>(null);
   const [posReceiptDetail, setPosReceiptDetail] = useState<PosOrderDetail | null>(null);
   const [posReceiptLoading, setPosReceiptLoading] = useState(false);
-  const [posDailyDate, setPosDailyDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [posDailyDate, setPosDailyDate] = useState(() => formatAthensBusinessDate());
   const [posDailyReport, setPosDailyReport] = useState<PosDailyReport | null>(null);
+  const [posDailyOffset, setPosDailyOffset] = useState(0);
   const [posDailyLoading, setPosDailyLoading] = useState(false);
   const [posDailyMessage, setPosDailyMessage] = useState("");
   useEffect(() => {
@@ -1015,9 +1045,16 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     if (!adminSession) return;
     fetch("/api/admin/features", { headers: adminAuthHeaders() })
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("功能配置读取失败")))
-      .then((data) => setAdminFeatures(data.settings?.features || defaultAdminFeatures))
-      .catch(() => setAdminFeatures(initialFeatures));
-  }, [adminSession, adminAuthToken, activePassword, initialFeatures]);
+      .then((data) => {
+        const configured = data.settings?.configured === true;
+        setAdminFeatures(configured ? (data.settings?.features || defaultAdminFeatures) : defaultAdminFeatures);
+        setFeatureSettingsFallback(!configured);
+      })
+      .catch(() => {
+        setAdminFeatures(defaultAdminFeatures);
+        setFeatureSettingsFallback(true);
+      });
+  }, [adminSession, adminAuthToken, activePassword]);
   useEffect(() => {
     if (!adminSession || !adminFeatures.pos_checkout || !adminSession.permissions.includes("pos:read")) {
       setPosRuntimeIssue("");
@@ -1381,6 +1418,13 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   const selectedLabelItems = useMemo(() => {
     return inventoryItems.filter(item => selectedLabelVariantIds.has(item.variant_id));
   }, [inventoryItems, selectedLabelVariantIds]);
+
+  const selectedLabelCopies = useMemo(() => {
+    return selectedLabelItems.reduce(
+      (sum, item) => sum + normalizeLabelCopies(labelCopyCounts[item.variant_id], item.quantity_on_hand),
+      0,
+    );
+  }, [selectedLabelItems, labelCopyCounts]);
 
   const selectedLabelGroups = useMemo(() => {
     return labelProductGroups
@@ -1931,7 +1975,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     });
   }
 
-  async function loadPosOrders() {
+  async function loadPosOrders(nextOffset = 0) {
     setPosOrdersLoading(true);
     setPosOrdersMessage("");
     try {
@@ -1941,9 +1985,12 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       params.set("paymentMethod", posOrderPaymentMethod);
       params.set("dateRange", posOrderDateRange);
       params.set("limit", "100");
+      params.set("offset", String(Math.max(0, nextOffset)));
       const data = await posApi(`/api/admin/pos/orders?${params.toString()}`);
       const orders = (Array.isArray(data.orders) ? data.orders : []) as PosOrderListItem[];
       setPosOrders(orders);
+      setPosOrdersTotal(Number(data.total || 0));
+      setPosOrdersOffset(Math.max(0, nextOffset));
       if (orders.length === 0) setPosOrdersMessage("没有找到符合条件的 POS 订单。");
     } catch (error) {
       const message = error instanceof Error ? error.message : "POS 订单读取失败";
@@ -1954,15 +2001,17 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     }
   }
 
-  async function loadPosDailyReport() {
+  async function loadPosDailyReport(nextOffset = 0) {
     setPosDailyLoading(true);
     setPosDailyMessage("");
     try {
       const params = new URLSearchParams();
       params.set("date", posDailyDate);
-      params.set("timezoneOffsetMinutes", String(new Date().getTimezoneOffset()));
+      params.set("limit", "100");
+      params.set("offset", String(Math.max(0, nextOffset)));
       const data = await posApi(`/api/admin/pos/reports/daily?${params.toString()}`);
       setPosDailyReport(data as PosDailyReport);
+      setPosDailyOffset(Math.max(0, nextOffset));
     } catch (error) {
       const message = error instanceof Error ? error.message : "POS 日报读取失败";
       setPosDailyMessage(message);
@@ -1986,6 +2035,10 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   }
 
   async function openPosReceipt(orderId: string) {
+    if (!initialPrintSettings.business_name.trim() || initialPrintSettings.business_name === "Online Store") {
+      toast("请先由维护者在店铺设置中填写真实店名，再打印小票。", "err");
+      return;
+    }
     setPosReceiptLoading(true);
     try {
       if (posOrderDetail?.order.id === orderId) {
@@ -2049,7 +2102,26 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     }
   }
 
-  async function loadProducts() { setLoading(true); try { const d = await api("/api/admin/products?limit=500"); setProducts(d.products||[]); } catch (e) { toast(e instanceof Error ? e.message : "商品读取失败", "err"); } finally { setLoading(false); } }
+  async function loadProducts() {
+    setLoading(true);
+    try {
+      const rows: AdminProduct[] = [];
+      const pageSize = 500;
+      let offset = 0;
+      while (true) {
+        const d = await api(`/api/admin/products?limit=${pageSize}&offset=${offset}`);
+        const page = Array.isArray(d.products) ? d.products as AdminProduct[] : [];
+        rows.push(...page);
+        offset += page.length;
+        if (page.length < pageSize || offset >= Number(d.total || 0)) break;
+      }
+      setProducts(rows);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "商品读取失败", "err");
+    } finally {
+      setLoading(false);
+    }
+  }
   async function loadSuppliers() { try { const d = await api("/api/admin/suppliers"); setSuppliers(d.suppliers || []); } catch { setSuppliers([]); } }
   useEffect(() => { if (adminSession) { void loadProducts(); void loadSuppliers(); } }, [adminSession, adminAuthToken, activePassword]);
 
@@ -2083,8 +2155,17 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     setInventoryLoading(true);
     setInventoryError("");
     try {
-      const d = await api("/api/admin/inventory?limit=500");
-      setInventoryItems(d.items || []);
+      const rows: InventoryItem[] = [];
+      const pageSize = 500;
+      let offset = 0;
+      while (true) {
+        const d = await api(`/api/admin/inventory?limit=${pageSize}&offset=${offset}`);
+        const page = Array.isArray(d.items) ? d.items as InventoryItem[] : [];
+        rows.push(...page);
+        offset += page.length;
+        if (page.length < pageSize || offset >= Number(d.total || 0)) break;
+      }
+      setInventoryItems(rows);
     } catch (error) {
       const message = error instanceof Error ? error.message : "标签商品加载失败";
       setInventoryError(message);
@@ -2397,6 +2478,8 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   function labelFromInventoryItem(item: InventoryItem): PrintableVariantLabel {
     return {
       product_name: item.product_name,
+      product_name_en: item.product_name_en,
+      product_name_gr: item.product_name_gr,
       product_sku: item.product_sku,
       variant_id: item.variant_id,
       variant_sku: item.variant_sku,
@@ -2415,19 +2498,35 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       toast("请先选择需要生成条码的变体", "err");
       return;
     }
+    const operationScope = "barcode-generate";
+    const fingerprint = createProductOperationFingerprint({
+      variantIds: [...variantIds].sort(),
+      mode: "variant_sku",
+      force: false,
+    });
+    let operationId = "";
     setLabelGenerating(true);
     setLabelMessage("");
     try {
+      operationId = productOperationIds().getOrCreate(operationScope, fingerprint);
+      productOperationIds().markAttempt(operationScope, operationId);
       const result = await api("/api/admin/variants/generate-barcodes", {
         method: "POST",
-        body: JSON.stringify({ variantIds, mode: "variant_sku", force: false }),
+        body: JSON.stringify({
+          variantIds,
+          mode: "variant_sku",
+          force: false,
+          clientRequestId: operationId,
+        }),
       });
+      productOperationIds().complete(operationScope, operationId);
       const errors = Array.isArray(result.errors) ? result.errors : [];
       const message = `已生成 ${Number(result.generatedCount || 0)} 个，跳过 ${Number(result.skippedCount || 0)} 个，失败 ${errors.length} 个。`;
       setLabelMessage(message);
       toast(message, errors.length > 0 ? "err" : "ok");
       await loadLabelInventoryData();
     } catch (error) {
+      if (operationId) handleProductOperationFailure(operationScope, operationId, error);
       const message = error instanceof Error ? error.message : "生成条码失败";
       setLabelMessage(message);
       toast(message, "err");
@@ -2436,9 +2535,19 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
     }
   }
   function openLabelPreview() {
+    if (!initialPrintSettings.business_name.trim() || initialPrintSettings.business_name === "Online Store") {
+      toast("请先由维护者在店铺设置中填写真实店名，再打印标签。", "err");
+      return;
+    }
     const labels = selectedLabelItems
       .filter(item => item.barcode || item.variant_sku)
-      .map(labelFromInventoryItem);
+      .flatMap((item) => {
+        const copies = normalizeLabelCopies(labelCopyCounts[item.variant_id], item.quantity_on_hand);
+        return Array.from({ length: copies }, (_, index) => ({
+          ...labelFromInventoryItem(item),
+          print_key: `${item.variant_id}:${index + 1}`,
+        }));
+      });
     if (labels.length === 0) {
       toast("请先选择已有条码或 variant SKU 的标签", "err");
       return;
@@ -3825,7 +3934,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <div className="flex flex-wrap gap-2">
             <span className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">{adminSession.displayName || adminSession.email || adminSession.role} · {adminSession.authType === "account" ? "员工账号" : "应急密码"}</span>
             {isOwner ? <a className="hidden rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50 xl:inline-flex" href="/admin/settings">店铺设置</a> : null}
-            {isOwner && adminFeatures.backup_tools ? <button className="hidden rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50 xl:inline-flex" onClick={() => void downloadProductBackup()} type="button">导出 CSV</button> : null}
+            {isOwner && adminFeatures.backup_tools ? <button className="hidden rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50 xl:inline-flex" onClick={() => void downloadProductBackup()} title="仅用于维护数据交换，不是数据库与图片灾备" type="button">维护 CSV 导出</button> : null}
             <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => void logoutAdmin()} type="button">退出</button>
           </div>
         </header>
@@ -3833,6 +3942,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {posRuntimeIssue ? (
           <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700 sm:mb-6" role="alert">
             POS 安全配置未完成：{posRuntimeIssue}
+          </div>
+        ) : null}
+
+        {featureSettingsFallback ? (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800 sm:mb-6" role="status">
+            功能配置尚未完成或暂时无法读取，当前已安全回退到基础版（Basic）；高级功能保持关闭。
           </div>
         ) : null}
 
@@ -3860,6 +3975,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   当前：{tabLabelByKey.get(tab) || tab}
                 </span>
                 <button
+                  data-admin-customize-toggle
                   className={`min-h-9 rounded-xl border px-3 py-2 text-xs font-black transition ${customizingCommonTabs ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-stone-600 hover:bg-stone-50"}`}
                   onClick={() => setCustomizingCommonTabs(current => !current)}
                   type="button"
@@ -3907,7 +4023,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     <p className="text-xs font-black text-stone-500">可加入的管理工具</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {visibleAdvancedTabKeys.map(key => (
-                        <button className={`${desktopOnlyTabs.has(key) ? "hidden xl:inline-flex" : "inline-flex"} min-h-10 items-center rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-600 hover:border-stone-400 hover:text-ink`} key={`${key}-available`} onClick={() => addCommonTab(key)} type="button">＋ {tabLabelByKey.get(key) || key}</button>
+                        <button className={`${desktopOnlyTabs.has(key) ? "hidden xl:inline-flex" : "inline-flex"} min-h-10 items-center rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-600 hover:border-stone-400 hover:text-ink`} data-admin-add-tab={key} key={`${key}-available`} onClick={() => addCommonTab(key)} type="button">＋ {tabLabelByKey.get(key) || key}</button>
                       ))}
                     </div>
                   </div>
@@ -4673,10 +4789,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <h3 className="text-sm font-black text-ink">运行健康</h3>
                       <div className="mt-3 grid gap-2 sm:grid-cols-2">
                         {[
-                          ["缺 payment", posDailyReport.health.missingPayments],
-                          ["缺 items", posDailyReport.health.missingItems],
-                          ["缺销售流水", posDailyReport.health.missingSaleMovements],
-                          ["缺作废流水", posDailyReport.health.missingVoidMovements],
+                          ["问题订单", posDailyReport.health.issueOrders],
+                          ["缺少明细", posDailyReport.health.missingItems],
+                          ["明细金额不一致", posDailyReport.health.itemAmountMismatches],
+                          ["付款不一致", posDailyReport.health.paymentMismatches],
+                          ["销售流水不一致", posDailyReport.health.saleMovementMismatches],
+                          ["作废流水不一致", posDailyReport.health.voidMovementMismatches],
                         ].map(([label, count]) => (
                           <div className={`rounded-xl px-3 py-2 text-sm font-black ${Number(count) === 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`} key={String(label)}>
                             {label}: {count}
@@ -4722,6 +4840,31 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           </div>
                         )) : <p className="text-sm font-bold text-stone-400">暂无订单。</p>}
                       </div>
+                      {posDailyReport.pagination.total > posDailyReport.pagination.limit ? (
+                        <div className="mt-3 flex items-center justify-between gap-3 border-t border-stone-100 pt-3 text-xs font-bold text-stone-500">
+                          <span>
+                            {posDailyOffset + 1}–{Math.min(posDailyOffset + posDailyReport.orders.length, posDailyReport.pagination.total)} / {posDailyReport.pagination.total}
+                          </span>
+                          <div className="flex gap-2">
+                            <button
+                              className="rounded-lg border border-stone-200 px-3 py-2 disabled:opacity-40"
+                              disabled={posDailyLoading || posDailyOffset <= 0}
+                              onClick={() => void loadPosDailyReport(Math.max(0, posDailyOffset - posDailyReport.pagination.limit))}
+                              type="button"
+                            >
+                              上一页
+                            </button>
+                            <button
+                              className="rounded-lg border border-stone-200 px-3 py-2 disabled:opacity-40"
+                              disabled={posDailyLoading || posDailyOffset + posDailyReport.pagination.limit >= posDailyReport.pagination.total}
+                              onClick={() => void loadPosDailyReport(posDailyOffset + posDailyReport.pagination.limit)}
+                              type="button"
+                            >
+                              下一页
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </>
@@ -4831,6 +4974,15 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   </tbody>
                 </table>
               </div>
+              {posOrdersTotal > 100 ? (
+                <div className="mt-3 flex items-center justify-between gap-3 text-xs font-bold text-stone-500">
+                  <span>{posOrdersOffset + 1}–{Math.min(posOrdersOffset + posOrders.length, posOrdersTotal)} / {posOrdersTotal}</span>
+                  <div className="flex gap-2">
+                    <button className="rounded-lg border border-stone-200 px-3 py-2 disabled:opacity-40" disabled={posOrdersLoading || posOrdersOffset <= 0} onClick={() => void loadPosOrders(Math.max(0, posOrdersOffset - 100))} type="button">上一页</button>
+                    <button className="rounded-lg border border-stone-200 px-3 py-2 disabled:opacity-40" disabled={posOrdersLoading || posOrdersOffset + 100 >= posOrdersTotal} onClick={() => void loadPosOrders(posOrdersOffset + 100)} type="button">下一页</button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             {posOrderDetail ? (
@@ -5693,7 +5845,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={selectedLabelVariantIds.size === 0 || labelGenerating} onClick={() => void generateSelectedBarcodes()} type="button">
                     {labelGenerating ? "生成中..." : "生成选中 barcode"}
                   </button>
-                  <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={selectedLabelItems.length === 0} onClick={openLabelPreview} type="button">打印选中标签（{selectedLabelItems.length}）</button>
+                  <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={selectedLabelItems.length === 0} onClick={openLabelPreview} type="button">打印标签（{selectedLabelCopies} 张）</button>
                   <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={selectedLabelVariantIds.size === 0} onClick={() => setSelectedLabelVariantIds(new Set())} type="button">清空选择</button>
                 </div>
               </div>
@@ -5722,7 +5874,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   </select>
                 </label>
               </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-black text-stone-600">尺码筛选</span>
                   <select className="input" data-label-size-filter disabled={!selectedLabelProduct} value={labelSizeFilter} onChange={e => setLabelSizeFilter(e.target.value)}>
@@ -5740,7 +5892,14 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </label>
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-black text-stone-600">标签纸尺寸</span>
-                  <select className="input" value={labelSize} onChange={e => setLabelSize(e.target.value as LabelSize)}><option value="40x30">40 x 30mm</option><option value="50x30">50 x 30mm</option><option value="60x40">60 x 40mm</option></select>
+                  <select className="input" data-label-paper-size value={labelSize} onChange={e => setLabelSize(e.target.value as LabelSize)}><option value="40x30">40 x 30mm</option><option value="50x30">50 x 30mm</option><option value="60x40">60 x 40mm</option></select>
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-black text-stone-600">打印语言</span>
+                  <select className="input" value={printLanguage} onChange={e => setPrintLanguage(e.target.value as PrintLanguage)}>
+                    <option value="el">Ελληνικά</option>
+                    <option value="en">English</option>
+                  </select>
                 </label>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
                   <label className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-300 bg-white px-3 text-xs font-bold text-stone-700">
@@ -5756,7 +5915,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-stone-500">
                 <span className="rounded-full bg-stone-100 px-3 py-1.5">显示商品 {labelProductOptions.length} / {labelProductGroups.length} 件</span>
                 <span className="rounded-full bg-stone-100 px-3 py-1.5">当前显示 {filteredLabelItems.length} 个规格</span>
-                <span className="rounded-full bg-stone-100 px-3 py-1.5 text-ink">待打印 {selectedLabelVariantIds.size} 个标签</span>
+                <span className="rounded-full bg-stone-100 px-3 py-1.5 text-ink">已选 {selectedLabelVariantIds.size} 个规格，共 {selectedLabelCopies} 张</span>
               </div>
             </div>
 
@@ -5836,6 +5995,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                               {item.barcode ? <span className="break-all font-mono text-[11px] text-stone-500">{item.barcode}</span> : <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-black text-amber-700">barcode 未生成</span>}
                               <span className="text-sm font-black text-copper">{formatEuro(item.price)}</span>
                             </span>
+                            <span className="mt-2 block text-[11px] font-bold text-stone-500">选择后默认按当前库存 {Math.max(1, item.quantity_on_hand)} 张加入打印队列。</span>
                             {!item.active ? <span className="mt-2 inline-flex rounded-full bg-stone-100 px-2 py-1 text-[11px] font-black text-stone-500">已停用</span> : null}
                           </span>
                         </label>
@@ -5854,8 +6014,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <p className="text-xs font-black text-stone-400">PRINT QUEUE</p>
-                    <h3 className="mt-1 text-lg font-black text-ink">待打印标签（{selectedLabelItems.length}）</h3>
-                    <p className="mt-1 text-xs text-stone-500">切换商品不会丢失已选尺码，可以继续查找其他商品后一起打印。</p>
+                    <h3 className="mt-1 text-lg font-black text-ink">待打印标签（{selectedLabelCopies} 张）</h3>
+                    <p className="mt-1 text-xs text-stone-500">默认按实际库存件数打印；可逐个规格修改数量，最多 500 张。</p>
                   </div>
                   <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800" onClick={openLabelPreview} type="button">预览并打印</button>
                 </div>
@@ -5871,9 +6031,20 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {group.items.map(item => (
-                          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-black text-ink hover:border-stone-500" key={item.variant_id} onClick={() => toggleLabelVariant(item.variant_id)} title="点击移除此尺码" type="button">
-                            {item.size || "ONE SIZE"}{item.color ? ` · ${item.color}` : ""}
-                          </button>
+                          <span className="flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-2 py-1.5" key={item.variant_id}>
+                            <button className="text-xs font-black text-ink hover:text-red-600" onClick={() => toggleLabelVariant(item.variant_id)} title="点击移除此尺码" type="button">
+                              {item.size || "ONE SIZE"}{item.color ? ` · ${item.color}` : ""} ×
+                            </button>
+                            <input
+                              aria-label={`${item.variant_sku} 打印数量`}
+                              className="w-16 rounded-lg border border-stone-200 px-2 py-1 text-center text-sm font-black"
+                              max={500}
+                              min={1}
+                              onChange={event => setLabelCopyCounts(current => ({ ...current, [item.variant_id]: normalizeLabelCopies(event.target.value, item.quantity_on_hand) }))}
+                              type="number"
+                              value={normalizeLabelCopies(labelCopyCounts[item.variant_id], item.quantity_on_hand)}
+                            />
+                          </span>
                         ))}
                       </div>
                     </div>
@@ -6379,6 +6550,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           items={posReceiptDetail.items}
           payments={posReceiptDetail.payments}
           paperWidth="80mm"
+          language={printLanguage}
+          storeSettings={initialPrintSettings}
           onClose={() => setPosReceiptDetail(null)}
         />
       ) : null}
@@ -6387,6 +6560,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         <LabelPrintPreview
           labels={labelPreviewItems}
           labelSize={labelSize}
+          language={printLanguage}
+          storeName={initialPrintSettings.business_name}
           showSupplierSku={labelShowSupplierSku}
           onClose={() => setLabelPreviewItems(null)}
         />
