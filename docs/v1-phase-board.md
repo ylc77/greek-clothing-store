@@ -102,7 +102,7 @@
 - [x] 21 migrations 空库 reset、client-init 空库、legacy upgrade 与重复执行安全通过。
 - [x] Phase 6B 专项静态、单元、数据库、浏览器、安装与恢复门禁加入现有四项 GitHub CI。
 - [x] 全量既有回归；141 个单元测试、156 个具名集成场景、25 条安装路径断言、生产 build、三视口浏览器、数据库安全、秘密扫描、恢复演练和零残留检查均通过。
-- [ ] 精确 HEAD 本地标签 `audit-v1-6b-local-verified`。
+- [x] 精确 HEAD 本地标签 `audit-v1-6b-local-verified`（创建于本地全量门禁通过后的最终报告提交）。
 - [ ] Draft PR、四项 required CI、隔离 Preview 和零残留清理。
 - [ ] 单人维护者签核、CI/Preview 标签和 merge commit。
 - [ ] 真实扫码枪、标签机、连续纸偏移、小票打印和离线解码（外部门禁；未完成时 Standard/Advanced 不得标记正式 READY）。
