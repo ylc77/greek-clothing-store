@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 // @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
@@ -45,4 +47,10 @@ test("security headers use a per-response nonce and fail closed for framing and 
   assert.equal(headers["X-Content-Type-Options"], "nosniff");
   assert.equal(headers["X-Robots-Tag"], "noindex, nofollow, noarchive");
   assert.match(headers["Permissions-Policy"], /camera=\(\)/);
+});
+
+test("compact product category labels retain accessible small-text contrast", () => {
+  const source = fs.readFileSync(path.join(process.cwd(), "components", "product-card.tsx"), "utf8");
+  assert.match(source, /bg-stone-100[^"\n]*text-\[10px\][^"\n]*text-stone-600/);
+  assert.doesNotMatch(source, /bg-stone-100[^"\n]*text-\[10px\][^"\n]*text-stone-500/);
 });
