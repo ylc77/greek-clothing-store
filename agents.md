@@ -250,3 +250,21 @@ Server-side reference-image downloads allow only the current customer Storage or
 
 Standalone install fixtures that create `storage.buckets` must include `file_size_limit bigint` and `allowed_mime_types text[]`, and must use `supabase_storage_admin` for schema-owned setup as documented above.
 
+
+\---
+
+
+\## 18. AI and authentication abuse-protection boundary
+
+
+Shared AI and password-abuse state is installed by `20260716170000_ai_auth_abuse_protection.sql`. Vercel instances must use the database RPCs in `lib/abuse-protection.ts`; never restore a process-local `Map` limiter or silently continue when the shared limiter is unavailable. The migration tables are service-role-only, have RLS enabled with no public policy, and the security-definer RPCs use an empty `search_path` plus explicit revoke/grant.
+
+
+The public AI assistant requires explicit consent before accepting body measurements. Measurements are request-only data: keep them out of PostgreSQL, browser storage, logs, analytics, and error payloads. Browser product fields are not authoritative; rebuild a bounded provider payload from the server-side public product projection, and constrain model recommendations to SKUs included by the server. Preserve the IP/session/store/global minute limits, daily request budget, concurrency lease, provider timeout, request/output byte limits, and fail-closed behavior.
+
+
+Emergency environment passwords are optional but, when configured, must be at least 20 characters with letters, numbers, and symbols and must be unique across roles and customers. Validate them during server startup. `AUTH_RATE_LIMIT_SECRET` must be a per-customer server-only random secret of at least 32 characters. Developer login and emergency password failures share the database-backed limiter; never log raw passwords, tokens, measurements, service keys, or pseudonym inputs.
+
+
+Admin authorization responses follow one matrix: unauthenticated is 401, authenticated but unauthorized is 403, disabled feature is 403 with `FEATURE_DISABLED`, shared security/RPC capability unavailable is 503, and an active rate block is 429. Supabase employee sessions must listen for token refresh and sign-out, refresh the server authorization context, and clear local credentials on logout. An environment owner password never grants a developer-only session.
+

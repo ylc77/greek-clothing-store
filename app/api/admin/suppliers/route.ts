@@ -1,11 +1,10 @@
 import { NextRequest } from "next/server";
 import {
-  adminHasPermission,
-  getAdminAuthContextFromRequest,
+  authorizeAdminRequest,
   type AdminPermission,
 } from "@/lib/admin-auth";
 import { shapeSupplierForRole, shapeSuppliersForRole } from "@/lib/admin-data-boundary";
-import { adminPrivateJson, applyAdminPrivateCache } from "@/lib/admin-response";
+import { adminAuthorizationFailure, adminPrivateJson, applyAdminPrivateCache } from "@/lib/admin-response";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
@@ -54,14 +53,8 @@ function supplierPayload(value: Record<string, unknown>) {
 }
 
 async function authorize(request: NextRequest, permission: AdminPermission) {
-  const context = await getAdminAuthContextFromRequest(request);
-  if (!context) {
-    return { response: adminPrivateJson({ error: "Unauthorized", code: "UNAUTHORIZED" }, { status: 401 }) };
-  }
-  if (!adminHasPermission(context, permission)) {
-    return { response: adminPrivateJson({ error: "Forbidden", code: "FORBIDDEN" }, { status: 403 }) };
-  }
-  return { context };
+  const decision = await authorizeAdminRequest(request, permission);
+  return decision.allowed ? { context: decision.context } : { response: adminAuthorizationFailure(decision) };
 }
 
 async function requireFeature() {

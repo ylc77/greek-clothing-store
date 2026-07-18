@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { invalidateCategoriesCache, invalidateSettingsCache } from "@/lib/cache";
 import { developerRequestIsAuthorized } from "@/lib/developer-auth";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
@@ -61,9 +62,8 @@ export async function POST(request: NextRequest) {
   const target = targetValue as UploadTarget;
 
   if (target === "category") {
-    if (!(await adminRequestHasPermissionAsync(request, "categories:write"))) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authorization = await authorizeAdminRequest(request, "categories:write");
+    if (!authorization.allowed) return adminAuthorizationFailure(authorization);
     if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
   } else if (!(await developerRequestIsAuthorized(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

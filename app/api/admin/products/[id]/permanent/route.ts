@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { adminActorFromContext, adminHasPermission, getAdminAuthContextFromRequest } from "@/lib/admin-auth";
+import { adminActorFromContext, authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { invalidateProductsCache } from "@/lib/cache";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import {
@@ -26,10 +27,9 @@ type DeleteRpcResult = {
 };
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const auth = await getAdminAuthContextFromRequest(request);
-  if (!adminHasPermission(auth, "products:delete")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: auth ? 403 : 401 });
-  }
+  const authorization = await authorizeAdminRequest(request, "products:delete");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
+  const auth = authorization.context;
   if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
 
   const supabase = getSupabaseAdminClient();

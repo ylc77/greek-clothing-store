@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  adminHasPermission,
-  getAdminAuthContextFromRequest,
-} from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { featureDisabledResponse, isFeatureEnabledUncached } from "@/lib/features";
 import { CsvInputError, readRequestBytesWithLimit } from "@/lib/csv-parser";
 import { batchTranslateRows } from "@/lib/translate";
@@ -13,11 +11,8 @@ const MAX_TRANSLATION_BODY_BYTES = 256 * 1024;
 const MAX_TRANSLATION_ROWS = 50;
 
 export async function POST(request: NextRequest) {
-  const auth = await getAdminAuthContextFromRequest(request);
-  if (!auth) return NextResponse.json({ error: "Unauthorized", code: "UNAUTHORIZED" }, { status: 401 });
-  if (!adminHasPermission(auth, "products:write")) {
-    return NextResponse.json({ error: "Forbidden", code: "FORBIDDEN" }, { status: 403 });
-  }
+  const authorization = await authorizeAdminRequest(request, "products:write");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabledUncached("csv_import"))) return featureDisabledResponse("csv_import");
   if (!(await isFeatureEnabledUncached("ai_tools"))) return featureDisabledResponse("ai_tools");
 

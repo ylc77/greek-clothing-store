@@ -1,6 +1,6 @@
 # v1.0 阶段看板
 
-当前 5B 基线：`7d943eae581aeb36569d3b86083415ece985fd55`（5A merge commit；建立 5B 分支时的最新 `origin/master`）
+当前 5C 基线：`23dd67b1b93cc3fadbab8842fcf470ae1bf36b79`（5B merge commit；建立 5C 分支时的最新 `origin/master`）
 总原则：每阶段独立分支、独立 PR，测试先行，本地 → CI → 隔离 Preview → 清理 → 单人维护者签核 → merge commit。
 
 ## 当前状态
@@ -9,8 +9,8 @@
 |---|---|---|---|
 | 风险矩阵/看板 | `codex/hardening-p2-public-data-boundary` | 完成 | 风险均有证据等级、完成证据和停止条件。 |
 | 5A 公开数据边界 | `codex/hardening-p2-public-data-boundary` | 已完成并合并 | PR #6、CI、隔离 Preview、清理、签核、阶段标签和 merge commit `7d943ea` 均完成。 |
-| 5B 图片与 Storage | `codex/hardening-p2-storage-image-security` | 本地、CI 与隔离 Preview 已通过 | PR #7 四项 required CI 全绿；隔离 Preview 的图片格式/权限/生命周期/永久删除、390/768/1440 浏览器验收和零残留清理均通过；待当前精确 HEAD 复验、签核、标签和合并。 |
-| 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 等待 5B 合并 | 共享限流/预算/并发/超时/PII、登录防爆破、Token 生命周期和状态码矩阵通过。 |
+| 5B 图片与 Storage | `codex/hardening-p2-storage-image-security` | 已完成并合并 | PR #7、本地、CI、隔离 Preview、零残留清理、签核和 `v1-phase-5b-merged` 标签均完成；merge commit `23dd67b`。 |
+| 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 本地、CI、隔离 Preview 已完成，等待签核合并 | PR #8 精确 HEAD `ce5c699` 的四项 required CI、18-migration 隔离 Preview、8/8 业务验收、三种视口和零残留清理已通过；Production 未验证。 |
 | 6A 渠道/SEO/法律 | `codex/hardening-p2-channels-seo-legal` | 等待 5C 合并 | Skroutz Validator、EL/EN 原始 HTML、法律双语、安全头和可访问性通过。 |
 | 6B 运营/报表/打印 | `codex/hardening-p2-operations-reporting-print` | 等待 6A 合并 | Athens 时区、对账、审计、容量、打印、备份恢复与硬件状态结论完成。 |
 | 7 v1.0 发布门禁 | `codex/release-v1-production-readiness` | 等待 6B 合并 | 全回归、部署/升级/恢复演练、只读生产检查、三版本结论、Release PR、`v1.0.0` 和 GitHub Release。 |
@@ -54,7 +54,23 @@
 - [x] 全量 P1/4A/4B/5A 回归、build、secret scan、database advisors。
 - [x] Draft PR 和四项 required CI。
 - [x] 隔离 Preview 图片/权限/生命周期业务验收、390/768/1440 浏览器验收和零残留清理。
-- [ ] 当前精确 HEAD 复验、签核、Preview 标签和 merge commit。
+- [x] 当前精确 HEAD 复验、签核、Preview 标签和 merge commit。
+
+## 5C 工作包
+
+- [x] AI 的 IP、会话、店铺、全局分钟限制、每日预算、并发 lease 和重放保护使用共享数据库状态。
+- [x] 用户明确同意后才提交身体测量字段；最小化输入，不持久化、不写日志。
+- [x] 服务端公开商品投影、允许 SKU 二次约束、请求/上游响应大小、超时和异常 JSON 门禁。
+- [x] 环境紧急密码强度/重复启动检查、timing-safe 验证和跨实例共享登录限流。
+- [x] Developer 登录共享限流；未初始化、需轮换、限流和能力不可用均 fail closed。
+- [x] Supabase 员工 Token 初始恢复、刷新、登出和浏览器/API 同步失效。
+- [x] 未认证 401、无权 403、Feature 关闭 403/`FEATURE_DISABLED`、安全能力不可用 503。
+- [x] 管理员邮箱统一小写并建立大小写不敏感唯一约束；重复旧数据安全停止而非静默合并。
+- [x] 专项 unit、Route、多实例、预算/并发、PII 日志、数据库权限和四条安装路径测试。
+- [x] 全量既有 P1/4A/4B/5A/5B 回归和本地 build。
+- [x] Draft PR 和精确 HEAD 的 GitHub 四项 required CI。
+- [x] 隔离 Preview 8/8 业务验收、390/768/1440 浏览器检查、日志扫描和零残留清理。
+- [ ] 单人维护者签核、CI/Preview 标签和 merge commit。
 
 ## 发布版本判定占位
 

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   adminActorFromContext,
-  adminHasPermission,
-  getAdminAuthContextFromRequest,
+  authorizeAdminRequest,
 } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import {
@@ -21,20 +20,19 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 async function authorize(request: NextRequest) {
-  const context = await getAdminAuthContextFromRequest(request);
-  if (!context) {
-    return { response: NextResponse.json(
-      { error: "Unauthorized", code: "UNAUTHORIZED", operationSafeToDiscard: true },
-      { status: 401 },
-    ) };
-  }
-  if (!adminHasPermission(context, "products:write")) {
-    return { response: NextResponse.json(
-      { error: "Forbidden", code: "FORBIDDEN", operationSafeToDiscard: true },
-      { status: 403 },
-    ) };
-  }
-  return { context };
+  const decision = await authorizeAdminRequest(request, "products:write");
+  return decision.allowed ? { context: decision.context } : { response: NextResponse.json(
+    {
+      error: decision.error,
+      code: decision.code,
+      operationSafeToDiscard: true,
+      ...(decision.retryAfter ? { retryAfter: decision.retryAfter } : {}),
+    },
+    {
+      status: decision.status,
+      headers: decision.retryAfter ? { "Retry-After": String(decision.retryAfter) } : undefined,
+    },
+  ) };
 }
 
 function configurationUnavailable() {

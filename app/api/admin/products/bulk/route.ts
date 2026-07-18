@@ -1,8 +1,7 @@
 import { NextRequest } from "next/server";
 import {
   adminActorFromContext,
-  adminHasPermission,
-  getAdminAuthContextFromRequest,
+  authorizeAdminRequest,
 } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import { featureDisabledResponse, isFeatureEnabledUncached } from "@/lib/features";
@@ -76,11 +75,11 @@ function parseBulkRequest(payload: Record<string, unknown>) {
 }
 
 export async function PUT(request: NextRequest) {
-  const authContext = await getAdminAuthContextFromRequest(request);
-  if (!authContext) return productErrorResponse("Unauthorized", 401, "UNAUTHORIZED", true);
-  if (!adminHasPermission(authContext, "products:write")) {
-    return productErrorResponse("Forbidden", 403, "FORBIDDEN", true);
+  const authorization = await authorizeAdminRequest(request, "products:write");
+  if (!authorization.allowed) {
+    return productErrorResponse(authorization.error, authorization.status, authorization.code, true);
   }
+  const authContext = authorization.context;
   if (!(await isFeatureEnabledUncached("product_management"))) {
     return applyAdminPrivateCache(featureDisabledResponse("product_management"));
   }

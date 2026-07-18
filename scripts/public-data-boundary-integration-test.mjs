@@ -14,11 +14,12 @@ const PREFIX = "AUDIT-PUBLIC-DATA-";
 const XSS_MARKER = "AUDIT_JSONLD_XSS";
 const MALICIOUS_NAME = `Audit </script><script data-audit-xss>${XSS_MARKER}</script>`;
 const PASSWORDS = {
-  owner: "public-data-owner",
-  staff: "public-data-staff",
-  inventory: "public-data-inventory",
-  readonly: "public-data-readonly",
+  owner: "AuditPublicOwner!2026-Alpha",
+  staff: "AuditPublicStaff!2026-Bravo",
+  inventory: "AuditPublicInventory!2026-Charlie",
+  readonly: "AuditPublicReadonly!2026-Delta",
 };
+const AUTH_RATE_LIMIT_SECRET = "test-only-public-auth-rate-limit-secret-2026";
 const results = [];
 
 function command(name, args, options = {}) {
@@ -74,6 +75,7 @@ async function startApp(local) {
       ADMIN_STAFF_PASSWORD: PASSWORDS.staff,
       ADMIN_INVENTORY_PASSWORD: PASSWORDS.inventory,
       ADMIN_READONLY_PASSWORD: PASSWORDS.readonly,
+      AUTH_RATE_LIMIT_SECRET,
       USE_POS_RPC: "true",
       USE_PRODUCT_RPC: "true",
       USE_CSV_IMPORT_RPC: "true",

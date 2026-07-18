@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { getMainInventoryLocation } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
@@ -32,10 +33,6 @@ type BalanceRow = {
   quantity_on_hand: number | string | null;
   quantity_reserved: number | string | null;
 };
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
 
 function unavailable() {
   return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 500 });
@@ -79,7 +76,8 @@ function matchScore(q: string, row: { barcode: string; variant_sku: string; prod
 }
 
 export async function GET(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "pos:read"))) return unauthorized();
+  const authorization = await authorizeAdminRequest(request, "pos:read");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabled("pos_checkout"))) return featureDisabledResponse("pos_checkout");
 
   const supabase = getSupabaseAdminClient();

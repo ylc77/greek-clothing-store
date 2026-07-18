@@ -12,7 +12,8 @@ const API_PORT = 55321;
 const DB_PORT = 55322;
 const APP_PORT = 3310;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
-const ADMIN_PASSWORD = "audit-pos-owner";
+const ADMIN_PASSWORD = "AuditPosOwner!2026-Alpha";
+const AUTH_RATE_LIMIT_SECRET = "test-only-pos-auth-rate-limit-secret-2026";
 const AUDIT_PREFIX = "AUDIT-POS-";
 const results = [];
 
@@ -385,6 +386,7 @@ async function startApp(useRpc) {
       NEXT_PUBLIC_SUPABASE_ANON_KEY: local.ANON_KEY,
       SUPABASE_SERVICE_ROLE_KEY: local.SERVICE_ROLE_KEY,
       ADMIN_PASSWORD,
+      AUTH_RATE_LIMIT_SECRET,
       USE_POS_RPC: useRpc ? "true" : "false",
     },
     stdio: ["ignore", "pipe", "pipe"],

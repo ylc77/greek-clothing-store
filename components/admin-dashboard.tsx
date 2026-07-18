@@ -19,6 +19,7 @@ import { LabelPrintPreview, type LabelSize, type PrintableVariantLabel } from "@
 import type { AdminPermission, AdminRole } from "@/lib/admin-auth";
 import { featurePlanPresets, type FeatureFlags, type FeatureKey } from "@/lib/feature-catalog";
 import { getSupabaseBrowserAuthClient } from "@/lib/supabase";
+import { tokenUpdateForSupabaseAuthEvent } from "@/lib/admin-session-lifecycle";
 import { skroutzReadinessIssues } from "@/lib/skroutz-readiness";
 import { PosOperationIdStore } from "@/lib/pos-operation-id";
 import { InventoryOperationIdStore, InventoryOperationStateError } from "@/lib/inventory-operation-id";
@@ -962,6 +963,53 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
       // Browsers with blocked storage can still use the customization for the current page session.
     }
   }, [commonTabKeys, commonTabsReady]);
+  useEffect(() => {
+    const supabase = getSupabaseBrowserAuthClient();
+    if (!supabase) return;
+    let active = true;
+    let generation = 0;
+
+    const applyAccountSession = async (event: string, session: { access_token?: string } | null) => {
+      const update = tokenUpdateForSupabaseAuthEvent(event, session);
+      if (update.kind === "ignore") return;
+      const requestGeneration = ++generation;
+      if (update.kind === "clear") {
+        setAdminAuthToken("");
+        setAdminSession(null);
+        return;
+      }
+      setAdminAuthToken(update.token);
+      setActivePassword("");
+      const response = await fetch("/api/admin/session", {
+        headers: { Authorization: `Bearer ${update.token}` },
+      }).catch(() => null);
+      if (!active || requestGeneration !== generation) return;
+      if (!response?.ok) {
+        setAdminAuthToken("");
+        setAdminSession(null);
+        return;
+      }
+      const data = await response.json().catch(() => null);
+      if (!active || requestGeneration !== generation || !data) return;
+      setAdminSession({
+        role: data.role,
+        permissions: data.permissions || [],
+        authType: "account",
+        email: data.email || null,
+        displayName: data.displayName || null,
+      });
+    };
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      void applyAccountSession(event, session);
+    });
+    void supabase.auth.getSession().then(({ data }) => applyAccountSession("INITIAL_SESSION", data.session));
+    return () => {
+      active = false;
+      generation += 1;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
   useEffect(() => { if (adminSession) { fetch("/api/admin/categories", { headers: adminAuthHeaders() }).then(r => r.json()).then(d => { setDbCats((d.categories||[]).filter((c:Record<string,unknown>) => c.is_active !== false)); setDbSubs((d.subcategories||[]).filter((s:Record<string,unknown>) => s.is_active !== false)); }).catch(() => {}); } }, [adminSession, adminAuthToken, activePassword, tab]);
   useEffect(() => {
     if (!adminSession) return;
@@ -1456,6 +1504,7 @@ export function AdminDashboard({ initialFeatures = defaultAdminFeatures }: { ini
   async function api(path: string, init: RequestInit = {}): Promise<any> {
     const r = await fetch(path, { ...init, headers: { "Content-Type": "application/json", ...adminAuthHeaders(), ...(init.headers || {}) } });
     const d = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+    if (r.status === 401 && adminSession?.authType === "account") void logoutAdmin();
     if (!r.ok) throw new AdminApiError(typeof d.error === "string" ? d.error : "Request failed", r.status, d);
     return d;
   }
@@ -3688,6 +3737,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         setAdminAuthToken(data.session.access_token);
         setActivePassword("");
       } else {
+        const supabase = getSupabaseBrowserAuthClient();
+        if (supabase) await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
         sessionHeaders = { "x-admin-password": password };
         setAdminAuthToken("");
       }
@@ -3714,6 +3765,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     } finally {
       setLoginLoading(false);
     }
+  }
+
+  async function logoutAdmin() {
+    const supabase = getSupabaseBrowserAuthClient();
+    if (supabase) await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+    setAdminSession(null);
+    setAdminAuthToken("");
+    setActivePassword("");
+    setPassword("");
+    setAccountPassword("");
   }
 
   /* ── Login gate ─────────────────────────────────────────── */
@@ -3763,7 +3824,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <span className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">{adminSession.displayName || adminSession.email || adminSession.role} · {adminSession.authType === "account" ? "员工账号" : "应急密码"}</span>
             {isOwner ? <a className="hidden rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50 xl:inline-flex" href="/admin/settings">店铺设置</a> : null}
             {isOwner && adminFeatures.backup_tools ? <button className="hidden rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50 xl:inline-flex" onClick={() => void downloadProductBackup()} type="button">导出 CSV</button> : null}
-            <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => { setAdminSession(null); setAdminAuthToken(""); setActivePassword(""); setPassword(""); }}>退出</button>
+            <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => void logoutAdmin()} type="button">退出</button>
           </div>
         </header>
 

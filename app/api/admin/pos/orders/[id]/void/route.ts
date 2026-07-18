@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminActorFromContext, adminHasPermission, getAdminAuthContextFromRequest } from "@/lib/admin-auth";
+import { adminActorFromContext, authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { invalidateProductsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
@@ -15,10 +16,6 @@ type VoidBody = {
   clientRequestId?: unknown;
 };
 
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
 
 function unavailable() {
   return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 500 });
@@ -66,8 +63,9 @@ function logVoidError(context: string, error: unknown, extra?: Record<string, un
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
-  const authContext = await getAdminAuthContextFromRequest(request);
-  if (!adminHasPermission(authContext, "pos:void")) return unauthorized();
+  const authorization = await authorizeAdminRequest(request, "pos:void");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
+  const authContext = authorization.context;
   if (!(await isFeatureEnabled("pos_void"))) return featureDisabledResponse("pos_void");
 
   const supabase = getSupabaseAdminClient();

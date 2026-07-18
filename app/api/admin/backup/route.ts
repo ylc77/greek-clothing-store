@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  adminHasPermission,
-  getAdminAuthContextFromRequest,
-} from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import {
   buildProductCsvExport,
   createCsvDownloadHeaders,
@@ -13,20 +11,8 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 async function authorize(request: NextRequest) {
-  const context = await getAdminAuthContextFromRequest(request);
-  if (!context) {
-    return NextResponse.json(
-      { error: "Unauthorized", code: "UNAUTHORIZED" },
-      { status: 401 },
-    );
-  }
-  if (!adminHasPermission(context, "backup:read")) {
-    return NextResponse.json(
-      { error: "Forbidden", code: "FORBIDDEN" },
-      { status: 403 },
-    );
-  }
-  return null;
+  const decision = await authorizeAdminRequest(request, "backup:read");
+  return decision.allowed ? null : adminAuthorizationFailure(decision);
 }
 
 export async function GET(request: NextRequest) {

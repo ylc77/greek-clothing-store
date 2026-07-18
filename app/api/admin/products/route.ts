@@ -1,8 +1,7 @@
 import { NextRequest } from "next/server";
 import {
   adminActorFromContext,
-  adminHasPermission,
-  getAdminAuthContextFromRequest,
+  authorizeAdminRequest,
 } from "@/lib/admin-auth";
 import { invalidateProductsCache } from "@/lib/cache";
 import { finalizeCommittedProductMutation } from "@/lib/product-cache-policy";
@@ -35,14 +34,10 @@ function productRpcRequired() {
 }
 
 async function authorize(request: NextRequest, permission: "products:read" | "products:write") {
-  const authContext = await getAdminAuthContextFromRequest(request);
-  if (!authContext) {
-    return { response: productErrorResponse("Unauthorized", 401, "UNAUTHORIZED", true) };
-  }
-  if (!adminHasPermission(authContext, permission)) {
-    return { response: productErrorResponse("Forbidden", 403, "FORBIDDEN", true) };
-  }
-  return { authContext };
+  const decision = await authorizeAdminRequest(request, permission);
+  return decision.allowed
+    ? { authContext: decision.context }
+    : { response: productErrorResponse(decision.error, decision.status, decision.code, true) };
 }
 
 export async function GET(request: NextRequest) {

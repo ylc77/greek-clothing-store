@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { revalidateTag } from "next/cache";
-import { getAdminAuthContextFromRequest } from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
 import { cacheTags } from "@/lib/cache-tags";
 import { developerRequestIsAuthorized } from "@/lib/developer-auth";
 import {
@@ -11,7 +11,7 @@ import {
   type FeaturePlan,
 } from "@/lib/features";
 import { getSupabaseAdminClient } from "@/lib/supabase";
-import { adminPrivateJson } from "@/lib/admin-response";
+import { adminAuthorizationFailure, adminPrivateJson } from "@/lib/admin-response";
 
 export const dynamic = "force-dynamic";
 
@@ -20,8 +20,10 @@ function unauthorized() {
 }
 
 export async function GET(request: NextRequest) {
-  const admin = await getAdminAuthContextFromRequest(request);
-  if (!admin && !(await developerRequestIsAuthorized(request))) return unauthorized();
+  const authorization = await authorizeAdminRequest(request, "products:read");
+  if (!authorization.allowed && !(await developerRequestIsAuthorized(request))) {
+    return adminAuthorizationFailure(authorization);
+  }
 
   return adminPrivateJson({ ok: true, settings: await getFeatureSettingsUncached() });
 }

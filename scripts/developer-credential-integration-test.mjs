@@ -59,11 +59,12 @@ const publicClient = createClient(local.API_URL, local.ANON_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const rolePasswords = {
-  owner: randomBytes(24).toString("base64url"),
-  staff: randomBytes(24).toString("base64url"),
-  inventory: randomBytes(24).toString("base64url"),
-  readonly: randomBytes(24).toString("base64url"),
+  owner: `${randomBytes(24).toString("base64url")}!Aa9`,
+  staff: `${randomBytes(24).toString("base64url")}!Bb8`,
+  inventory: `${randomBytes(24).toString("base64url")}!Cc7`,
+  readonly: `${randomBytes(24).toString("base64url")}!Dd6`,
 };
+const AUTH_RATE_LIMIT_SECRET = randomBytes(32).toString("base64url");
 
 function strongPassword() {
   return `${randomBytes(24).toString("base64url")}!Aa9`;
@@ -170,6 +171,7 @@ async function startApp() {
       ADMIN_STAFF_PASSWORD: rolePasswords.staff,
       ADMIN_INVENTORY_PASSWORD: rolePasswords.inventory,
       ADMIN_READONLY_PASSWORD: rolePasswords.readonly,
+      AUTH_RATE_LIMIT_SECRET,
       USE_POS_RPC: "true",
     },
     stdio: ["ignore", "pipe", "pipe"],

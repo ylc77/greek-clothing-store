@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminActorFromContext, adminHasPermission, getAdminAuthContextFromRequest } from "@/lib/admin-auth";
+import { adminActorFromContext, authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { invalidateProductsCache } from "@/lib/cache";
 import { getMainInventoryLocation } from "@/lib/erp-inventory";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -65,10 +66,6 @@ type OrderItemInsert = {
   discount_total: number;
   line_total: number;
 };
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
 
 function unavailable() {
   return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 500 });
@@ -162,8 +159,9 @@ function normalizeItems(items: unknown) {
 }
 
 export async function POST(request: NextRequest) {
-  const authContext = await getAdminAuthContextFromRequest(request);
-  if (!adminHasPermission(authContext, "pos:checkout")) return unauthorized();
+  const authorization = await authorizeAdminRequest(request, "pos:checkout");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
+  const authContext = authorization.context;
   if (!(await isFeatureEnabled("pos_checkout"))) return featureDisabledResponse("pos_checkout");
 
   const supabase = getSupabaseAdminClient();

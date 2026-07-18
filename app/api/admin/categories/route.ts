@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { invalidateCategoriesCache, invalidateProductsCache } from "@/lib/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
-function unauth() { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
-
 export async function GET(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "products:read"))) return unauth();
+  const authorization = await authorizeAdminRequest(request, "products:read");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "No admin client" }, { status: 500 });
@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "categories:write"))) return unauth();
+  const authorization = await authorizeAdminRequest(request, "categories:write");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "No admin client" }, { status: 500 });

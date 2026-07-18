@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { adminRequestHasPermissionAsync } from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { invalidateProductsCache } from "@/lib/cache";
 import { ImageValidationError, optimizeUploadedImage } from "@/lib/image-security";
@@ -22,10 +23,6 @@ const maxSourceImages = 2;
 const maxSourceImageBytes = 15 * 1024 * 1024;
 const maxSourcePixels = 40_000_000;
 const maxSourceDimension = 12_000;
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
 
 function unavailable() {
   return NextResponse.json({ error: "Admin Supabase is not configured." }, { status: 500 });
@@ -128,7 +125,8 @@ async function ensurePublicBucket(supabase: NonNullable<ReturnType<typeof getSup
 }
 
 export async function POST(request: NextRequest) {
-  if (!(await adminRequestHasPermissionAsync(request, "ai:write"))) return unauthorized();
+  const authorization = await authorizeAdminRequest(request, "ai:write");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabled("ai_tools"))) return featureDisabledResponse("ai_tools");
 
   const apiKey = (process.env.OPENAI_API_KEY || "").trim();

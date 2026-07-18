@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   adminActorFromContext,
-  adminHasPermission,
-  getAdminAuthContextFromRequest,
+  authorizeAdminRequest,
 } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { invalidateProductsCache } from "@/lib/cache";
 import {
   loadProductImportJob,
@@ -16,11 +16,9 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function POST(request: NextRequest, context: RouteContext) {
-  const auth = await getAdminAuthContextFromRequest(request);
-  if (!auth) return NextResponse.json({ error: "Unauthorized", code: "UNAUTHORIZED" }, { status: 401 });
-  if (!adminHasPermission(auth, "products:write")) {
-    return NextResponse.json({ error: "Forbidden", code: "FORBIDDEN" }, { status: 403 });
-  }
+  const authorization = await authorizeAdminRequest(request, "products:write");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
+  const auth = authorization.context;
   if (!(await isFeatureEnabledUncached("csv_import"))) return featureDisabledResponse("csv_import");
   if (process.env.USE_PRODUCT_RPC !== "true" || process.env.USE_CSV_IMPORT_RPC !== "true") {
     return NextResponse.json({ error: "Transactional CSV import is not configured.", code: "CSV_IMPORT_RPC_REQUIRED" }, { status: 503 });

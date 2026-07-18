@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  adminHasPermission,
-  getAdminAuthContextFromRequest,
-} from "@/lib/admin-auth";
+import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminAuthorizationFailure } from "@/lib/admin-response";
 import {
   publicImportRow,
   readProductCsvFormData,
@@ -13,13 +11,8 @@ import { featureDisabledResponse, isFeatureEnabledUncached } from "@/lib/feature
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const context = await getAdminAuthContextFromRequest(request);
-  if (!context) {
-    return NextResponse.json({ error: "Unauthorized", code: "UNAUTHORIZED" }, { status: 401 });
-  }
-  if (!adminHasPermission(context, "products:write")) {
-    return NextResponse.json({ error: "Forbidden", code: "FORBIDDEN" }, { status: 403 });
-  }
+  const authorization = await authorizeAdminRequest(request, "products:write");
+  if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabledUncached("csv_import"))) return featureDisabledResponse("csv_import");
 
   try {
