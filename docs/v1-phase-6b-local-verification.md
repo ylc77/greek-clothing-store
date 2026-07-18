@@ -6,7 +6,7 @@ Branch: `codex/hardening-p2-operations-reporting-print`
 
 Base: `0c390572260bf5aa46de341d9eceab58d4b9d0bb` (`origin/master`, Phase 6A merge commit)
 
-Final evidence anchor: annotated tag `audit-v1-6b-local-verified-v2` (the original local tag is preserved at the pre-CI-fix commit)
+Final evidence anchor: annotated tag `audit-v1-6b-local-verified-v3` (the original and v2 tags remain preserved at their pre-CI-fix commits)
 
 ## Scope completed locally
 
@@ -31,7 +31,7 @@ Final evidence anchor: annotated tag `audit-v1-6b-local-verified-v2` (the origin
 | `npm run check:operations-db-security` | PASS; 7/7 operations privilege and immutability gates |
 | `npx supabase db reset --local --no-seed` | PASS; all 21 migrations apply from an empty database |
 | Seven installation-path suites | PASS; 25/25 clean migration, client-init, and legacy assertions |
-| `npm run test:operations-backup-restore` | PASS; four database files and one Storage object restored byte-for-byte in 68.7 seconds |
+| `npm run test:operations-backup-restore` | PASS; four database files and one Storage object restored byte-for-byte in 78.7 seconds after the platform-independent script fix |
 | `npm run test:channels-browser-local` | PASS; production build, multilingual/SEO/security/accessibility checks, and label/receipt checks at 390/768/1440 |
 | `npm run typecheck` | PASS |
 | `npm audit --audit-level=high` | PASS; 0 vulnerabilities |
@@ -48,7 +48,7 @@ Final evidence anchor: annotated tag `audit-v1-6b-local-verified-v2` (the origin
 - Installation verification covers an ordered empty migration chain, an empty `client-init.sql` installation, relevant legacy upgrade fixtures, and repeated execution safety.
 - Operations RPCs and private reconciliation data are service-role-only. Public, anonymous, and authenticated execute/read access is revoked where applicable.
 - The recovery drill restored 21 migration-history rows, application fixtures, and an actual Storage object to a second blank local Supabase. The restored object hash matched the backup manifest.
-- Recovery took 68.7 seconds, below the documented RTO target of four hours. The current RPO target is 24 hours and requires daily database plus Storage backups.
+- The latest local recovery took 78.7 seconds, below the documented RTO target of four hours. The current RPO target is 24 hours and requires daily database plus Storage backups.
 - Backup and restore temporary directories and the isolated recovery container were removed after the drill.
 
 ## Remaining CI and Preview gates
