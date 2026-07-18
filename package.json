@@ -65,7 +65,10 @@
     "developer:status": "node --experimental-strip-types scripts/developer-credentials.ts status",
     "check:site": "node scripts/site-smoke-check.js",
     "check:skroutz": "node scripts/site-smoke-check.js --strict-feed",
-    "test:channels-unit": "node --experimental-strip-types --test tests/skroutz-feed.test.ts tests/storefront-seo-security.test.ts tests/legal-localization.test.ts tests/legal-publish-transaction.test.ts"
+    "test:channels-unit": "node --experimental-strip-types --test tests/skroutz-feed.test.ts tests/storefront-seo-security.test.ts tests/legal-localization.test.ts tests/legal-publish-transaction.test.ts",
+    "test:channels-browser": "node scripts/channels-seo-legal-browser-test.mjs",
+    "test:channels-browser-local": "node scripts/run-powershell.mjs scripts/run-channels-browser-local.ps1",
+    "test:legal-publish-integration": "node scripts/run-powershell.mjs scripts/verify-legal-publish-integration.ps1"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",
@@ -76,6 +79,7 @@
     "sharp": "^0.35.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@types/node": "^22.7.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
