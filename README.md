@@ -2,6 +2,17 @@
 
 面向希腊服装零售店的双语网站与后台系统，包含商品展示、库存、POS、Skroutz Feed、员工权限、法律页面和客户版本控制。
 
+## v1 发布与运维文档
+
+- [发布就绪结论](docs/v1-release-readiness.md)
+- [新客户部署手册](docs/v1-deployment-runbook.md)
+- [已有客户升级手册](docs/v1-upgrade-runbook.md)
+- [备份与恢复手册](docs/v1-backup-restore-runbook.md)
+- [已知限制](docs/v1-known-limitations.md)
+- [v1.0 Release Notes](docs/v1.0-release-notes.md)
+- [客户部署检查清单](docs/v1-customer-deployment-checklist.md)
+- [维护者密钥轮换检查清单](docs/v1-maintainer-key-rotation-checklist.md)
+
 ## 新客户快速部署
 
 > 目标：创建 Supabase → 执行一次 SQL → 部署 Vercel → 填写店铺资料。

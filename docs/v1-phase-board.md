@@ -12,8 +12,8 @@
 | 5B 图片与 Storage | `codex/hardening-p2-storage-image-security` | 已完成并合并 | PR #7、本地、CI、隔离 Preview、零残留清理、签核和 `v1-phase-5b-merged` 标签均完成；merge commit `23dd67b`。 |
 | 5C AI 与认证 | `codex/hardening-p2-ai-auth-abuse` | 已完成并合并 | PR #8、本地、CI、隔离 Preview、清理、签核和阶段标签均完成；merge commit `b30e3ef`。 |
 | 6A 渠道/SEO/法律 | `codex/hardening-p2-channels-seo-legal` | 已完成并合并 | PR #9、本地、CI、隔离 Preview、官方 Skroutz Validator、严格监控、零残留清理、签核和阶段标签均完成；merge commit `0c39057`。 |
-| 6B 运营/报表/打印 | `codex/hardening-p2-operations-reporting-print` | 本地与隔离 Preview 已通过，等待最终 exact-head CI/签核 | 21 migrations、141 单元测试、156 具名集成场景、25 安装路径断言、1,005 订单分页、三视口/58mm/80mm 打印、对账/审计/条码、秘密扫描及数据库 + Storage 恢复演练均通过；Preview 零残留，真实硬件仍是外部门禁。 |
-| 7 v1.0 发布门禁 | `codex/release-v1-production-readiness` | 等待 6B 合并 | 全回归、部署/升级/恢复演练、只读生产检查、三版本结论、Release PR、`v1.0.0` 和 GitHub Release。 |
+| 6B 运营/报表/打印 | `codex/hardening-p2-operations-reporting-print` | 已完成并合并 | 21 migrations、141 单元测试、156 具名集成场景、25 安装路径断言、1,005 订单分页、三视口/58mm/80mm 打印、对账/审计/条码、秘密扫描及数据库 + Storage 恢复演练均通过；Preview 零残留，merge commit `be3205f`。 |
+| 7 v1.0 发布门禁 | `codex/release-v1-production-readiness` | 本地全回归和隔离新客户演练已通过；Production 外部阻断已记录 | Release 文档和 Draft PR 可继续；现有 Production 的弱应急密码、缺失环境变量和旧 migration history 修复需要单独授权。 |
 
 ## 每阶段固定门禁
 
@@ -112,8 +112,8 @@
 
 | 版本 | 当前状态 | 说明 |
 |---|---|---|
-| Basic | `BLOCKED` | 5A–6A 已完成；6B 全量本地门禁通过，但 CI/Preview 和最终发布门禁尚未完成。 |
-| Standard | `BLOCKED` | 继承 Basic；真实扫码枪、标签机、连续纸和小票硬件尚未验收。 |
-| Advanced | `BLOCKED` | 继承 Standard；6B CI/Preview 和最终发布验收尚未完成。 |
+| Basic | `READY` | 代码/模板、本地全回归、隔离新客户演练、升级 fixture 和恢复演练通过；当前旧 Production 实例仍是独立部署阻断。 |
+| Standard | `CONDITIONAL` | 继承 Basic；软件 POS/CSV/员工/条码门禁通过，真实扫码枪、标签机、连续纸和小票硬件尚未验收。 |
+| Advanced | `CONDITIONAL` | 继承 Standard；Skroutz Validator 和 AI 安全门禁通过，仍受相同真实硬件条件约束。 |
 
 只有阶段 7 的当前证据可以把这些状态改为 `READY` 或 `CONDITIONAL`。未完成真实硬件验收时，不得把 Standard/Advanced 描述为正式可交付。
