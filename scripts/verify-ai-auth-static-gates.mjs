@@ -56,7 +56,10 @@ assert.doesNotMatch(developerRoute, /new\s+Map\s*</);
 
 const passwordSecurity = read("lib/admin-password-security.ts");
 assert.match(passwordSecurity, /timingSafeEqual/);
-assert.match(passwordSecurity, /value\.length < 20/);
+assert.match(passwordSecurity, /value\.length < 16/);
+assert.ok(passwordSecurity.includes("|| !/[a-z]/i.test(value)"));
+assert.ok(passwordSecurity.includes("|| !/\\d/.test(value)"));
+assert.ok(!passwordSecurity.includes("|| !/[^a-z0-9]/i.test(value)"));
 assert.match(passwordSecurity, /DUPLICATE_PASSWORD/);
 const instrumentation = read("instrumentation.ts");
 assert.match(instrumentation, /validateAdminPasswordEnvironment\(process\.env\)/);
