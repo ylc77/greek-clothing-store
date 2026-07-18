@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 import { XMLParser } from "fast-xml-parser";
 
@@ -11,6 +13,8 @@ import {
   type SkroutzVariantRow,
 // @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
 } from "../lib/skroutz-feed.ts";
+
+const feedLoaderPath = path.join(process.cwd(), "lib", "feed.ts");
 
 function product(overrides: Partial<SkroutzProductRow> = {}): SkroutzProductRow {
   return {
@@ -206,4 +210,18 @@ test("Skroutz feed retains more than one Supabase page of products", () => {
     mywebstore?: { products?: { product?: unknown[] } };
   };
   assert.equal(parsed.mywebstore?.products?.product?.length, 1_005);
+});
+
+test("Skroutz feed cache identity includes the current site origin", () => {
+  const source = fs.readFileSync(feedLoaderPath, "utf8");
+  assert.match(
+    source,
+    /getFeedProductsCached\(minStock, fallbackBrand, siteUrl\(\)\)/,
+    "The current site URL must be a cached-function argument so domain changes cannot reuse stale links.",
+  );
+  assert.match(
+    source,
+    /assembleSkroutzFeedProducts\([\s\S]*?minStock,[\s\S]*?baseUrl,[\s\S]*?fallbackBrand,/,
+    "The cache-key URL must also be the URL used when assembling product links.",
+  );
 });

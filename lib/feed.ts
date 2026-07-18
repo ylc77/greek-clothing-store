@@ -40,6 +40,7 @@ function locationCode(row: BalanceQueryRow) {
 async function getFeedProductsRaw(
   minStock = 1,
   fallbackBrand = "Fashion Boutique",
+  baseUrl = siteUrl(),
 ) {
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
@@ -97,7 +98,7 @@ async function getFeedProductsRaw(
     variantsResult.data || [],
     balances,
     minStock,
-    siteUrl(),
+    baseUrl,
     fallbackBrand,
   );
 }
@@ -109,7 +110,9 @@ const getFeedProductsCached = unstable_cache(
 );
 
 export async function getFeedProducts(minStock = 1, fallbackBrand = "Fashion Boutique") {
-  return getFeedProductsCached(minStock, fallbackBrand);
+  // The site origin is part of the cached function arguments so a domain or
+  // Preview alias change cannot reuse feed rows containing stale product URLs.
+  return getFeedProductsCached(minStock, fallbackBrand, siteUrl());
 }
 
 export function renderSkroutzFeed(
