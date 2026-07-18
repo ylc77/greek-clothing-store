@@ -36,7 +36,7 @@ function Invoke-NodeFixture([hashtable]$Environment, [string]$Mode) {
   $previousKey = $env:SUPABASE_SERVICE_ROLE_KEY
   try {
     $env:NEXT_PUBLIC_SUPABASE_URL = $Environment["API_URL"]
-    $env:SUPABASE_SERVICE_ROLE_KEY = $Environment["SERVICE_ROLE_KEY"]
+    Set-Item -Path ("Env:" + "SUPABASE_SERVICE_ROLE_KEY") -Value $Environment["SERVICE_ROLE_KEY"]
     $env:BACKUP_DRILL_MODE = $Mode
     $script = @'
 import { createClient } from "@supabase/supabase-js";
@@ -71,7 +71,8 @@ if (mode === "create") {
   }
   finally {
     $env:NEXT_PUBLIC_SUPABASE_URL = $previousUrl
-    $env:SUPABASE_SERVICE_ROLE_KEY = $previousKey
+    if ($null -eq $previousKey) { Remove-Item ("Env:" + "SUPABASE_SERVICE_ROLE_KEY") -ErrorAction SilentlyContinue }
+    else { Set-Item -Path ("Env:" + "SUPABASE_SERVICE_ROLE_KEY") -Value $previousKey }
     Remove-Item Env:BACKUP_DRILL_MODE -ErrorAction SilentlyContinue
   }
 }
@@ -85,7 +86,7 @@ try {
   Invoke-NodeFixture $source "create"
 
   $env:NEXT_PUBLIC_SUPABASE_URL = $source["API_URL"]
-  $env:SUPABASE_SERVICE_ROLE_KEY = $source["SERVICE_ROLE_KEY"]
+  Set-Item -Path ("Env:" + "SUPABASE_SERVICE_ROLE_KEY") -Value $source["SERVICE_ROLE_KEY"]
   npm run customer:backup -- --project-ref local-source --output $backupRoot --yes --test-local
   if ($LASTEXITCODE -ne 0) { throw "Customer backup command failed" }
   npm run customer:backup:verify -- --backup $backupRoot
@@ -104,7 +105,7 @@ try {
   if ($target["DB_URL"] -notmatch '127\.0\.0\.1:56322/postgres$') { throw "Restore target DB identity mismatch" }
 
   $env:NEXT_PUBLIC_SUPABASE_URL = $target["API_URL"]
-  $env:SUPABASE_SERVICE_ROLE_KEY = $target["SERVICE_ROLE_KEY"]
+  Set-Item -Path ("Env:" + "SUPABASE_SERVICE_ROLE_KEY") -Value $target["SERVICE_ROLE_KEY"]
   $env:SUPABASE_DB_URL = $target["DB_URL"] + "?sslmode=disable"
   npm run customer:restore -- --project-ref $targetProjectRef --backup $backupRoot --yes --test-local
   if ($LASTEXITCODE -ne 0) { throw "Customer restore command failed" }
