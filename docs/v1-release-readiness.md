@@ -1,7 +1,9 @@
 # v1.0 发布就绪结论
 
-更新时间：2026-07-18  
-发布分支：`codex/release-v1-production-readiness`  
+更新时间：2026-07-18
+
+发布分支：`codex/release-v1-production-readiness`
+
 代码基线：`be3205fbe1a7626b9971a1c8f854b0206e7c754c`
 
 ## 结论先行
