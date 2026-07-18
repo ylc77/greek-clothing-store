@@ -65,7 +65,7 @@
     "developer:status": "node --experimental-strip-types scripts/developer-credentials.ts status",
     "check:site": "node scripts/site-smoke-check.js",
     "check:skroutz": "node scripts/site-smoke-check.js --strict-feed",
-    "test:channels-unit": "node --experimental-strip-types --test tests/skroutz-feed.test.ts"
+    "test:channels-unit": "node --experimental-strip-types --test tests/skroutz-feed.test.ts tests/storefront-seo-security.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",
