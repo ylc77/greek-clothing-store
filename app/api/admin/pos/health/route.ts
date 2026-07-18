@@ -36,18 +36,40 @@ export async function GET(request: NextRequest) {
     return blocked("服务端 Supabase 未配置，POS 写入已阻断。", "POS_RPC_UNAVAILABLE");
   }
 
-  const { data, error } = await (supabase as any).rpc("pos_runtime_health_rpc");
-  if (error) {
+  const [{ data, error }, operations, reconciliation] = await Promise.all([
+    (supabase as any).rpc("pos_runtime_health_rpc"),
+    (supabase as any).rpc("operations_runtime_health_rpc"),
+    (supabase as any).rpc("pos_reconciliation_rpc", {
+      p_start: null,
+      p_end: null,
+      p_order_id: null,
+      p_limit: 20,
+      p_offset: 0,
+    }),
+  ]);
+  if (error || operations.error || reconciliation.error) {
     console.error("[POS health] runtime RPC check failed", {
-      message: String(error.message || ""),
-      code: String(error.code || ""),
+      message: String(error?.message || operations.error?.message || reconciliation.error?.message || ""),
+      code: String(error?.code || operations.error?.code || reconciliation.error?.code || ""),
     });
     return blocked("POS 事务 RPC 缺失、无权执行或不可用，POS 写入已阻断。", "POS_RPC_UNAVAILABLE");
   }
 
-  if (data?.ready !== true) {
-    return blocked("POS 事务 RPC 未完整部署或权限不正确，POS 写入已阻断。", "POS_RPC_UNAVAILABLE", data);
+  if (data?.ready !== true || operations.data?.ready !== true) {
+    return blocked("POS 事务、报表、对账或条码 RPC 未完整部署或权限不正确，POS 写入已阻断。", "POS_RPC_UNAVAILABLE", {
+      transaction: data,
+      operations: operations.data,
+    });
   }
 
-  return NextResponse.json({ ready: true, version: data.version, details: data });
+  return NextResponse.json({
+    ready: true,
+    version: data.version,
+    details: {
+      transaction: data,
+      operations: operations.data,
+      reconciliationIssueCount: Number(reconciliation.data?.issue_count || 0),
+      reconciliationSample: reconciliation.data?.items || [],
+    },
+  });
 }

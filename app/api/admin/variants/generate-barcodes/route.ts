@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authorizeAdminRequest } from "@/lib/admin-auth";
+import { adminActorFromContext, authorizeAdminRequest } from "@/lib/admin-auth";
 import { adminAuthorizationFailure } from "@/lib/admin-response";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
 import { generateBarcodesForVariants, VariantBarcodeError } from "@/lib/variant-barcodes";
 
 function barcodeError(error: unknown) {
   if (error instanceof VariantBarcodeError) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
   }
 
   const message = error instanceof Error ? error.message : "Failed to generate variant barcodes.";
@@ -23,12 +23,15 @@ export async function POST(request: NextRequest) {
       variantIds?: unknown;
       mode?: unknown;
       force?: unknown;
+      clientRequestId?: unknown;
     };
 
     const result = await generateBarcodesForVariants({
       variantIds: body.variantIds,
       mode: body.mode || "variant_sku",
       force: body.force === true,
+      clientRequestId: typeof body.clientRequestId === "string" ? body.clientRequestId : "",
+      actor: adminActorFromContext(authorization.context),
     });
 
     return NextResponse.json({
@@ -37,6 +40,7 @@ export async function POST(request: NextRequest) {
       skippedCount: result.skippedCount,
       errors: result.errors,
       updatedVariants: result.updatedVariants,
+      alreadyProcessed: result.alreadyProcessed,
     });
   } catch (error) {
     return barcodeError(error);
