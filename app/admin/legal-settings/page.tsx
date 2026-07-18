@@ -8,6 +8,7 @@ import {
   type LegalProviderKey,
   type LegalSettingsData,
   type LegalSettingsRecord,
+  type LocalizedLegalKey,
 } from "@/lib/legal-settings";
 
 const providerLabels: Record<LegalProviderKey, string> = {
@@ -126,6 +127,16 @@ export default function LegalSettingsPage() {
     setSettings((current) => ({ ...current, [key]: value }));
   }
 
+  function updateLocalized(language: "el" | "en", key: LocalizedLegalKey, value: string) {
+    setSettings((current) => ({
+      ...current,
+      localized: {
+        ...current.localized,
+        [language]: { ...current.localized[language], [key]: value },
+      },
+    }));
+  }
+
   function toggleProvider(key: LegalProviderKey) {
     const enabled = settings.enabledProviders.includes(key);
     update("enabledProviders", enabled ? settings.enabledProviders.filter((item) => item !== key) : [...settings.enabledProviders, key]);
@@ -166,7 +177,8 @@ export default function LegalSettingsPage() {
         <h1 className="mt-3 text-2xl font-black text-ink">法律与商家信息设置</h1>
         <p className="mt-2 text-sm text-stone-500">此页面仅供项目开发者维护，商家后台账号不能进入。</p>
         <form className="mt-6 space-y-4" onSubmit={loginDeveloper}>
-          <input className="input text-center" onChange={(event) => setPassword(event.target.value)} placeholder="开发者设置密码" type="password" value={password} />
+          <label className="sr-only" htmlFor="legal-developer-password">开发者设置密码</label>
+          <input aria-label="开发者设置密码" autoComplete="current-password" className="input text-center" id="legal-developer-password" onChange={(event) => setPassword(event.target.value)} placeholder="开发者设置密码" type="password" value={password} />
           {authError ? <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{authError}</p> : null}
           <button className="admin-button-primary w-full" disabled={busy} type="submit">{busy ? "验证中..." : "开发者登录"}</button>
         </form>
@@ -175,7 +187,7 @@ export default function LegalSettingsPage() {
   }
 
   const input = (key: keyof LegalSettingsData, placeholder = "", type = "text") => <input className="input" onChange={(event) => update(key, event.target.value as never)} placeholder={placeholder} type={type} value={String(settings[key] || "")} />;
-  const area = (key: keyof LegalSettingsData, placeholder = "") => <textarea className="input min-h-28" onChange={(event) => update(key, event.target.value as never)} placeholder={placeholder} value={String(settings[key] || "")} />;
+  const localizedArea = (key: LocalizedLegalKey, label: string, greekPlaceholder = "", englishPlaceholder = "") => <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4"><p className="text-sm font-black text-ink">{label} <span className="text-red-600">*</span></p><div className="mt-3 grid gap-4 md:grid-cols-2"><Field label="希腊语（EL）" required><textarea className="input min-h-28" lang="el" onChange={(event) => updateLocalized("el", key, event.target.value)} placeholder={greekPlaceholder} value={settings.localized.el[key]} /></Field><Field label="英语（EN）" required><textarea className="input min-h-28" lang="en" onChange={(event) => updateLocalized("en", key, event.target.value)} placeholder={englishPlaceholder} value={settings.localized.en[key]} /></Field></div></div>;
 
   return <main className="min-h-screen bg-gradient-to-b from-[#fbfaf6] via-white to-[#f6f1ea] px-3 py-4 sm:px-6 sm:py-8">
     <div className="mx-auto max-w-6xl">
@@ -200,30 +212,31 @@ export default function LegalSettingsPage() {
         </Section>
 
         <Section title="客户隐私与数据负责人" desc="用于说明谁负责订单、配送、退货和联系信息，以及客户如何申请查询、更正或删除资料。">
-          <div className="grid gap-4 md:grid-cols-2"><Field label="数据控制者名称">{input("dataControllerName")}</Field><Field label="数据控制者地址">{input("dataControllerAddress")}</Field><Field label="隐私请求联系邮箱">{input("privacyRequestEmail", "privacy@example.com", "email")}</Field><Field label="更正或删除个人信息申请方式">{area("privacyRequestInstructions")}</Field></div>
+          <div className="grid gap-4 md:grid-cols-2"><Field label="数据控制者名称">{input("dataControllerName")}</Field><Field label="数据控制者地址">{input("dataControllerAddress")}</Field><Field label="隐私请求联系邮箱">{input("privacyRequestEmail", "privacy@example.com", "email")}</Field></div>
+          <div className="mt-4">{localizedArea("privacyRequestInstructions", "更正或删除个人信息申请方式", "Περιγράψτε πώς υποβάλλεται αίτημα απορρήτου.", "Describe how a customer submits a privacy request.")}</div>
         </Section>
 
         <Section title="本店实际使用的服务" desc="只勾选当前确实启用的托管、付款、后台 AI 或统计服务；未勾选的不会显示在前台。">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{legalProviderKeys.map((key) => <label className="flex min-h-12 items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 text-sm font-bold" key={key}><input checked={settings.enabledProviders.includes(key)} onChange={() => toggleProvider(key)} type="checkbox" />{providerLabels[key]}</label>)}</div>
-          <div className="mt-4"><Field label="其他服务商说明">{area("otherProviders", "每行一个服务商及用途；留空则前台不显示。")}</Field></div>
+          <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-4"><p className="text-sm font-black text-ink">其他服务商说明（选填）</p><p className="mt-1 text-xs text-stone-500">每行一个服务商及用途；留空则前台不显示。</p><div className="mt-3 grid gap-4 md:grid-cols-2"><Field label="希腊语（EL）"><textarea className="input min-h-28" lang="el" onChange={(event) => updateLocalized("el", "otherProviders", event.target.value)} value={settings.localized.el.otherProviders} /></Field><Field label="英语（EN）"><textarea className="input min-h-28" lang="en" onChange={(event) => updateLocalized("en", "otherProviders", event.target.value)} value={settings.localized.en.otherProviders} /></Field></div></div>
         </Section>
 
         <Section title="Cookie 设置" desc="非必要分析、监控或广告脚本必须等待用户同意。">
-          <Field label="技术必需 Cookie / 存储说明">{area("essentialStorageDescription")}</Field>
+          {localizedArea("essentialStorageDescription", "技术必需 Cookie / 存储说明")}
           <div className="mt-4 grid gap-3 md:grid-cols-3">{([ ["analyticsEnabled", "分析 Cookie"], ["errorMonitoringEnabled", "错误监控"], ["advertisingEnabled", "广告或追踪"] ] as const).map(([key, label]) => <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white p-4 text-sm font-bold" key={key}><input checked={settings[key]} onChange={(event) => update(key, event.target.checked)} type="checkbox" />{label}已启用</label>)}</div>
           <div className="mt-4 max-w-md"><Field label="Cookie 最后更新时间">{input("cookieLastUpdated", "YYYY-MM-DD", "date")}</Field></div>
         </Section>
 
         <Section title="服装销售、配送与售后条款" desc="这些内容分别显示在 Terms、Shipping、Return 和 Refund 页面。请按本店真实做法填写，不要照抄不适用的承诺。">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="付款方式与扣款说明">{area("paymentTerms", "例如：标价是否含 VAT、何时确认付款、门店是否接受现金或刷卡。")}</Field>
-            <Field label="配送范围、费用与预计时间">{area("shippingPolicy", "例如：配送地区、运费、备货时间、承运商和延误处理方式。")}</Field>
-            <Field label="退货条件与办理步骤">{area("returnPolicy", "例如：商品状态、吊牌和包装要求，以及客户应如何提出退货。")}</Field>
-            <Field label="退款方式与处理时间">{area("refundPolicy", "例如：验收退货后何时原路退款，以及银行处理时间。")}</Field>
-            <Field label="14 天撤回权说明">{area("withdrawalRight", "说明适用范围、起算时间和客户如何通知商家行使撤回权。")}</Field>
-            <Field label="退货收件地址">{area("returnAddress")}</Field>
-            <Field label="退货运费由谁承担">{area("returnShippingResponsibility", "分别说明普通退货与错发、瑕疵商品的运费责任。")}</Field>
-            <Field label="不支持退换的商品">{area("nonReturnableItems", "仅填写法律允许排除的类别，例如已拆封的卫生密封商品或按客户要求定制的商品。")}</Field>
+          <div className="grid gap-4">
+            {localizedArea("paymentTerms", "付款方式与扣款说明")}
+            {localizedArea("shippingPolicy", "配送范围、费用与预计时间")}
+            {localizedArea("returnPolicy", "退货条件与办理步骤")}
+            {localizedArea("refundPolicy", "退款方式与处理时间")}
+            {localizedArea("withdrawalRight", "14 天撤回权说明")}
+            {localizedArea("returnAddress", "退货收件地址")}
+            {localizedArea("returnShippingResponsibility", "退货运费由谁承担")}
+            {localizedArea("nonReturnableItems", "不支持退换的商品")}
           </div>
         </Section>
 

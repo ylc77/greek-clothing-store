@@ -2,6 +2,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { storefrontText, type Language } from "@/lib/i18n";
 import { providerNames } from "@/lib/legal";
+import { localizedLegalText, type LocalizedLegalKey } from "@/lib/legal-localization";
 import { getPublishedLegalSettings, type LegalSettingsData } from "@/lib/legal-settings";
 import type { BusinessSettings } from "@/lib/settings";
 
@@ -14,6 +15,10 @@ const pending = (language: Language) => language === "en"
 
 function text(value: string, language: Language) {
   return storefrontText(value) || pending(language);
+}
+
+function legalText(settings: LegalSettingsData, key: LocalizedLegalKey, language: Language) {
+  return text(localizedLegalText(settings.localized, key, language), language);
 }
 
 function businessDetails(settings: LegalSettingsData, language: Language) {
@@ -37,9 +42,9 @@ function businessDetails(settings: LegalSettingsData, language: Language) {
   return rows.filter(Boolean);
 }
 
-function enabledServices(settings: LegalSettingsData) {
+function enabledServices(settings: LegalSettingsData, language: Language) {
   const services = settings.enabledProviders.map((key) => providerNames[key]);
-  const otherProviders = storefrontText(settings.otherProviders);
+  const otherProviders = storefrontText(localizedLegalText(settings.localized, "otherProviders", language));
   if (otherProviders) services.push(otherProviders);
   return services;
 }
@@ -47,7 +52,7 @@ function enabledServices(settings: LegalSettingsData) {
 function legalCopy(kind: LegalKind, language: Language, settings: LegalSettingsData): { title: string; intro: string; sections: Section[] } {
   const en = language === "en";
   const details = businessDetails(settings, language);
-  const services = enabledServices(settings);
+  const services = enabledServices(settings, language);
   const paymentServices = settings.enabledProviders
     .filter((key) => ["stripe", "viva", "cash", "pos"].includes(key))
     .map((key) => providerNames[key]);
@@ -89,9 +94,15 @@ function legalCopy(kind: LegalKind, language: Language, settings: LegalSettingsD
             ? "Subject to applicable law, you may request access, correction, deletion, restriction or portability of your information, or object to certain processing."
             : "Σύμφωνα με την ισχύουσα νομοθεσία, μπορείτε να ζητήσετε πρόσβαση, διόρθωση, διαγραφή, περιορισμό ή φορητότητα των δεδομένων σας ή να αντιταχθείτε σε ορισμένη επεξεργασία.",
           `${en ? "Privacy contact" : "Επικοινωνία απορρήτου"}: ${text(settings.privacyRequestEmail || settings.contactEmail, language)}`,
-          text(settings.privacyRequestInstructions, language),
+          legalText(settings, "privacyRequestInstructions", language),
         ],
       },
+      ...(settings.enabledProviders.some((provider) => provider === "openai" || provider === "deepseek") ? [{
+        title: en ? "AI shopping assistance" : "Βοήθεια αγορών με τεχνητή νοημοσύνη",
+        paragraphs: [en
+          ? "When you choose to use the AI shopping assistant, the enabled AI provider processes your prompt and a limited product context to answer your request. Optional body measurements are used only for that request and are not stored in PostgreSQL, browser storage, application logs or analytics. The assistant does not make an automated purchasing decision for you."
+          : "Όταν επιλέγετε να χρησιμοποιήσετε τον βοηθό αγορών τεχνητής νοημοσύνης, ο ενεργός πάροχος AI επεξεργάζεται το αίτημά σας και περιορισμένα στοιχεία προϊόντων για να απαντήσει. Οι προαιρετικές σωματικές μετρήσεις χρησιμοποιούνται μόνο για το συγκεκριμένο αίτημα και δεν αποθηκεύονται σε PostgreSQL, στον browser, στα αρχεία καταγραφής της εφαρμογής ή στα analytics. Ο βοηθός δεν λαμβάνει αυτοματοποιημένη απόφαση αγοράς για εσάς."],
+      }] : []),
     ],
   };
 
@@ -111,7 +122,7 @@ function legalCopy(kind: LegalKind, language: Language, settings: LegalSettingsD
       {
         title: en ? "Prices and payment" : "Τιμές και πληρωμή",
         paragraphs: [
-          text(settings.paymentTerms, language),
+          legalText(settings, "paymentTerms", language),
           paymentServices.length
             ? `${en ? "Accepted methods" : "Αποδεκτοί τρόποι"}: ${paymentServices.join(", ")}`
             : pending(language),
@@ -119,11 +130,11 @@ function legalCopy(kind: LegalKind, language: Language, settings: LegalSettingsD
       },
       {
         title: en ? "Delivery" : "Παράδοση",
-        paragraphs: [text(settings.shippingPolicy, language)],
+        paragraphs: [legalText(settings, "shippingPolicy", language)],
       },
       {
         title: en ? "Returns, withdrawal and refunds" : "Επιστροφές, υπαναχώρηση και επιστροφή χρημάτων",
-        paragraphs: [text(settings.returnPolicy, language), text(settings.withdrawalRight, language), text(settings.refundPolicy, language)],
+        paragraphs: [legalText(settings, "returnPolicy", language), legalText(settings, "withdrawalRight", language), legalText(settings, "refundPolicy", language)],
       },
     ],
   };
@@ -137,7 +148,7 @@ function legalCopy(kind: LegalKind, language: Language, settings: LegalSettingsD
       title: en ? "Cookie Policy" : "Πολιτική Cookies",
       intro: en ? "What this store saves in your browser and how you control optional services." : "Τι αποθηκεύει το κατάστημα στον browser σας και πώς ελέγχετε τις προαιρετικές υπηρεσίες.",
       sections: [
-        { title: en ? "Essential storage" : "Απαραίτητη αποθήκευση", paragraphs: [text(settings.essentialStorageDescription, language)] },
+        { title: en ? "Essential storage" : "Απαραίτητη αποθήκευση", paragraphs: [legalText(settings, "essentialStorageDescription", language)] },
         {
           title: en ? "Optional services" : "Προαιρετικές υπηρεσίες",
           paragraphs: optional.length
@@ -153,7 +164,7 @@ function legalCopy(kind: LegalKind, language: Language, settings: LegalSettingsD
     title: en ? "Shipping Policy" : "Πολιτική Αποστολής",
     intro: en ? "Delivery areas, timing, charges and what to do if a parcel has a problem." : "Περιοχές παράδοσης, χρόνοι, χρεώσεις και αντιμετώπιση προβλημάτων αποστολής.",
     sections: [
-      { title: en ? "Shipping and delivery" : "Αποστολή και παράδοση", paragraphs: [text(settings.shippingPolicy, language)] },
+      { title: en ? "Shipping and delivery" : "Αποστολή και παράδοση", paragraphs: [legalText(settings, "shippingPolicy", language)] },
       { title: en ? "Delivery details" : "Στοιχεία παράδοσης", paragraphs: [en ? "Please provide a complete and accurate delivery address and contact number. Contact the store promptly if you notice an error or if a parcel arrives visibly damaged." : "Παρακαλούμε δώστε πλήρη και σωστή διεύθυνση παράδοσης και τηλέφωνο. Επικοινωνήστε άμεσα με το κατάστημα αν εντοπίσετε λάθος ή αν το δέμα φτάσει εμφανώς κατεστραμμένο."] },
       { title: en ? "Contact" : "Επικοινωνία", paragraphs: [`${text(settings.contactEmail, language)} · ${text(settings.phone, language)}`] },
     ],
@@ -163,11 +174,11 @@ function legalCopy(kind: LegalKind, language: Language, settings: LegalSettingsD
     title: en ? "Return Policy" : "Πολιτική Επιστροφών",
     intro: en ? "How to return clothing or accessories and which items may be excluded." : "Πώς επιστρέφονται ενδύματα ή αξεσουάρ και ποια είδη μπορεί να εξαιρούνται.",
     sections: [
-      { title: en ? "Return conditions" : "Προϋποθέσεις επιστροφής", paragraphs: [text(settings.returnPolicy, language)] },
-      { title: en ? "14-day withdrawal right" : "Δικαίωμα υπαναχώρησης 14 ημερών", paragraphs: [text(settings.withdrawalRight, language)] },
-      { title: en ? "Return address" : "Διεύθυνση επιστροφής", paragraphs: [text(settings.returnAddress, language)] },
-      { title: en ? "Return shipping costs" : "Έξοδα επιστροφής", paragraphs: [text(settings.returnShippingResponsibility, language)] },
-      { title: en ? "Items excluded from return" : "Είδη που εξαιρούνται", paragraphs: [text(settings.nonReturnableItems, language)] },
+      { title: en ? "Return conditions" : "Προϋποθέσεις επιστροφής", paragraphs: [legalText(settings, "returnPolicy", language)] },
+      { title: en ? "14-day withdrawal right" : "Δικαίωμα υπαναχώρησης 14 ημερών", paragraphs: [legalText(settings, "withdrawalRight", language)] },
+      { title: en ? "Return address" : "Διεύθυνση επιστροφής", paragraphs: [legalText(settings, "returnAddress", language)] },
+      { title: en ? "Return shipping costs" : "Έξοδα επιστροφής", paragraphs: [legalText(settings, "returnShippingResponsibility", language)] },
+      { title: en ? "Items excluded from return" : "Είδη που εξαιρούνται", paragraphs: [legalText(settings, "nonReturnableItems", language)] },
     ],
   };
 
@@ -175,7 +186,7 @@ function legalCopy(kind: LegalKind, language: Language, settings: LegalSettingsD
     title: en ? "Refund Policy" : "Πολιτική Επιστροφής Χρημάτων",
     intro: en ? "When and how an approved clothing return is refunded." : "Πότε και πώς επιστρέφονται χρήματα για εγκεκριμένη επιστροφή προϊόντος.",
     sections: [
-      { title: en ? "Refund conditions and timing" : "Προϋποθέσεις και χρόνος επιστροφής χρημάτων", paragraphs: [text(settings.refundPolicy, language)] },
+      { title: en ? "Refund conditions and timing" : "Προϋποθέσεις και χρόνος επιστροφής χρημάτων", paragraphs: [legalText(settings, "refundPolicy", language)] },
       { title: en ? "Original payment method" : "Αρχικός τρόπος πληρωμής", paragraphs: [en ? "Unless otherwise agreed or required by law, an approved refund is made to the original payment method. Bank or payment-provider processing times may apply." : "Εκτός αν συμφωνηθεί διαφορετικά ή απαιτείται από τον νόμο, η εγκεκριμένη επιστροφή χρημάτων γίνεται στον αρχικό τρόπο πληρωμής. Ενδέχεται να ισχύουν χρόνοι επεξεργασίας τράπεζας ή παρόχου πληρωμών."] },
       { title: en ? "Need help?" : "Χρειάζεστε βοήθεια;", paragraphs: [`${text(settings.contactEmail, language)} · ${text(settings.phone, language)}`] },
     ],

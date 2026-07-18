@@ -728,7 +728,7 @@ function imageQualityIssue(product: AdminProduct) {
   const width = Number(raw.image_width) || 0;
   const height = Number(raw.image_height) || 0;
   if (!width && !height) return "未记录图片尺寸";
-  if (width < 1000 && height < 1000) return `图片尺寸不足 ${width}×${height}`;
+  if (width <= 1000 && height <= 1000) return `图片尺寸不足 ${width}×${height}`;
   return "";
 }
 function productIssues(product: AdminProduct) {
@@ -771,7 +771,7 @@ function ProductStatusBadges({ product, showSkroutz, showAi }: { product: AdminP
   const width = Number(raw.image_width) || 0;
   const height = Number(raw.image_height) || 0;
   const hasImage = Boolean(product.image_url?.trim());
-  const skroutzImageIssue = showSkroutz && hasImage && width < 1000 && height < 1000;
+  const skroutzImageIssue = showSkroutz && hasImage && width <= 1000 && height <= 1000;
 
   const hasName = Boolean(product.name_en?.trim() || product.name_gr?.trim());
   const hasPrice = Number(product.price) > 0;
@@ -794,7 +794,7 @@ function ProductStatusBadges({ product, showSkroutz, showAi }: { product: AdminP
         {product.is_active ? "上架" : "下架"}
       </span>
       {skroutzImageIssue ? (
-        <span className="inline-block rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700" title={`主图 ${width}×${height} 不满足 Skroutz 最低要求（至少一边 ≥ 1000px）`}>
+        <span className="inline-block rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700" title={`主图 ${width}×${height} 不满足 Skroutz 最低要求（至少一边 > 1000px）`}>
           Skroutz 图片不符
         </span>
       ) : null}
@@ -3790,16 +3790,18 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <form className="mt-6 space-y-4" onSubmit={handleLogin}>
             {loginError ? <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-bold text-red-600">{loginError}</p> : null}
             {initialFeatures.staff_accounts ? <div className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-1">
-              <button className={`rounded-xl px-3 py-2 text-xs font-black ${loginMode === "account" ? "bg-white text-ink shadow-sm" : "text-stone-500"}`} onClick={() => setLoginMode("account")} type="button">员工账号</button>
-              <button className={`rounded-xl px-3 py-2 text-xs font-black ${loginMode === "password" ? "bg-white text-ink shadow-sm" : "text-stone-500"}`} onClick={() => setLoginMode("password")} type="button">应急密码</button>
+              <button className={`rounded-xl px-3 py-2 text-xs font-black ${loginMode === "account" ? "bg-white text-ink shadow-sm" : "text-stone-700"}`} onClick={() => setLoginMode("account")} type="button">员工账号</button>
+              <button className={`rounded-xl px-3 py-2 text-xs font-black ${loginMode === "password" ? "bg-white text-ink shadow-sm" : "text-stone-700"}`} onClick={() => setLoginMode("password")} type="button">应急密码</button>
             </div> : <p className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-bold leading-5 text-stone-500">当前客户版本未启用员工账号，请使用 owner 应急密码。</p>}
             {initialFeatures.staff_accounts && loginMode === "account" ? (
               <>
-                <input className="input text-center" onChange={e => setLoginEmail(e.target.value)} type="email" value={loginEmail} placeholder="员工邮箱" />
-                <input className="input text-center" onChange={e => setAccountPassword(e.target.value)} type="password" value={accountPassword} placeholder="账号密码" />
+                <label className="sr-only" htmlFor="admin-login-email">员工邮箱</label>
+                <input aria-label="员工邮箱" autoComplete="username" className="input text-center" id="admin-login-email" onChange={e => setLoginEmail(e.target.value)} type="email" value={loginEmail} placeholder="员工邮箱" />
+                <label className="sr-only" htmlFor="admin-account-password">账号密码</label>
+                <input aria-label="账号密码" autoComplete="current-password" className="input text-center" id="admin-account-password" onChange={e => setAccountPassword(e.target.value)} type="password" value={accountPassword} placeholder="账号密码" />
               </>
             ) : (
-              <input className="input text-center" onChange={e => setPassword(e.target.value)} type="password" value={password} placeholder="管理员应急密码" />
+              <><label className="sr-only" htmlFor="admin-emergency-password">管理员应急密码</label><input aria-label="管理员应急密码" autoComplete="current-password" className="input text-center" id="admin-emergency-password" onChange={e => setPassword(e.target.value)} type="password" value={password} placeholder="管理员应急密码" /></>
             )}
             <button className="w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50" disabled={loginLoading}>
               {loginLoading ? "登录中..." : "登录"}
@@ -6095,7 +6097,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="mb-4 rounded-lg border border-stone-200 bg-stone-50 p-4">
                   <h3 className="text-sm font-black text-ink">上传图片到当前商品</h3>
                   <p className="mt-1 text-xs text-stone-500">直接上传主图或多图，自动写入商品字段。</p>
-                  {adminFeatures.skroutz_feed ? <p className="mt-1 text-[10px] text-amber-700">Skroutz 要求图片至少一边 ≥ 1000px，建议 1200×1200 以上。</p> : null}
+                  {adminFeatures.skroutz_feed ? <p className="mt-1 text-[10px] text-amber-700">Skroutz 要求图片至少一边大于 1000px，建议 1200×1200 以上。</p> : null}
                   <div className="mt-3 flex flex-wrap gap-2">
                     <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">
                       上传主图
@@ -6147,10 +6149,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="grid gap-3 border-t border-stone-100 p-4 md:grid-cols-2 lg:grid-cols-4">
                   <Field label="主图 URL"><input className="input" data-admin-field="image_url" value={form.image_url} onChange={e => updateField("image_url", e.target.value)} /></Field>
                   {adminFeatures.skroutz_feed ? <Field label="Skroutz URL"><input className="input" placeholder="https://www.skroutz.gr/..." value={form.skroutz_url} onChange={e => updateField("skroutz_url", e.target.value)} /></Field> : null}
-                  <Field label="品牌（可选）"><input className="input" value={form.brand} onChange={e => updateField("brand", e.target.value)} placeholder="如无可留空" /></Field>
+                  <Field label={adminFeatures.skroutz_feed ? "品牌（一般上架选填；进入 Skroutz 必填）" : "品牌（可选）"}><input className="input" value={form.brand} onChange={e => updateField("brand", e.target.value)} placeholder={adminFeatures.skroutz_feed ? "没有真实品牌则不会进入 Feed" : "如无可留空"} /></Field>
                   <Field label="内部条码（可选）"><input className="input" value={form.barcode} onChange={e => updateField("barcode", e.target.value)} placeholder="门店扫码使用，不自动当作 EAN" /></Field>
-                  {adminFeatures.skroutz_feed ? <Field label="真实 EAN（Skroutz 选填）"><input className="input" inputMode="numeric" value={form.ean} onChange={e => updateField("ean", e.target.value)} placeholder="商品真实 EAN，没有可留空" /></Field> : null}
-                  {adminFeatures.skroutz_feed ? <Field label="制造商 MPN（Skroutz 选填）"><input className="input" value={form.mpn} onChange={e => updateField("mpn", e.target.value)} placeholder="没有可留空；缺失时不进入 Feed" /></Field> : null}
+                  {adminFeatures.skroutz_feed ? <Field label="真实 EAN（进入 Skroutz 必填）"><input className="input" inputMode="numeric" value={form.ean} onChange={e => updateField("ean", e.target.value)} placeholder="8 或 13 位真实 EAN；缺失时不进入 Feed" /></Field> : null}
+                  {adminFeatures.skroutz_feed ? <Field label="制造商 MPN（进入 Skroutz 必填）"><input className="input" value={form.mpn} onChange={e => updateField("mpn", e.target.value)} placeholder="真实制造商编号；缺失时不进入 Feed" /></Field> : null}
                   <Field label="VAT"><input className="input" min="0" step="0.01" type="number" value={form.vat} onChange={e => updateField("vat", Number(e.target.value))} /></Field>
                   <Field label="颜色（选填）"><input className="input" value={form.color} onChange={e => updateField("color", e.target.value)} placeholder="black / red / blue，可留空" /></Field>
                   <div className="md:col-span-2 lg:col-span-4"><Field label="多图 URL（一行一个，可用逗号分隔）"><textarea className="input min-h-24" value={form.image_urls} onChange={e => updateField("image_urls", e.target.value)} /></Field></div>
@@ -6275,7 +6277,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <section className="flex flex-col gap-5">
             <div className="admin-panel">
               <h2 className="mb-1 text-lg font-black text-ink">选择商品上传</h2>
-              <p className="mb-3 text-xs text-stone-500">用分类和搜索筛选商品，再上传主图或多图。{adminFeatures.skroutz_feed ? "Skroutz 建议图片最长边 1000-1600px。" : "建议使用清晰、比例一致的商品图片。"}</p>
+              <p className="mb-3 text-xs text-stone-500">用分类和搜索筛选商品，再上传主图或多图。{adminFeatures.skroutz_feed ? "Skroutz 要求图片最长边大于 1000px，建议 1200-1600px。" : "建议使用清晰、比例一致的商品图片。"}</p>
               <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 <input className="input" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
                 <select className="input" data-admin-category-filter value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部一级分类</option>{adminCategoryOptions.map(category => <option key={String(category.slug)} value={String(category.slug)}>{categoryOptionLabel(category)}</option>)}</select>

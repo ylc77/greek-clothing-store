@@ -16,6 +16,7 @@ env:
   CI: "true"
   NEXT_TELEMETRY_DISABLED: "1"
   SUPABASE_TELEMETRY_DISABLED: "1"
+  USE_POS_RPC: "true"
   USE_PRODUCT_RPC: "true"
   USE_CSV_IMPORT_RPC: "true"
 
@@ -26,12 +27,12 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -58,6 +59,7 @@ jobs:
           npm run check:public-data-static
           npm run check:storage-static
           npm run check:ai-auth-static
+          npm run check:channels-static
 
       - name: Regenerate client snapshot and require zero drift
         run: |
@@ -89,7 +91,7 @@ jobs:
 
       - name: Upload dependency audit report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: npm-audit-report
           path: ${{ runner.temp }}/npm-audit.json
@@ -102,9 +104,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -118,17 +120,18 @@ jobs:
           npm run test:public-data-unit
           npm run test:storage-unit
           npm run test:ai-auth-unit
+          npm run test:channels-unit
 
   local-supabase-integration:
     name: Local Supabase integration and security
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -162,6 +165,7 @@ jobs:
           npm run test:public-data-integration
           npm run test:storage-integration
           npm run test:ai-auth-integration
+          npm run test:legal-publish-integration
 
       - name: Verify RPC grants, RLS, and SECURITY DEFINER search paths
         run: |
@@ -174,6 +178,51 @@ jobs:
 
       - name: Run local database advisors
         run: supabase db advisors --local
+
+      - name: Install Chromium for channel browser gates
+        run: npx playwright install --with-deps chromium
+
+      - name: Run localized SEO, legal, security-header, and accessibility browser gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          eval "$(supabase status -o env 2>/dev/null)"
+          export NEXT_PUBLIC_SUPABASE_URL="$API_URL"
+          export NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON_KEY"
+          export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
+          export NEXT_PUBLIC_SITE_URL="http://127.0.0.1:3010"
+          export BASE_URL="$NEXT_PUBLIC_SITE_URL"
+          export USE_POS_RPC="true"
+          export USE_PRODUCT_RPC="true"
+          export USE_CSV_IMPORT_RPC="true"
+          export AUTH_RATE_LIMIT_SECRET="$(openssl rand -hex 32)"
+          export ADMIN_PASSWORD="CiOwner!A1$(openssl rand -hex 24)"
+          export ADMIN_STAFF_PASSWORD="CiStaff!A1$(openssl rand -hex 24)"
+          export ADMIN_INVENTORY_PASSWORD="CiInventory!A1$(openssl rand -hex 24)"
+          export ADMIN_READONLY_PASSWORD="CiReadonly!A1$(openssl rand -hex 24)"
+          npm run build
+          npm run start -- -p 3010 > "$RUNNER_TEMP/channels-next.log" 2>&1 &
+          SERVER_PID=$!
+          cleanup() {
+            kill "$SERVER_PID" >/dev/null 2>&1 || true
+            rm -f "$RUNNER_TEMP/channels-next.log"
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent --show-error "http://127.0.0.1:3010/" >/dev/null; then
+              break
+            fi
+            if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+              echo "::error::Next.js exited before browser verification. Runtime log is intentionally not uploaded."
+              exit 1
+            fi
+            if [ "$attempt" -eq 45 ]; then
+              echo "::error::Next.js did not become ready before browser verification."
+              exit 1
+            fi
+            sleep 1
+          done
+          npm run test:channels-browser
 
       - name: Verify reconciliation and test cleanup
         shell: bash
@@ -198,9 +247,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -222,3 +271,4 @@ jobs:
           npm run check:public-data-static
           npm run check:storage-static
           npm run check:ai-auth-static
+          npm run check:channels-static

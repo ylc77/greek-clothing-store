@@ -21,6 +21,7 @@ import { getFeatureSettings } from "@/lib/features";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 import { serializeJsonForHtmlScript } from "@/lib/serialize-json-for-html-script";
+import { buildLanguageAlternates } from "@/lib/storefront-seo";
 
 type ProductPageProps = {
   params: Promise<{ sku: string }>;
@@ -62,11 +63,17 @@ export async function generateMetadata({
   const title = `${productName(product, language)} | ${settings.business_name}`;
   const description =
     productDescription(product, language) || productName(product, language);
-  const url = `${siteUrl()}/product/${encodeURIComponent(product.sku)}`;
+  const alternates = buildLanguageAlternates(
+    `/product/${encodeURIComponent(product.sku)}`,
+    language,
+    {},
+    siteUrl(),
+  );
+  const url = alternates.canonical;
   return {
     title,
     description,
-    alternates: { canonical: url },
+    alternates,
     openGraph: {
       title,
       description,
@@ -274,7 +281,7 @@ export default async function ProductPage({
             </div>
 
             {/* Purchase note */}
-            <p className="mt-4 text-xs leading-relaxed text-stone-400">
+            <p className="mt-4 text-xs leading-relaxed text-stone-600">
               {featureSettings.features.skroutz_feed && settings.enable_skroutz ? t.purchaseNote : t.purchaseContactNote}
             </p>
 
@@ -285,7 +292,7 @@ export default async function ProductPage({
                 <div className="mt-3 grid gap-2 sm:grid-cols-2 sm:gap-x-4">
                   {detailItems.map((d) => (
                     <p key={d.label} className="flex items-start justify-between gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs sm:bg-transparent sm:px-0 sm:py-0 sm:text-sm">
-                      <span className="shrink-0 text-stone-400">{d.label}</span>
+                      <span className="shrink-0 text-stone-600">{d.label}</span>
                       <span className="min-w-0 [overflow-wrap:anywhere] text-right font-bold text-stone-700">{d.value}</span>
                     </p>
                   ))}
@@ -312,7 +319,12 @@ export default async function ProductPage({
               price: Number(product.price).toFixed(2),
               priceCurrency: "EUR",
               availability: stockQty > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
-              url: `${siteUrl()}/product/${encodeURIComponent(product.sku)}`,
+              url: buildLanguageAlternates(
+                `/product/${encodeURIComponent(product.sku)}`,
+                language,
+                {},
+                siteUrl(),
+              ).canonical,
             },
             brand: product.brand ? { "@type": "Brand", name: product.brand.trim() } : undefined,
           }),

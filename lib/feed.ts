@@ -1,175 +1,123 @@
-/**
- * Skroutz / MyWebstore Feed generator — reusable utilities.
- *
- * Usage:
- *   const products = await getFeedProducts();
- *   const xml = buildSkroutzFeed(products, brandName);
- *
- * To add a new feed format (Google, Meta, BestPrice), add a new
- * buildXxxFeed() function here and create a new route.ts.
- */
-
-import { getSupabaseClient } from "@/lib/supabase";
-import { getTotalStock } from "@/lib/product-stock";
-import type { Product, ProductCategory, ProductSubcategory } from "@/lib/types";
-import { siteUrl } from "@/lib/site";
 import { unstable_cache } from "next/cache";
+
 import { cacheTags } from "@/lib/cache-tags";
-import { normalizeSkroutzSizes, skroutzReadinessIssues } from "@/lib/skroutz-readiness";
 import { SKROUTZ_PRODUCT_SELECT } from "@/lib/product-data-boundary";
+import {
+  assembleSkroutzFeedProducts,
+  buildSkroutzFeed,
+  type SkroutzBalanceRow,
+  type SkroutzProductRow,
+  type SkroutzVariantRow,
+} from "@/lib/skroutz-feed";
+import { siteUrl } from "@/lib/site";
+import { getSupabaseAdminClient } from "@/lib/supabase";
+import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 
-/* ── Category paths (English, used in Skroutz feed) ─────────── */
-export const categoryPathEn: Record<ProductCategory, string> = {
-  men: "Men", women: "Women", shoes: "Shoes", bags: "Bags",
-  luggage: "Luggage", hats: "Hats", jewelry: "Jewelry", other: "Other",
-};
+export { buildSkroutzFeed } from "@/lib/skroutz-feed";
+export type { SkroutzFeedProduct } from "@/lib/skroutz-feed";
 
-export const subcategoryPathEn: Partial<Record<ProductSubcategory, string>> = {
-  tshirts: "T-Shirts", shirts: "Shirts", hoodies: "Hoodies", jackets: "Jackets",
-  trousers: "Trousers", jeans: "Jeans", shorts: "Shorts", dresses: "Dresses",
-  tops: "Tops", skirts: "Skirts", sneakers: "Sneakers", boots: "Boots",
-  sandals: "Sandals", heels: "Heels", handbags: "Handbags", backpacks: "Backpacks",
-  wallets: "Wallets", suitcases: "Suitcases", travel_bags: "Travel Bags",
-  caps: "Caps", beanies: "Beanies", necklaces: "Necklaces", bracelets: "Bracelets",
-  earrings: "Earrings", rings: "Rings", accessories: "Accessories",
-};
-
-/* ── XML helpers ────────────────────────────────────────────── */
-export function xmlEscape(value: string | number | null | undefined) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-export function opt(tag: string, value?: string | number | null) {
-  if (value === null || value === undefined || value === "") return "";
-  return `      <${tag}>${xmlEscape(value)}</${tag}>\n`;
-}
-
-export function formatPrice(value: number | string | null | undefined, fallback = 0) {
-  const n = Number(value ?? fallback);
-  return Number.isFinite(n) ? n.toFixed(2) : fallback.toFixed(2);
-}
-
-/* ── Product helpers ───────────────────────────────────────── */
-export function productUrl(product: Product) {
-  return `${siteUrl()}/product/${encodeURIComponent(product.sku)}`;
-}
-
-export function feedName(product: Product) {
-  return product.name_gr || product.name_en || product.sku;
-}
-
-export function feedDescription(product: Product) {
-  return product.description_gr || product.description_en || feedName(product);
-}
-
-export function feedCategory(product: Product) {
-  if (product.category_path_en?.trim()) return product.category_path_en.trim();
-  const base = categoryPathEn[product.category] || product.category;
-  const sub = product.subcategory ? subcategoryPathEn[product.subcategory] || product.subcategory : "";
-  return sub ? `${base} > ${sub}` : base;
-}
-
-/** All additional image URLs, deduplicated, excluding main image */
-export function getProductImages(product: Product): string[] {
-  const fromUrls: string[] = Array.isArray(product.image_urls)
-    ? product.image_urls.filter((u): u is string => typeof u === "string" && u.trim().length > 0)
-    : [];
-  const fromExtra = (product.additional_image_urls || "")
-    .split(/[\r\n,]+/)
-    .map(u => u.trim())
-    .filter(Boolean);
-  return Array.from(new Set([...fromUrls, ...fromExtra])).filter(u => u !== product.image_url);
-}
-
-function isAbsoluteHttpUrl(value: string | null | undefined) {
-  if (!value) return false;
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === "https:" || url.protocol === "http:";
-  } catch {
-    return false;
+export class SkroutzFeedUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SkroutzFeedUnavailableError";
   }
 }
 
-/* ── Data fetching ─────────────────────────────────────────── */
-async function getFeedProductsRaw(): Promise<Product[]> {
-  const supabase = getSupabaseClient();
-  if (!supabase) return [];
-  const { data } = await supabase
-    .from("products")
-    .select(SKROUTZ_PRODUCT_SELECT)
-    .or("is_active.is.null,is_active.eq.true")
-    .gte("stock", 0)
-    .order("created_at", { ascending: false });
-  const products = (data || []) as unknown as Product[];
-  return products.filter(p => {
-    const sku = p.sku.trim().toUpperCase();
-    return !(
-      sku === "TEST" ||
-      sku.startsWith("TEST-") ||
-      sku.startsWith("TEST_") ||
-      sku === "DEMO" ||
-      sku.startsWith("DEMO-") ||
-      sku.startsWith("DEMO_")
-    );
+type BalanceQueryRow = {
+  variant_id: string;
+  quantity_on_hand: number | string;
+  quantity_reserved: number | string;
+  inventory_locations: { code?: string } | Array<{ code?: string }> | null;
+};
+
+function locationCode(row: BalanceQueryRow) {
+  const location = Array.isArray(row.inventory_locations)
+    ? row.inventory_locations[0]
+    : row.inventory_locations;
+  return typeof location?.code === "string" ? location.code : "";
+}
+
+async function getFeedProductsRaw(
+  minStock = 1,
+  fallbackBrand = "Fashion Boutique",
+  baseUrl = siteUrl(),
+) {
+  const supabase = getSupabaseAdminClient();
+  if (!supabase) {
+    throw new SkroutzFeedUnavailableError("Server-side Supabase credentials are unavailable.");
+  }
+
+  const productsResult = await fetchAllSupabaseRows<SkroutzProductRow>(async (from, to) => {
+    const result = await (supabase as any)
+      .from("products")
+      .select(SKROUTZ_PRODUCT_SELECT)
+      .or("is_active.is.null,is_active.eq.true")
+      .order("id", { ascending: true })
+      .range(from, to);
+    return result;
   });
+  if (productsResult.error) {
+    throw new SkroutzFeedUnavailableError(`Product query failed: ${productsResult.error.message || "unknown error"}`);
+  }
+
+  const variantsResult = await fetchAllSupabaseRows<SkroutzVariantRow>(async (from, to) => {
+    const result = await (supabase as any)
+      .from("product_variants")
+      .select("id,product_id,variant_sku,barcode,size,color,price,active")
+      .eq("active", true)
+      .order("id", { ascending: true })
+      .range(from, to);
+    return result;
+  });
+  if (variantsResult.error) {
+    throw new SkroutzFeedUnavailableError(`Variant query failed: ${variantsResult.error.message || "unknown error"}`);
+  }
+
+  const balancesResult = await fetchAllSupabaseRows<BalanceQueryRow>(async (from, to) => {
+    const result = await (supabase as any)
+      .from("inventory_balances")
+      .select("variant_id,quantity_on_hand,quantity_reserved,inventory_locations!inner(code)")
+      .eq("inventory_locations.code", "MAIN_STORE")
+      .order("variant_id", { ascending: true })
+      .range(from, to);
+    return result;
+  });
+  if (balancesResult.error) {
+    throw new SkroutzFeedUnavailableError(`Inventory query failed: ${balancesResult.error.message || "unknown error"}`);
+  }
+
+  const balances: SkroutzBalanceRow[] = (balancesResult.data || []).map((row) => ({
+    variant_id: row.variant_id,
+    location_code: locationCode(row),
+    quantity_on_hand: row.quantity_on_hand,
+    quantity_reserved: row.quantity_reserved,
+  }));
+
+  return assembleSkroutzFeedProducts(
+    productsResult.data || [],
+    variantsResult.data || [],
+    balances,
+    minStock,
+    baseUrl,
+    fallbackBrand,
+  );
 }
 
 const getFeedProductsCached = unstable_cache(
   getFeedProductsRaw,
-  ["feed-products"],
+  ["skroutz-feed-products-v2"],
   { revalidate: 300, tags: [cacheTags.products] },
 );
 
-export async function getFeedProducts(): Promise<Product[]> {
-  return getFeedProductsCached();
+export async function getFeedProducts(minStock = 1, fallbackBrand = "Fashion Boutique") {
+  // The site origin is part of the cached function arguments so a domain or
+  // Preview alias change cannot reuse feed rows containing stale product URLs.
+  return getFeedProductsCached(minStock, fallbackBrand, siteUrl());
 }
 
-/* ── Feed builder: Skroutz / MyWebstore ───────────────────── */
-export function buildSkroutzFeed(products: Product[], brandName: string, minStock = 1): string {
-  const requiredStock = Math.max(1, Math.trunc(Number(minStock) || 1));
-  const eligibleProducts = products.filter(product => skroutzReadinessIssues(product, requiredStock).length === 0);
-
-  const rows = eligibleProducts.map(product => {
-    const stockQty = getTotalStock(product);
-    const image = product.image_url?.trim() || "";
-    const imageTag = `      <image>${xmlEscape(image)}</image>\n`;
-    const extras = getProductImages(product).slice(0, 15)
-      .filter(isAbsoluteHttpUrl)
-      .map(u => `      <additional_imageurl>${xmlEscape(u)}</additional_imageurl>`)
-      .join("\n");
-    const mpn = product.mpn?.trim() || "";
-    const ean = product.ean?.trim() || "";
-    const availability = product.availability?.trim() || "In stock";
-
-    return `    <product>
-      <id>${xmlEscape(product.sku)}</id>
-      <uid>${xmlEscape(product.sku)}</uid>
-      <name>${xmlEscape(feedName(product))}</name>
-      <link>${xmlEscape(productUrl(product))}</link>
-${imageTag}      <category>${xmlEscape(feedCategory(product))}</category>
-      <price_with_vat>${xmlEscape(formatPrice(product.price))}</price_with_vat>
-      <price>${xmlEscape(formatPrice(product.price))}</price>
-      <vat>${xmlEscape(formatPrice(product.vat, 24))}</vat>
-      <instock>${stockQty > 0 ? "Y" : "N"}</instock>
-      <availability>${xmlEscape(availability)}</availability>
-      <manufacturer>${xmlEscape(product.brand || brandName)}</manufacturer>
-      <mpn>${xmlEscape(mpn)}</mpn>
-${opt("ean", ean)}${opt("size", normalizeSkroutzSizes(product.sizes))}${opt("color", product.color)}${opt("country_of_origin", product.country_of_origin)}      <quantity>${Math.max(0, Math.trunc(stockQty))}</quantity>
-      <description>${xmlEscape(feedDescription(product))}</description>
-${extras ? `${extras}\n` : ""}    </product>`;
-  }).join("\n");
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<mywebstore>
-  <created_at>${new Date().toISOString()}</created_at>
-  <products>
-${rows}
-  </products>
-</mywebstore>`;
+export function renderSkroutzFeed(
+  products: Awaited<ReturnType<typeof getFeedProducts>>,
+  brandName: string,
+) {
+  return buildSkroutzFeed(products, brandName);
 }

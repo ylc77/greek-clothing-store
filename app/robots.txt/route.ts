@@ -5,6 +5,8 @@ export const dynamic = "force-dynamic";
 export function GET() {
   const body = `User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /api/admin
 Sitemap: ${siteUrl()}/sitemap.xml
 `;
 

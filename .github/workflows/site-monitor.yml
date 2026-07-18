@@ -13,12 +13,13 @@ jobs:
     env:
       BASE_URL: ${{ vars.BASE_URL || 'https://greek-clothing-store.vercel.app' }}
       FEED_SAMPLE_LIMIT: "10"
+      STRICT_FEED: "true"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -34,7 +35,7 @@ jobs:
 
       - name: Upload monitor report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: site-monitor-report
           path: automation-reports/

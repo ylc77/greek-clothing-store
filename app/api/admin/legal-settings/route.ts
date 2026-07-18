@@ -57,45 +57,21 @@ export async function POST(request: NextRequest) {
   const errors = validateLegalSettings(settings);
   if (errors.length > 0) return NextResponse.json({ error: "法律信息未完成，不能发布。", errors }, { status: 400 });
 
-  const { data: latest, error: latestError } = await (supabase as any)
-    .from("legal_settings_versions")
-    .select("version_number")
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (latestError) return NextResponse.json({ error: "无法读取法律版本记录。" }, { status: 500 });
-
-  const versionNumber = Number(latest?.version_number || 0) + 1;
-  const versionLabel = `v${versionNumber}`;
-  const publishedAt = new Date().toISOString();
-  const publishedBy = "developer";
-
-  const { data: version, error: versionError } = await (supabase as any)
-    .from("legal_settings_versions")
-    .insert({ version_number: versionNumber, version_label: versionLabel, snapshot: settings, is_current: false, published_at: publishedAt, published_by: publishedBy })
-    .select("id")
-    .single();
-  if (versionError || !version) {
-    console.error("Failed to create legal settings version", versionError);
-    return NextResponse.json({ error: "发布失败，无法生成新版本。请重试。" }, { status: 409 });
+  const { data: published, error: publishError } = await (supabase as any).rpc(
+    "legal_settings_publish_rpc",
+    { p_settings: settings, p_published_by: "developer" },
+  );
+  const versionLabel = typeof published?.version_label === "string" ? published.version_label : "";
+  if (publishError || !versionLabel) {
+    console.error("Transactional legal settings publish unavailable", {
+      code: publishError?.code,
+      message: publishError?.message,
+    });
+    return NextResponse.json(
+      { error: "法律配置事务发布不可用，请确认最新 migration 已执行后重试。", code: "LEGAL_PUBLISH_UNAVAILABLE" },
+      { status: 503 },
+    );
   }
-
-  const { error: clearError } = await (supabase as any).from("legal_settings_versions").update({ is_current: false }).eq("is_current", true);
-  if (clearError) return NextResponse.json({ error: "版本已创建，但无法切换当前版本。" }, { status: 500 });
-  const { error: currentError } = await (supabase as any).from("legal_settings_versions").update({ is_current: true }).eq("id", version.id);
-  if (currentError) return NextResponse.json({ error: "版本已创建，但无法设为当前版本。" }, { status: 500 });
-
-  const { error: settingsError } = await (supabase as any).from("legal_settings").upsert({
-    id: 1,
-    draft: settings,
-    is_complete: true,
-    current_version_number: versionNumber,
-    published_at: publishedAt,
-    published_by: publishedBy,
-    updated_by: publishedBy,
-    updated_at: publishedAt,
-  }, { onConflict: "id" });
-  if (settingsError) return NextResponse.json({ error: "版本已发布，但草稿状态同步失败。" }, { status: 500 });
 
   refreshLegalPages();
   return NextResponse.json({ ok: true, version: versionLabel, record: await getAdminLegalSettings() });

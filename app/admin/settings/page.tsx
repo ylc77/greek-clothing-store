@@ -288,8 +288,12 @@ export default function AdminSettingsPage() {
             此页面仅供项目开发者维护，商家后台账号不能进入。
           </p>
           <form className="mt-6 space-y-4" onSubmit={loginDeveloper}>
+            <label className="sr-only" htmlFor="settings-developer-password">开发者设置密码</label>
             <input
+              aria-label="开发者设置密码"
+              autoComplete="current-password"
               className="input text-center"
+              id="settings-developer-password"
               onChange={(event) => setPassword(event.target.value)}
               placeholder="开发者设置密码"
               type="password"

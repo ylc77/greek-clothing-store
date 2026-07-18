@@ -10,6 +10,7 @@ import { getCategoryImages, getLatestProducts } from "@/lib/products";
 import { getFeatureSettings } from "@/lib/features";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
+import { buildLanguageAlternates } from "@/lib/storefront-seo";
 import { categories } from "@/lib/types";
 
 type HomePageProps = {
@@ -28,12 +29,13 @@ export async function generateMetadata({
       language === "en"
         ? settings.description_en
         : settings.description_gr || settings.description_en,
-    alternates: { canonical: siteUrl() },
+    alternates: buildLanguageAlternates("/", language, {}, siteUrl()),
     openGraph: {
       title: settings.business_name,
       description: t.intro,
       siteName: settings.business_name,
       type: "website",
+      url: buildLanguageAlternates("/", language, {}, siteUrl()).canonical,
     },
   };
 }
@@ -189,7 +191,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             <p className="mt-2">{error}</p>
           </div>
         ) : products.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-stone-300 bg-white py-16 text-center text-stone-400">
+          <div className="rounded-lg border border-dashed border-stone-300 bg-white py-16 text-center text-stone-600">
             {t.noProducts}
           </div>
         ) : (

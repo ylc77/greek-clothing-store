@@ -5,6 +5,7 @@ import { getLanguage, localizeHours, text } from "@/lib/i18n";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 import { getPublishedLegalSettings } from "@/lib/legal-settings";
+import { buildLanguageAlternates } from "@/lib/storefront-seo";
 
 type ContactPageProps = {
   searchParams: Promise<{ lang?: string }>;
@@ -20,7 +21,7 @@ export async function generateMetadata({
     title: `${t.contact} | ${settings.business_name}`,
     description:
       language === "en" ? settings.description_en : settings.description_gr || settings.description_en,
-    alternates: { canonical: `${siteUrl()}/contact` },
+    alternates: buildLanguageAlternates("/contact", language, {}, siteUrl()),
   };
 }
 

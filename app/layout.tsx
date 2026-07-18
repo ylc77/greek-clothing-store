@@ -1,8 +1,10 @@
 import { ChatLauncher } from "@/components/chat-launcher";
 import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Suspense, type ReactNode } from "react";
 import { getFeatureSettings } from "@/lib/features";
+import { localizedLegalText } from "@/lib/legal-localization";
 import { getPublishedLegalSettings } from "@/lib/legal-settings";
 import "./globals.css";
 
@@ -29,19 +31,14 @@ export default async function RootLayout({
 }: Readonly<{
   children: ReactNode;
 }>) {
-  const [legal, featureSettings] = await Promise.all([
+  const [legal, featureSettings, requestHeaders] = await Promise.all([
     getPublishedLegalSettings(),
     getFeatureSettings(),
+    headers(),
   ]);
+  const language = requestHeaders.get("x-storefront-language") === "en" ? "en" : "el";
   return (
-    <html lang="el" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){var p=(new URL(window.location)).searchParams;document.documentElement.lang=p.get("lang")==="en"?"en":"el"})()`,
-          }}
-        />
-      </head>
+    <html lang={language}>
       <body>
         {children}
         {featureSettings.features.ai_tools ? (
@@ -49,8 +46,8 @@ export default async function RootLayout({
             <ChatLauncher />
           </Suspense>
         ) : null}
-        <CookieConsentBanner config={{
-          essentialDescription: legal.settings.essentialStorageDescription,
+        <CookieConsentBanner language={language} config={{
+          essentialDescription: localizedLegalText(legal.settings.localized, "essentialStorageDescription", language),
           analyticsEnabled: legal.settings.analyticsEnabled,
           monitoringEnabled: legal.settings.errorMonitoringEnabled,
           advertisingEnabled: legal.settings.advertisingEnabled,

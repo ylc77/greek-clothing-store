@@ -1,6 +1,7 @@
 # v1.0 剩余风险矩阵
 
-基线：`origin/master` at `49aeb93afd1ea08e41c692af9acbddb6b169a10a`
+初始审查基线：`origin/master` at `49aeb93afd1ea08e41c692af9acbddb6b169a10a`
+当前 6A 工作基线：`origin/master` at `b30e3efd5b8c2fc0b24a89835fc4988c1d14a9a6`
 建立日期：2026-07-16
 执行顺序：5A → 5B → 5C → 6A → 6B → 7
 
@@ -31,10 +32,10 @@
 | 5C-03 | 5C | P2 | 已修复并通过本地、CI、Preview 验证 | 环境管理员密码认证仍以环境变量为主，需要 timing-safe 比较、弱密码/重复角色密码启动检查和共享限流。 | 多实例爆破、重启后限流、弱密码启动失败、重复角色密码失败、timing-safe 测试及隔离 Preview Developer 登录/轮换通过。 |
 | 5C-04 | 5C | P2 | 已修复并通过本地、CI、Preview 验证 | 员工 Supabase Token 刷新、`onAuthStateChange` 和真正 `signOut()` 生命周期尚未形成完整浏览器回归。 | 本地生命周期测试及隔离 Preview 真实 Supabase Auth 会话证明刷新后 Token 更新、登出后 UI/API 同时失效。 |
 | 5C-05 | 5C | P3 | 已修复并通过本地、CI、Preview 验证 | Issue #3：部分“已认证但无权”响应使用 401，语义不一致但当前能够拒绝写入。 | 本地与 Preview Route 权限矩阵证明未认证 401、无权 403、Feature 关闭 403/`FEATURE_DISABLED`、能力不可用 503，且拒绝请求无业务写入。 |
-| 6A-01 | 6A | P2 | 已确认 | 线上 `feed.xml` 当前 HTTP 200 但 `<products>` 为空，Daily site monitor #15 因“Feed 没有商品”失败；Feed 仍需官方规则和容量验收。 | 隔离 Preview 生成真实可售 Variant Feed；XML/1001+ 商品/官方 Validator 通过；监控全绿。 |
-| 6A-02 | 6A | P2 | 已确认 | 当前语言主要依赖查询参数和 hydration 前脚本设置 `lang`，原始 HTML 的 canonical/hreflang/语言 URL 不完整。 | `/el/...`、`/en/...` 或等价稳定 URL 的原始 HTML lang/canonical/hreflang 与 sitemap 一致。 |
-| 6A-03 | 6A | P2 | 待验证假设 | Legal Settings 的 GR/EN 独立内容、发布完整性、Cookie/AI 身体数据/第三方服务说明可能不足。 | 双语必填发布测试、Privacy/Cookie/Terms 页面原始 HTML 与第三方启用状态一致。 |
-| 6A-04 | 6A | P2 | 待验证假设 | 安全响应头、后台 noindex、表单 label/aria 与键盘访问尚未按全站矩阵验证。 | header 集成测试、robots/noindex、axe 和键盘基础验收通过。 |
+| 6A-01 | 6A | P2 | 代码已修复并通过本地；Preview Validator/监控待验 | 线上 `feed.xml` 当前 HTTP 200 但 `<products>` 为空，Daily site monitor #15 因“Feed 没有商品”失败；Feed 仍需官方规则和容量验收。 | 单元测试已证明权威余额、预留扣除、严格字段/图片/尺码门禁和 1,005 商品分页；严格监控已加入 CI。仍需隔离 Preview 可售 fixture、官方 Validator 和 live monitor。 |
+| 6A-02 | 6A | P2 | 已修复并通过本地 | 当前语言主要依赖查询参数和 hydration 前脚本设置 `lang`，原始 HTML 的 canonical/hreflang/语言 URL 不完整。 | Greek 默认和 `?lang=en` 的首页、联系页及全部法律页原始 HTML `lang`、canonical、reciprocal hreflang、x-default 与 sitemap 测试通过。 |
+| 6A-03 | 6A | P2 | 已确认并修复，通过本地 | Legal Settings 的 GR/EN 独立内容、发布完整性、Cookie/AI 身体数据/第三方服务说明原先不足。 | 双语独立归一化和必填测试、事务发布并发/回滚/权限测试、Privacy/Cookie/Terms 等页面原始 HTML 测试通过；仍需 Preview 发布和呈现复验。 |
+| 6A-04 | 6A | P2 | 已确认并修复，通过本地 | 安全响应头、后台 noindex、表单 label/aria 与键盘访问原先未按全站矩阵验证，并发现对比度/标签缺口。 | CSP nonce、安全头、robots/noindex、390/768/1440 serious/critical axe、横向溢出和后台键盘登录测试通过；已加入 GitHub CI。 |
 | 6B-01 | 6B | P2 | 已确认 | POS 日报未使用 `Europe/Athens` IANA 时区，查询和展示存在 DST/午夜边界错误风险；订单列表存在固定 `.limit(500)`。 | 冬/夏令时和切换日数据库聚合测试；1000+ 订单分页总额正确。 |
 | 6B-02 | 6B | P2 | 待验证假设 | 健康检查对部分订单明细、付款、sale/void movement 的逐 Variant 不一致覆盖不足。 | 故障 fixture 均被 reconciliation 检出，修复后对账为 0。 |
 | 6B-03 | 6B | P2 | 待验证假设 | 部分操作 actor 仍可能统一写 `admin`；缺少 append-only actor/user/role/auth-type 审计事件。 | owner/staff/inventory/developer 操作均记录真实 actor，审计表不可由普通角色修改。 |

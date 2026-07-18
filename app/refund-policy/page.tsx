@@ -3,6 +3,7 @@ import { LegalPage } from "@/components/legal-page";
 import { getLanguage } from "@/lib/i18n";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
+import { buildLanguageAlternates } from "@/lib/storefront-seo";
 
 type PageProps = {
   searchParams: Promise<{ lang?: string }>;
@@ -13,7 +14,7 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
   const settings = await getBusinessSettings();
   return {
     title: `${language === "en" ? "Refund Policy" : "Πολιτική Επιστροφών"} | ${settings.business_name}`,
-    alternates: { canonical: `${siteUrl()}/refund-policy` },
+    alternates: buildLanguageAlternates("/refund-policy", language, {}, siteUrl()),
   };
 }
 

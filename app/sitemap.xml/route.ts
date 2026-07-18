@@ -2,6 +2,8 @@ import { getSupabaseClient } from "@/lib/supabase";
 import { siteUrl } from "@/lib/site";
 import { categories } from "@/lib/types";
 import { SITEMAP_PRODUCT_SELECT } from "@/lib/product-data-boundary";
+import { buildLanguageAlternates } from "@/lib/storefront-seo";
+import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 
 export const dynamic = "force-dynamic";
 
@@ -51,55 +53,60 @@ export async function GET() {
 
   const urls: string[] = [];
 
+  function languageLinks(pathname: string) {
+    const alternates = buildLanguageAlternates(pathname, "el", {}, base);
+    return Object.entries(alternates.languages).map(([lang, href]) => ({ lang, href }));
+  }
+
   // Homepage
   urls.push(
-    urlEntry(base, today, "daily", "1.0", [
-      { lang: "el", href: base },
-      { lang: "en", href: `${base}/?lang=en` },
-    ])
+    urlEntry(base, today, "daily", "1.0", languageLinks("/"))
   );
 
   // Categories
   categories.forEach((cat) => {
     const catUrl = `${base}/${cat.slug}`;
     urls.push(
-      urlEntry(catUrl, today, "weekly", "0.8", [
-        { lang: "el", href: catUrl },
-        { lang: "en", href: `${catUrl}?lang=en` },
-      ])
+      urlEntry(catUrl, today, "weekly", "0.8", languageLinks(`/${cat.slug}`))
     );
   });
 
   // Contact
   const contactUrl = `${base}/contact`;
-  urls.push(urlEntry(contactUrl, today, "monthly", "0.5"));
+  urls.push(urlEntry(contactUrl, today, "monthly", "0.5", languageLinks("/contact")));
 
   // Legal pages
   ["/privacy-policy", "/terms-of-service", "/cookie-policy", "/refund-policy", "/return-policy", "/shipping-policy"].forEach((path) => {
     const url = `${base}${path}`;
     urls.push(
-      urlEntry(url, today, "yearly", "0.3", [
-        { lang: "el", href: url },
-        { lang: "en", href: `${url}?lang=en` },
-      ])
+      urlEntry(url, today, "yearly", "0.3", languageLinks(path))
     );
   });
 
   // Products
   if (supabase) {
-    const { data } = await supabase
-      .from("products")
-      .select(SITEMAP_PRODUCT_SELECT)
-      .or("is_active.is.null,is_active.eq.true")
-      .gte("stock", 0)
-      .order("created_at", { ascending: false });
-
-    if (data) {
-      const products = data as unknown as Array<{
+    const result = await fetchAllSupabaseRows<{
         sku: string;
         created_at: string | null;
         updated_at: string | null;
-      }>;
+      }>(async (from, to) => {
+        const page = await supabase
+          .from("products")
+          .select(SITEMAP_PRODUCT_SELECT)
+          .or("is_active.is.null,is_active.eq.true")
+          .order("id", { ascending: true })
+          .range(from, to);
+        return page as unknown as { data: Array<{ sku: string; created_at: string | null; updated_at: string | null }> | null; error: { message?: string } | null };
+      });
+    if (result.error) {
+      return new Response("Sitemap product query is temporarily unavailable.", {
+        status: 503,
+        headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+      });
+    }
+
+    if (result.data) {
+      const products = result.data;
       for (const product of products) {
         if (!isPublicSku(product.sku)) continue;
         const productUrl = `${base}/product/${encodeURIComponent(product.sku)}`;
@@ -107,10 +114,13 @@ export async function GET() {
           ? String(product.updated_at || product.created_at).split("T")[0]
           : today;
         urls.push(
-          urlEntry(productUrl, lastmod, "weekly", "0.6", [
-            { lang: "el", href: productUrl },
-            { lang: "en", href: `${productUrl}?lang=en` },
-          ])
+          urlEntry(
+            productUrl,
+            lastmod,
+            "weekly",
+            "0.6",
+            languageLinks(`/product/${encodeURIComponent(product.sku)}`),
+          )
         );
       }
     }

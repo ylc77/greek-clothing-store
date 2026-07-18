@@ -1,4 +1,12 @@
 import { getSupabaseAdminClient, getSupabaseClient } from "@/lib/supabase";
+import {
+  createEmptyLocalizedLegalCopy,
+  normalizeLocalizedLegalCopy,
+  validateLocalizedLegalCopy,
+  type LocalizedLegalCopy,
+} from "@/lib/legal-localization";
+
+export type { LocalizedLegalCopy, LocalizedLegalKey } from "@/lib/legal-localization";
 
 export const legalProviderKeys = [
   "supabase", "vercel", "stripe", "viva", "cash", "pos", "posthog", "sentry", "openai", "deepseek",
@@ -47,6 +55,7 @@ export type LegalSettingsData = {
   allergenDisclaimer: string;
   receiptDisclaimer: string;
   paymentTerms: string;
+  localized: LocalizedLegalCopy;
   legalLastUpdated: string;
   confirmations: LegalConfirmations;
 };
@@ -64,6 +73,9 @@ export type LegalSettingsRecord = {
 const today = () => new Date().toISOString().slice(0, 10);
 
 export function createEmptyLegalSettings(): LegalSettingsData {
+  const localized = createEmptyLocalizedLegalCopy();
+  localized.el.essentialStorageDescription = "Απαραίτητη αποθήκευση για γλώσσα, ασφάλεια, σύνδεση διαχειριστή και προτιμήσεις cookies.";
+  localized.en.essentialStorageDescription = "Essential storage for language, security, administrator login and cookie preferences.";
   return {
     projectType: "retail",
     businessName: "",
@@ -96,6 +108,7 @@ export function createEmptyLegalSettings(): LegalSettingsData {
     allergenDisclaimer: "",
     receiptDisclaimer: "",
     paymentTerms: "",
+    localized,
     legalLastUpdated: today(),
     confirmations: {
       businessIdentity: false,
@@ -122,6 +135,26 @@ export function normalizeLegalSettings(value: unknown): LegalSettingsData {
   const providers = Array.isArray(source.enabledProviders)
     ? source.enabledProviders.filter((key): key is LegalProviderKey => legalProviderKeys.includes(key as LegalProviderKey))
     : defaults.enabledProviders;
+  const legacyLocalized = Object.fromEntries([
+    "privacyRequestInstructions",
+    "otherProviders",
+    "essentialStorageDescription",
+    "paymentTerms",
+    "shippingPolicy",
+    "returnPolicy",
+    "refundPolicy",
+    "withdrawalRight",
+    "returnAddress",
+    "returnShippingResponsibility",
+    "nonReturnableItems",
+  ].map((key) => [key, source[key]]));
+  const localized = normalizeLocalizedLegalCopy(source.localized, legacyLocalized);
+  if (!localized.el.essentialStorageDescription && !source.localized) {
+    localized.el.essentialStorageDescription = defaults.localized.el.essentialStorageDescription;
+  }
+  if (!localized.en.essentialStorageDescription) {
+    localized.en.essentialStorageDescription = defaults.localized.en.essentialStorageDescription;
+  }
 
   return {
     ...defaults,
@@ -137,25 +170,26 @@ export function normalizeLegalSettings(value: unknown): LegalSettingsData {
     dataControllerName: stringValue(source.dataControllerName),
     dataControllerAddress: stringValue(source.dataControllerAddress),
     privacyRequestEmail: stringValue(source.privacyRequestEmail),
-    privacyRequestInstructions: stringValue(source.privacyRequestInstructions),
+    privacyRequestInstructions: stringValue(source.privacyRequestInstructions, localized.en.privacyRequestInstructions),
     enabledProviders: Array.from(new Set(providers)),
-    otherProviders: stringValue(source.otherProviders),
-    essentialStorageDescription: stringValue(source.essentialStorageDescription, defaults.essentialStorageDescription),
+    otherProviders: stringValue(source.otherProviders, localized.en.otherProviders),
+    essentialStorageDescription: stringValue(source.essentialStorageDescription, localized.en.essentialStorageDescription),
     analyticsEnabled: source.analyticsEnabled === true,
     errorMonitoringEnabled: source.errorMonitoringEnabled === true,
     advertisingEnabled: source.advertisingEnabled === true,
     cookieLastUpdated: stringValue(source.cookieLastUpdated, defaults.cookieLastUpdated),
-    shippingPolicy: stringValue(source.shippingPolicy),
-    returnPolicy: stringValue(source.returnPolicy),
-    refundPolicy: stringValue(source.refundPolicy),
-    withdrawalRight: stringValue(source.withdrawalRight),
-    returnAddress: stringValue(source.returnAddress),
-    returnShippingResponsibility: stringValue(source.returnShippingResponsibility),
-    nonReturnableItems: stringValue(source.nonReturnableItems),
+    shippingPolicy: stringValue(source.shippingPolicy, localized.en.shippingPolicy),
+    returnPolicy: stringValue(source.returnPolicy, localized.en.returnPolicy),
+    refundPolicy: stringValue(source.refundPolicy, localized.en.refundPolicy),
+    withdrawalRight: stringValue(source.withdrawalRight, localized.en.withdrawalRight),
+    returnAddress: stringValue(source.returnAddress, localized.en.returnAddress),
+    returnShippingResponsibility: stringValue(source.returnShippingResponsibility, localized.en.returnShippingResponsibility),
+    nonReturnableItems: stringValue(source.nonReturnableItems, localized.en.nonReturnableItems),
     cancellationPolicy: stringValue(source.cancellationPolicy),
     allergenDisclaimer: stringValue(source.allergenDisclaimer),
     receiptDisclaimer: stringValue(source.receiptDisclaimer),
-    paymentTerms: stringValue(source.paymentTerms),
+    paymentTerms: stringValue(source.paymentTerms, localized.en.paymentTerms),
+    localized,
     legalLastUpdated: stringValue(source.legalLastUpdated, defaults.legalLastUpdated),
     confirmations: {
       businessIdentity: confirmations.businessIdentity === true,
@@ -180,6 +214,7 @@ export function validateLegalSettings(settings: LegalSettingsData) {
   const errors = fields.filter(([key]) => !String(settings[key] || "").trim()).map(([, label]) => `${label}不能为空`);
   if (settings.contactEmail && !/^\S+@\S+\.\S+$/.test(settings.contactEmail)) errors.push("联系邮箱格式不正确");
   if (settings.privacyRequestEmail && !/^\S+@\S+\.\S+$/.test(settings.privacyRequestEmail)) errors.push("隐私请求邮箱格式不正确");
+  errors.push(...validateLocalizedLegalCopy(settings.localized));
   const confirmationValues = Object.values(settings.confirmations);
   if (!confirmationValues.every(Boolean)) errors.push("客户最终确认未全部完成");
   return errors;
@@ -206,10 +241,11 @@ export async function getPublishedLegalSettings(): Promise<LegalSettingsRecord> 
   if (!supabase) return { settings: createEmptyLegalSettings(), configured: false, complete: false, currentVersion: null, publishedAt: null, publishedBy: null, updatedAt: null };
   const { data, error } = await (supabase as any).from("legal_settings_versions").select("version_label, snapshot, published_at, published_by").eq("is_current", true).maybeSingle();
   if (error || !data) return { settings: createEmptyLegalSettings(), configured: false, complete: false, currentVersion: null, publishedAt: null, publishedBy: null, updatedAt: null };
+  const settings = normalizeLegalSettings(data.snapshot);
   return {
-    settings: normalizeLegalSettings(data.snapshot),
+    settings,
     configured: true,
-    complete: true,
+    complete: validateLegalSettings(settings).length === 0,
     currentVersion: data.version_label || null,
     publishedAt: data.published_at || null,
     publishedBy: data.published_by || null,
