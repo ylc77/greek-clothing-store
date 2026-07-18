@@ -57,7 +57,17 @@ function readLocalEnvironment() {
 }
 
 const local = readLocalEnvironment();
-const service = createClient(local.API_URL, local.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+const service = createClient(local.API_URL, local.SERVICE_ROLE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: {
+    fetch: (input, init = {}) => fetch(input, {
+      ...init,
+      signal: init.signal
+        ? AbortSignal.any([init.signal, AbortSignal.timeout(30_000)])
+        : AbortSignal.timeout(30_000),
+    }),
+  },
+});
 
 async function rpc(name, args) {
   const { data, error } = await service.rpc(name, args);

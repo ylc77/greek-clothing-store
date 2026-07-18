@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 
 const root = process.cwd();
+const normalizeLineEndings = (value) => value.replace(/\r\n?/g, "\n");
 const migrationsDirectory = path.join(root, "supabase", "migrations");
 const clientInitPath = path.join(root, "supabase", "client-init.sql");
 const migrations = fs.readdirSync(migrationsDirectory).filter((name) => name.endsWith(".sql")).sort();
@@ -37,8 +38,8 @@ const snapshotParts = migrations.map((name) => [
 ].join("\n"));
 const expectedSnapshot = `${headerLines.join("\n")}\n${snapshotParts.join("\n")}`;
 assert.equal(
-  fs.readFileSync(clientInitPath, "utf8"),
-  expectedSnapshot,
+  normalizeLineEndings(fs.readFileSync(clientInitPath, "utf8")),
+  normalizeLineEndings(expectedSnapshot),
   "client-init.sql has drifted from the ordered migration chain",
 );
 

@@ -241,9 +241,17 @@ inserted_variants as (
     active,
     sort_order
   from all_variants
-  on conflict (variant_sku) do update
+  -- Early customer databases represented ONE SIZE with the product SKU while
+  -- this reconciliation derives a suffixed Variant SKU from size_stock. Match
+  -- the catalog identity constraint so an existing Variant is reused instead
+  -- of attempting to insert a duplicate product/size/color row. Preserve its
+  -- Variant SKU because printed labels and historical records may reference it.
+  on conflict (
+    product_id,
+    (coalesce(size, '')),
+    (coalesce(color, ''))
+  ) do update
   set
-    product_id = excluded.product_id,
     barcode = excluded.barcode,
     size = excluded.size,
     color = excluded.color,
@@ -251,7 +259,7 @@ inserted_variants as (
     active = excluded.active,
     sort_order = excluded.sort_order,
     updated_at = now()
-  returning id, product_id, variant_sku, size
+  returning id, product_id, variant_sku, size, color
 ),
 variant_quantities as (
   select
@@ -260,7 +268,9 @@ variant_quantities as (
     av.quantity
   from inserted_variants iv
   join all_variants av
-    on av.variant_sku = iv.variant_sku
+    on av.product_id = iv.product_id
+   and coalesce(av.size, '') = coalesce(iv.size, '')
+   and coalesce(av.color, '') = coalesce(iv.color, '')
   cross join main_location ml
 ),
 upsert_balances as (

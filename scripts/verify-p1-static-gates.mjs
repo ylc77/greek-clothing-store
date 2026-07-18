@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 
 const root = process.cwd();
+const normalizeLineEndings = (value) => value.replace(/\r\n?/g, "\n");
 const migrationsDirectory = path.join(root, "supabase", "migrations");
 const clientInitPath = path.join(root, "supabase", "client-init.sql");
 const migrations = fs.readdirSync(migrationsDirectory).filter((name) => name.endsWith(".sql")).sort();
@@ -44,7 +45,11 @@ const parts = migrations.map((name) => [
   "",
 ].join("\n"));
 const expectedSnapshot = `${headerLines.join("\n")}\n${parts.join("\n")}`;
-assert.equal(fs.readFileSync(clientInitPath, "utf8"), expectedSnapshot, "client-init.sql has drifted from the ordered migration chain");
+assert.equal(
+  normalizeLineEndings(fs.readFileSync(clientInitPath, "utf8")),
+  normalizeLineEndings(expectedSnapshot),
+  "client-init.sql has drifted from the ordered migration chain",
+);
 
 const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: root }).toString("utf8").split("\0").filter(Boolean);
 const trackedEnv = tracked.filter((name) => /(^|\/)\.env(?:\.|$)/.test(name) && name !== ".env.example");

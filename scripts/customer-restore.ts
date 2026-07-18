@@ -193,11 +193,35 @@ end $$;
     }
     const migrationHistory = manifest.database.find((item) => item.file === "database/migration-history.sql");
     if (!migrationHistory) fail("backup is missing database/migration-history.sql");
+    const migrationSchema = manifest.database.find((item) => item.file === "database/migration-schema.sql");
     const historyDirectory = await mkdtemp(path.join(os.tmpdir(), "clothing-restore-history-"));
     try {
       const historyPreflight = path.join(historyDirectory, "history-preflight.sql");
-      await writeFile(historyPreflight, `create schema if not exists supabase_migrations;\ncreate table if not exists supabase_migrations.schema_migrations (version text primary key, statements text[], name text);\ndo $$ begin\n  if (select count(*) from supabase_migrations.schema_migrations) <> 0 then raise exception 'RESTORE_MIGRATION_HISTORY_NOT_EMPTY'; end if;\nend $$;\n`, "utf8");
+      await writeFile(historyPreflight, `create schema if not exists supabase_migrations;
+create table if not exists supabase_migrations.schema_migrations (
+  version text primary key,
+  statements text[],
+  name text,
+  created_by text,
+  idempotency_key text,
+  rollback text[]
+);
+alter table supabase_migrations.schema_migrations add column if not exists statements text[];
+alter table supabase_migrations.schema_migrations add column if not exists name text;
+alter table supabase_migrations.schema_migrations add column if not exists created_by text;
+alter table supabase_migrations.schema_migrations add column if not exists idempotency_key text;
+alter table supabase_migrations.schema_migrations add column if not exists rollback text[];
+do $$ begin
+  if (select count(*) from supabase_migrations.schema_migrations) <> 0 then raise exception 'RESTORE_MIGRATION_HISTORY_NOT_EMPTY'; end if;
+end $$;
+`, "utf8");
       await runDatabaseFile(database, historyPreflight);
+      if (migrationSchema) {
+        const historyReset = path.join(historyDirectory, "history-reset.sql");
+        await writeFile(historyReset, "drop table supabase_migrations.schema_migrations;\n", "utf8");
+        await runDatabaseFile(database, historyReset);
+        await runDatabaseFile(database, resolveManifestFile(options.backup, migrationSchema.file));
+      }
       await runDatabaseFile(database, resolveManifestFile(options.backup, migrationHistory.file));
     } finally {
       await rm(historyDirectory, { recursive: true, force: true });

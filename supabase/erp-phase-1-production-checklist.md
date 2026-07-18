@@ -7,7 +7,7 @@ item below is confirmed.
 
 - [ ] Production 10 read-only checks all passed.
 - [ ] Database backup is confirmed and restorable.
-- [ ] `supabase/migrations/20260703_add_erp_inventory_phase_1.sql` has been verified in the test database.
+- [ ] `supabase/migrations/20260703130000_add_erp_inventory_phase_1.sql` has been verified in the test database.
 - [ ] No one will add, edit, delete, upload images, or quick-sell products during execution.
 - [ ] `USE_VARIANT_INVENTORY=false`.
 - [ ] Permanent delete risk is accepted:

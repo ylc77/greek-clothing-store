@@ -191,6 +191,31 @@ insert into public.products (
   1,
   true
 );
+
+insert into public.product_variants (
+  id, product_id, variant_sku, barcode, size, color, price, active, sort_order
+) values (
+  'bbbbbbbb-2222-4222-8222-222222222222',
+  920000000001,
+  'AUDIT-PUBLIC-LEGACY-001-M',
+  'INTERNAL-BARCODE-001',
+  'M',
+  null,
+  29.90,
+  true,
+  0
+);
+
+insert into public.inventory_balances (
+  variant_id, location_id, quantity_on_hand, quantity_reserved
+)
+select
+  'bbbbbbbb-2222-4222-8222-222222222222',
+  id,
+  2,
+  0
+from public.inventory_locations
+where code = 'MAIN_STORE';
 '@
   Invoke-SqlText $Container $fixture "legacy private product fixture"
 }

@@ -398,7 +398,7 @@ async function startApp(useRpc) {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`Next dev exited early\n${logs.join("")}`);
     try {
-      const response = await fetch(`${APP_URL}/admin`);
+      const response = await fetch(`${APP_URL}/admin`, { signal: AbortSignal.timeout(5000) });
       if (response.status < 500) return { child, logs };
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 500));

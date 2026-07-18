@@ -4,6 +4,7 @@ import path from "node:path";
 
 const root = process.cwd();
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
+const normalizeLineEndings = (value) => value.replace(/\r\n?/g, "\n");
 const migrationsDirectory = path.join(root, "supabase", "migrations");
 const migrations = fs.readdirSync(migrationsDirectory).filter((name) => name.endsWith(".sql")).sort();
 const legalMigrations = migrations.filter((name) => /^\d+_transactional_legal_settings_publish\.sql$/.test(name));
@@ -87,6 +88,10 @@ const snapshotParts = migrations.map((name) => [
   `-- END MIGRATION: ${name}`,
   "",
 ].join("\n"));
-assert.equal(read("supabase/client-init.sql"), `${headerLines.join("\n")}\n${snapshotParts.join("\n")}`, "client-init.sql drifted from migrations");
+assert.equal(
+  normalizeLineEndings(read("supabase/client-init.sql")),
+  normalizeLineEndings(`${headerLines.join("\n")}\n${snapshotParts.join("\n")}`),
+  "client-init.sql drifted from migrations",
+);
 
 console.log(`Channel static gates passed for ${migrations.length} ordered migrations.`);

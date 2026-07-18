@@ -117,7 +117,7 @@ async function startApp(local) {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`Next dev exited early\n${redactLogs(logs.join(""), local)}`);
     try {
-      const response = await fetch(`${APP_URL}/admin`);
+      const response = await fetch(`${APP_URL}/admin`, { signal: AbortSignal.timeout(5000) });
       if (response.status < 500) return { child, logs };
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -145,6 +145,7 @@ async function request(pathname, options = {}) {
     method: options.method || (body === undefined ? "GET" : "POST"),
     headers,
     body,
+    signal: options.signal || AbortSignal.timeout(30_000),
   });
   const contentType = response.headers.get("content-type") || "";
   const data = contentType.includes("application/json") ? await response.json().catch(() => ({})) : await response.text();
@@ -276,8 +277,19 @@ function dropStorageDeleteFailureTrigger() {
 }
 
 const local = readLocalEnvironment();
-const service = createClient(local.API_URL, local.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-const anon = createClient(local.API_URL, local.ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+const supabaseClientOptions = {
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: {
+    fetch: (input, init = {}) => fetch(input, {
+      ...init,
+      signal: init.signal
+        ? AbortSignal.any([init.signal, AbortSignal.timeout(30_000)])
+        : AbortSignal.timeout(30_000),
+    }),
+  },
+};
+const service = createClient(local.API_URL, local.SERVICE_ROLE_KEY, supabaseClientOptions);
+const anon = createClient(local.API_URL, local.ANON_KEY, supabaseClientOptions);
 const validJpeg = await sharp({ create: { width: 120, height: 160, channels: 3, background: "#446688" } }).jpeg().toBuffer();
 const validPng = await sharp({ create: { width: 160, height: 120, channels: 4, background: "#885544" } }).png().toBuffer();
 const svgPayload = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');

@@ -95,6 +95,9 @@ The production Supabase project was observed without the shared `public.set_upda
 Upgrade migrations that create an `updated_at` trigger must create or replace their required trigger helper in the same migration. Do not assume an older customer database has executed the current baseline migration. Keep these upgrade migrations idempotent and verify both an empty local reset and the legacy-database upgrade path.
 
 
+The pre-release Production database also used the product SKU itself for some existing `ONE SIZE` Variants, while the maintained ERP reconciliation can derive a size-suffixed candidate SKU from `products.size_stock`. During legacy upgrades, reuse Variants by the catalog identity `(product_id, coalesce(size, ''), coalesce(color, ''))` and preserve the existing `variant_sku`; matching only on the newly derived SKU can violate the product/size/color unique index and block the upgrade.
+
+
 \---
 
 

@@ -4,10 +4,23 @@ import path from "node:path";
 
 const root = process.cwd();
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
+const normalizeLineEndings = (value) => value.replace(/\r\n?/g, "\n");
 const migrations = fs.readdirSync(path.join(root, "supabase", "migrations")).filter((name) => name.endsWith(".sql")).sort();
 const operationsMigrations = migrations.filter((name) => /^\d+_operations_reporting_audit_barcode\.sql$/.test(name));
 assert.deepEqual(operationsMigrations, ["20260718105030_operations_reporting_audit_barcode.sql"]);
-assert.equal(migrations.at(-1), operationsMigrations[0], "operations migration must remain the newest migration in this branch");
+const projectionMigration = "20260719100000_reconcile_legacy_inventory_projections.sql";
+assert.ok(migrations.includes(projectionMigration), "legacy inventory projection reconciliation migration is missing");
+assert.ok(
+  migrations.indexOf(operationsMigrations[0]) < migrations.indexOf(projectionMigration),
+  "legacy inventory projection reconciliation must follow operations reporting",
+);
+const projectionReconciliation = read(`supabase/migrations/${projectionMigration}`).toLowerCase();
+for (const marker of [
+  "inventory_balances",
+  "main_store",
+  "is distinct from",
+  "update public.products",
+]) assert.ok(projectionReconciliation.includes(marker), `projection reconciliation is missing ${marker}`);
 
 const migration = read(`supabase/migrations/${operationsMigrations[0]}`).toLowerCase();
 for (const marker of [
@@ -108,6 +121,10 @@ const snapshotParts = migrations.map((name) => [
   `-- END MIGRATION: ${name}`,
   "",
 ].join("\n"));
-assert.equal(read("supabase/client-init.sql"), `${headerLines.join("\n")}\n${snapshotParts.join("\n")}`, "client-init.sql drifted from migrations");
+assert.equal(
+  normalizeLineEndings(read("supabase/client-init.sql")),
+  normalizeLineEndings(`${headerLines.join("\n")}\n${snapshotParts.join("\n")}`),
+  "client-init.sql drifted from migrations",
+);
 
 console.log(`Operations static gates passed for ${migrations.length} ordered migrations.`);

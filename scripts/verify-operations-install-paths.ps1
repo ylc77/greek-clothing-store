@@ -114,7 +114,9 @@ $allMigrations = Get-ChildItem -LiteralPath $migrationsDirectory -Filter "*.sql"
 $operations = @($allMigrations | Where-Object { $_.Name -match '^\d+_operations_reporting_audit_barcode\.sql$' })
 if ($operations.Count -ne 1) { throw "Expected exactly one operations migration" }
 $operationsMigration = $operations[0]
-if ($allMigrations[-1].Name -ne $operationsMigration.Name) { throw "Operations migration must sort last" }
+$projectionMigration = @($allMigrations | Where-Object { $_.Name -eq '20260719100000_reconcile_legacy_inventory_projections.sql' })
+if ($projectionMigration.Count -ne 1) { throw "Expected legacy inventory projection reconciliation migration" }
+if ($operationsMigration.Name -ge $projectionMigration[0].Name) { throw "Operations migration must sort before legacy projection reconciliation" }
 
 try {
   Start-TestContainer $containers[0]
