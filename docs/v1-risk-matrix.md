@@ -40,7 +40,7 @@
 | 6B-02 | 6B | P2 | 已确认并修复，通过本地 | 动态故障 fixture 证实旧健康检查无法完整覆盖部分明细、付款、sale/void movement 的逐 Variant 不一致。 | 缺明细、缺付款、sale/void 数量错误均被 reconciliation 检出；修复 fixture 后全部归零。 |
 | 6B-03 | 6B | P2 | 已确认并修复，通过本地 | 旧审计记录只保存自由文本 actor，部分路径无法稳定区分 user/role/auth type，且缺少统一 append-only 边界。 | owner/staff/inventory/developer/system actor 结构化记录测试通过；审计表对普通角色和 service role 均不可更新/删除。 |
 | 6B-04 | 6B | P2 | 自动化部分已修复并通过；真实硬件待验 | 标签、小票和导出原先可能含固定店名/单语文本；标签数量、价格、条码与连续纸布局需验证。 | 店铺配置驱动 GR/EN 输出，标签默认按现有库存份数；390/768/1440 的 40×30mm 标签、58/80mm 小票、条码和 Chromium PDF 通过。连续纸物理偏移与打印质量保留为 6B-06。 |
-| 6B-05 | 6B | P2 | 已修复并通过本地恢复演练 | 当前“备份”主要是商品 CSV 导出，不是数据库和 Storage 的可恢复灾备。 | 可信 CLI 生成四份数据库 dump、全部 Storage 对象和 SHA-256 manifest；第二套空白本地 Supabase 恢复 21 条 migration history、应用 fixture 和字节一致对象，平台无关脚本修复后的当前 HEAD 复验耗时 78.7 秒，清理归零。 |
+| 6B-05 | 6B | P2 | 已修复并通过本地恢复演练 | 当前“备份”主要是商品 CSV 导出，不是数据库和 Storage 的可恢复灾备。 | 可信 CLI 生成四份数据库 dump、全部 Storage 对象和 SHA-256 manifest；第二套空白本地 Supabase 恢复 21 条 migration history、应用 fixture 和字节一致对象；多次本地复验均低于 90 秒（最新 82.3 秒），清理归零。 |
 | 6B-06 | 6B | 外部门禁 | 未执行 | 扫码枪、标签机、连续纸偏移、小票打印和离线解码必须使用真实硬件；自动化不能替代。 | 真实硬件验收记录；缺失时 Standard/Advanced 必须标记 `CONDITIONAL` 或 `BLOCKED`。 |
 | 7-01 | 7 | 发布门禁 | 未执行 | 尚未执行 5A–6B 后的全量回归、新客户部署、两种旧客户升级、真实备份恢复和只读 Production 检查。 | 所有发布清单逐项有当前 SHA 和环境证据，无 skipped 关键测试。 |
 

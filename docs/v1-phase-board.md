@@ -98,11 +98,11 @@
 - [x] 标签和小票读取店铺配置，输出 Greek/English；390/768/1440、40×30mm 标签、58/80mm 小票、条码和内存 PDF 门禁通过。
 - [x] 商品/分类、ERP 流水、CSV 失败行、后台标签与订单读取改为显式分页，不再静默截断。
 - [x] 可信备份/校验/恢复 CLI 覆盖角色、schema、应用/Auth data、migration history 和全部 Storage 对象，带 SHA-256 manifest。
-- [x] 独立第二套本地 Supabase 完成完整恢复演练；21 条 migration history、应用 fixture 和 Storage 字节校验通过，平台无关脚本修复后的当前 HEAD 复验为 78.7 秒，低于 4 小时 RTO。
+- [x] 独立第二套本地 Supabase 完成完整恢复演练；21 条 migration history、应用 fixture 和 Storage 字节校验通过；多次本地复验均低于 90 秒（最新 82.3 秒），低于 4 小时 RTO。
 - [x] 21 migrations 空库 reset、client-init 空库、legacy upgrade 与重复执行安全通过。
 - [x] Phase 6B 专项静态、单元、数据库、浏览器、安装与恢复门禁加入现有四项 GitHub CI。
 - [x] 全量既有回归；141 个单元测试、156 个具名集成场景、25 条安装路径断言、生产 build、三视口浏览器、数据库安全、秘密扫描、恢复演练和零残留检查均通过。
-- [x] 精确 HEAD 本地标签 `audit-v1-6b-local-verified-v3`（保留原标签和 v2；在 Ubuntu 恢复脚本修复并完整复验后的最终报告提交创建）。
+- [x] 精确 HEAD 本地标签 `audit-v1-6b-local-verified-v4`（保留此前标签；在 Linux host-gateway 修复并完整复验后的最终报告提交创建）。
 - [ ] Draft PR、四项 required CI、隔离 Preview 和零残留清理。
 - [ ] 单人维护者签核、CI/Preview 标签和 merge commit。
 - [ ] 真实扫码枪、标签机、连续纸偏移、小票打印和离线解码（外部门禁；未完成时 Standard/Advanced 不得标记正式 READY）。
