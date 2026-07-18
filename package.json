@@ -46,6 +46,9 @@
     "test:ai-auth-security": "npm run test:ai-auth-unit && npm run check:ai-auth-static && npm run check:ai-auth-db-security && npm run test:ai-auth-integration",
     "storage:reconcile": "node --experimental-strip-types scripts/storage-maintenance.ts reconcile",
     "storage:recover": "node --experimental-strip-types scripts/storage-maintenance.ts recover",
+    "customer:backup": "node --experimental-strip-types scripts/customer-backup.ts",
+    "customer:backup:verify": "node --experimental-strip-types scripts/customer-backup-verify.ts",
+    "customer:restore": "node --experimental-strip-types scripts/customer-restore.ts",
     "test:developer-credentials": "node --experimental-strip-types --test tests/developer-credentials.test.ts",
     "test:developer-integration": "node scripts/developer-credential-integration-test.mjs",
     "test:developer-install-paths": "node scripts/run-powershell.mjs scripts/verify-developer-credential-install-paths.ps1",
@@ -70,11 +73,14 @@
     "test:channels-browser-local": "node scripts/run-powershell.mjs scripts/run-channels-browser-local.ps1",
     "test:legal-publish-integration": "node scripts/run-powershell.mjs scripts/verify-legal-publish-integration.ps1",
     "check:channels-static": "node scripts/verify-channels-static-gates.mjs",
-    "test:operations-unit": "node --experimental-strip-types --test tests/operations-reporting.test.ts",
+    "test:operations-unit": "node --experimental-strip-types --test tests/operations-reporting.test.ts tests/customer-backup.test.ts",
     "test:operations-integration": "node scripts/operations-reporting-integration-test.mjs",
+    "test:operations-browser": "node scripts/operations-browser-test.mjs",
     "check:operations-static": "node scripts/verify-operations-static-gates.mjs",
     "check:operations-db-security": "node scripts/verify-operations-database-security.mjs",
-    "test:operations-install-paths": "node scripts/run-powershell.mjs scripts/verify-operations-install-paths.ps1"
+    "test:operations-install-paths": "node scripts/run-powershell.mjs scripts/verify-operations-install-paths.ps1",
+    "test:operations-backup-restore": "node scripts/run-powershell.mjs scripts/verify-operations-backup-restore.ps1",
+    "test:operations": "npm run test:operations-unit && npm run test:operations-integration && npm run check:operations-static && npm run check:operations-db-security"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",

@@ -3,14 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
-import {
-  ATHENS_TIME_ZONE,
-  formatAthensDateTime,
-  localizedPrintCopy,
-  localizedPrintProductName,
-  normalizeLabelCopies,
-} from "../lib/operations-print.ts";
+// @ts-ignore Node's strip-only test runner requires the explicit .ts extension.
+import { ATHENS_TIME_ZONE, formatAthensBusinessDate, formatAthensDateTime, localizedPrintCopy, localizedPrintProductName, normalizeLabelCopies } from "../lib/operations-print.ts";
 
 function source(relativePath: string) {
   return fs.readFileSync(path.join(process.cwd(), relativePath), "utf8");
@@ -20,11 +14,20 @@ test("Athens print timestamps stay on the business timezone across winter and su
   assert.equal(ATHENS_TIME_ZONE, "Europe/Athens");
   assert.equal(formatAthensDateTime("2026-01-15T20:30:00.000Z", "el"), "15/01/2026, 22:30");
   assert.equal(formatAthensDateTime("2026-07-15T20:30:00.000Z", "en"), "15/07/2026, 23:30");
+  assert.equal(formatAthensBusinessDate("2026-07-15T22:30:00.000Z"), "2026-07-16");
+});
+
+test("feature settings failures visibly and actually fall back to Basic", () => {
+  const page = source("app/admin/page.tsx");
+  const dashboard = source("components/admin-dashboard.tsx");
+  assert.match(page, /initialFeatureSettingsConfigured=\{featureSettings\.configured\}/);
+  assert.match(dashboard, /setAdminFeatures\(defaultAdminFeatures\)/);
+  assert.match(dashboard, /安全回退到基础版（Basic）/);
 });
 
 test("print copy and product snapshots are Greek or English, never internal Chinese", () => {
   assert.match(localizedPrintCopy("el").receiptTitle, /Απόδειξη/);
-  assert.match(localizedPrintCopy("en").notTaxInvoice, /not a tax invoice/i);
+  assert.match(localizedPrintCopy("en").notTaxInvoice, /not a tax receipt or tax invoice/i);
   assert.equal(localizedPrintProductName({ name: "内部中文名", name_en: "Dress", name_gr: "Φόρεμα" }, "el"), "Φόρεμα");
   assert.equal(localizedPrintProductName({ name: "内部中文名", name_en: "Dress", name_gr: "Φόρεμα" }, "en"), "Dress");
   assert.equal(localizedPrintProductName({ name: "内部中文名", name_en: "", name_gr: "" }, "el"), "-");

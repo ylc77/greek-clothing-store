@@ -60,6 +60,7 @@ jobs:
           npm run check:storage-static
           npm run check:ai-auth-static
           npm run check:channels-static
+          npm run check:operations-static
 
       - name: Regenerate client snapshot and require zero drift
         run: |
@@ -121,6 +122,7 @@ jobs:
           npm run test:storage-unit
           npm run test:ai-auth-unit
           npm run test:channels-unit
+          npm run test:operations-unit
 
   local-supabase-integration:
     name: Local Supabase integration and security
@@ -166,6 +168,7 @@ jobs:
           npm run test:storage-integration
           npm run test:ai-auth-integration
           npm run test:legal-publish-integration
+          npm run test:operations-integration
 
       - name: Verify RPC grants, RLS, and SECURITY DEFINER search paths
         run: |
@@ -175,6 +178,7 @@ jobs:
           npm run check:public-data-db-security
           npm run check:storage-db-security
           npm run check:ai-auth-db-security
+          npm run check:operations-db-security
 
       - name: Run local database advisors
         run: supabase db advisors --local
@@ -223,6 +227,10 @@ jobs:
             sleep 1
           done
           npm run test:channels-browser
+          npm run test:operations-browser
+
+      - name: Exercise database and Storage backup restore
+        run: npm run test:operations-backup-restore
 
       - name: Verify reconciliation and test cleanup
         shell: bash
@@ -263,6 +271,7 @@ jobs:
           npm run test:public-data-install-paths
           npm run test:storage-install-paths
           npm run test:ai-auth-install-paths
+          npm run test:operations-install-paths
       - name: Verify ordered migration snapshot
         run: |
           npm run check:p1-static
@@ -272,3 +281,4 @@ jobs:
           npm run check:storage-static
           npm run check:ai-auth-static
           npm run check:channels-static
+          npm run check:operations-static
