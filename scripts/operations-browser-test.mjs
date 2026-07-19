@@ -60,6 +60,15 @@ const inventoryItem = {
   stock_matches_legacy: true,
   size_stock_matches_legacy: true,
 };
+const missingBarcodeItem = {
+  ...inventoryItem,
+  variant_id: "6b000000-0000-4000-8000-000000000005",
+  variant_sku: "AUDIT-6B-DRESS-L",
+  size: "L",
+  barcode: null,
+  quantity_on_hand: 1,
+  quantity_available: 1,
+};
 const order = {
   id: orderId,
   order_number: "AUDIT-6B-ORDER",
@@ -119,7 +128,7 @@ function mockedResponse(url) {
   if (pathname === "/api/admin/categories") return { ok: true, categories: [], subcategories: [] };
   if (pathname === "/api/admin/suppliers") return { ok: true, suppliers: [] };
   if (pathname === "/api/admin/products") return { ok: true, products: [], total: 0 };
-  if (pathname === "/api/admin/inventory") return { ok: true, items: [inventoryItem], total: 1 };
+  if (pathname === "/api/admin/inventory") return { ok: true, items: [inventoryItem, missingBarcodeItem], total: 2 };
   if (pathname === "/api/admin/pos/health") return { ok: true, ready: true, runtimeHealth: { ready: true } };
   if (pathname === `/api/admin/pos/orders/${orderId}`) return detail;
   if (pathname === "/api/admin/pos/orders") return { ok: true, orders: [order], total: 1, limit: 100, offset: 0 };
@@ -164,6 +173,16 @@ async function selectAdminTab(page, key) {
 async function openLabels(page) {
   await selectAdminTab(page, "labels");
   await page.locator("[data-label-product-card]").first().waitFor();
+  await page.getByRole("button", { name: "仅选缺少 Barcode", exact: true }).click();
+  await page.getByText("已选择：1 件商品 / 1 个规格", { exact: true }).waitFor();
+  await page.getByRole("button", { name: /批量生成缺失 Barcode（1）/ }).click();
+  const dialog = page.getByRole("heading", { name: "确认批量生成缺失 Barcode？", exact: true }).locator("..");
+  expect((await dialog.innerText()).includes("1 个规格缺少 Barcode"), "bulk Barcode confirmation has incorrect missing count");
+  expect((await dialog.innerText()).includes("0 个已有 Barcode"), "bulk Barcode confirmation has incorrect skipped count");
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("button", { name: "取消选择", exact: true }).click();
+  await page.getByText("已选择：0 件商品 / 0 个规格", { exact: true }).waitFor();
+  expect(await page.locator("[data-label-print-queue]").count() === 0, "cancel selection did not clear the print queue");
   await page.locator("[data-label-product-card]").first().click();
   await page.locator("[data-label-variant] input[type=checkbox]").first().check();
   await page.locator("[data-label-paper-size]").selectOption("40x30");

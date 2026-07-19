@@ -9,7 +9,9 @@ const migrations = fs.readdirSync(path.join(root, "supabase", "migrations")).fil
 const operationsMigrations = migrations.filter((name) => /^\d+_operations_reporting_audit_barcode\.sql$/.test(name));
 assert.deepEqual(operationsMigrations, ["20260718105030_operations_reporting_audit_barcode.sql"]);
 const projectionMigration = "20260719100000_reconcile_legacy_inventory_projections.sql";
+const bulkBarcodeMigration = "20260719120000_transactional_bulk_barcode_generation.sql";
 assert.ok(migrations.includes(projectionMigration), "legacy inventory projection reconciliation migration is missing");
+assert.ok(migrations.includes(bulkBarcodeMigration), "bulk Barcode generation migration is missing");
 assert.ok(
   migrations.indexOf(operationsMigrations[0]) < migrations.indexOf(projectionMigration),
   "legacy inventory projection reconciliation must follow operations reporting",
@@ -39,6 +41,16 @@ for (const marker of [
   "barcode_operations",
   "audit_logs_immutable",
 ]) assert.ok(migration.includes(marker), `operations migration is missing ${marker}`);
+const bulkBarcode = read(`supabase/migrations/${bulkBarcodeMigration}`).toLowerCase();
+for (const marker of [
+  "variant_barcodes_generate_missing_rpc",
+  "security definer",
+  "set search_path = ''",
+  "pg_advisory_xact_lock",
+  "skipped_existing",
+  "barcode_already_in_use",
+  "jsonb_array_length(p_variant_ids) > 100",
+]) assert.ok(bulkBarcode.includes(marker), `bulk Barcode migration is missing ${marker}`);
 assert.match(migration, /revoke all on table public\.audit_logs from public, anon, authenticated, service_role/);
 assert.match(migration, /grant select on table public\.audit_logs to service_role/);
 assert.doesNotMatch(migration, /grant (?:update|delete|insert).*audit_logs.*service_role/);
@@ -50,6 +62,15 @@ assert.match(barcodeFlow, /productOperationIds\(\)\.markAttempt/);
 assert.match(barcodeFlow, /clientRequestId:\s*operationId/);
 assert.match(barcodeFlow, /productOperationIds\(\)\.complete/);
 assert.doesNotMatch(barcodeFlow, /clientRequestId:\s*crypto\.randomUUID/);
+assert.match(dashboard, /全选当前结果/);
+assert.match(dashboard, /仅选缺少 Barcode/);
+assert.match(dashboard, /批量生成缺失 Barcode/);
+assert.match(dashboard, /确认批量生成缺失 Barcode/);
+const barcodeRoute = read("app/api/admin/variants/generate-barcodes/route.ts");
+assert.match(barcodeRoute, /authorizeAdminRequest\(request, "labels:write"\)/);
+assert.match(barcodeRoute, /isFeatureEnabled\("barcode_labels"\)/);
+assert.match(barcodeRoute, /parseBulkBarcodeRequest/);
+assert.match(barcodeRoute, /generateMissingBarcodesForVariants/);
 const dailyFlow = dashboard.slice(dashboard.indexOf("async function loadPosDailyReport"), dashboard.indexOf("async function loadPosOrderDetail"));
 assert.doesNotMatch(dailyFlow, /timezoneOffsetMinutes|getTimezoneOffset/);
 assert.match(dailyFlow, /offset/);

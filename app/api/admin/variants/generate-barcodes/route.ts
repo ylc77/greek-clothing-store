@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminActorFromContext, authorizeAdminRequest } from "@/lib/admin-auth";
 import { adminAuthorizationFailure } from "@/lib/admin-response";
+import { BarcodeBulkRequestError, parseBulkBarcodeRequest } from "@/lib/barcode-bulk-request";
 import { featureDisabledResponse, isFeatureEnabled } from "@/lib/features";
-import { generateBarcodesForVariants, VariantBarcodeError } from "@/lib/variant-barcodes";
+import { generateMissingBarcodesForVariants, VariantBarcodeError } from "@/lib/variant-barcodes";
 
 function barcodeError(error: unknown) {
   if (error instanceof VariantBarcodeError) {
     return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+  }
+  if (error instanceof BarcodeBulkRequestError) {
+    return NextResponse.json({ error: error.message, code: error.code, operationSafeToDiscard: true }, { status: error.status });
+  }
+  if (error instanceof SyntaxError) {
+    return NextResponse.json({ error: "Request body must be valid JSON.", code: "BARCODE_INVALID_ARGUMENT", operationSafeToDiscard: true }, { status: 400 });
   }
 
   const message = error instanceof Error ? error.message : "Failed to generate variant barcodes.";
@@ -19,27 +26,21 @@ export async function POST(request: NextRequest) {
   if (!(await isFeatureEnabled("barcode_labels"))) return featureDisabledResponse("barcode_labels");
 
   try {
-    const body = (await request.json()) as {
-      variantIds?: unknown;
-      mode?: unknown;
-      force?: unknown;
-      clientRequestId?: unknown;
-    };
+    const body = parseBulkBarcodeRequest(await request.json());
 
-    const result = await generateBarcodesForVariants({
+    const result = await generateMissingBarcodesForVariants({
       variantIds: body.variantIds,
-      mode: body.mode || "variant_sku",
-      force: body.force === true,
-      clientRequestId: typeof body.clientRequestId === "string" ? body.clientRequestId : "",
+      clientRequestId: body.clientRequestId,
       actor: adminActorFromContext(authorization.context),
     });
 
     return NextResponse.json({
-      ok: result.errors.length === 0,
-      generatedCount: result.generatedCount,
-      skippedCount: result.skippedCount,
-      errors: result.errors,
-      updatedVariants: result.updatedVariants,
+      ok: result.ok,
+      requested: result.requested,
+      generated: result.generated,
+      skippedExisting: result.skippedExisting,
+      failed: result.failed,
+      items: result.items,
       alreadyProcessed: result.alreadyProcessed,
     });
   } catch (error) {
