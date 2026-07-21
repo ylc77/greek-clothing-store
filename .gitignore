@@ -10,7 +10,6 @@ tsconfig.tsbuildinfo
 .vercel
 demo-videos/
 automation-reports/
-
-backups/*.sql
-
-backups/
+.codex/
+clothing-store-global-audit-prompt.md
+clothing-store-v1-final-goal-mode.md
