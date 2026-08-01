@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 // @ts-ignore Node's strip-only test runner requires the explicit .ts extension.
-import { CUSTOMER_BACKUP_FORMAT_VERSION, resolveManifestFile, sha256File, storageObjectFile, verifyCustomerBackup } from "../scripts/customer-backup-common.ts";
+import { CUSTOMER_BACKUP_FORMAT_VERSION, prepareCustomerRoleRestoreSql, resolveManifestFile, sha256File, storageObjectFile, verifyCustomerBackup } from "../scripts/customer-backup-common.ts";
 
 test("backup manifests verify database and Storage hashes and reject tampering", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "clothing-backup-test-"));
@@ -41,6 +41,20 @@ test("backup paths cannot escape the backup root", () => {
   assert.throws(() => resolveManifestFile("C:/backup", "/etc/passwd"), /unsafe/);
   assert.throws(() => resolveManifestFile("C:/backup", "\\\\server\\share\\secret"), /unsafe/);
   assert.equal(storageObjectFile("product-images", "catalog/a b.webp"), "storage/product-images/catalog/a%20b.webp");
+});
+
+test("role restore omits only the Supabase platform-managed parameter grant", () => {
+  const input = [
+    'ALTER ROLE "anon" SET "statement_timeout" TO \'3s\';',
+    'GRANT SET ON PARAMETER "log_min_messages" TO "supabase_realtime_admin";',
+    'GRANT "authenticated" TO "app_worker";',
+    "",
+  ].join("\n");
+  assert.equal(prepareCustomerRoleRestoreSql(input), [
+    'ALTER ROLE "anon" SET "statement_timeout" TO \'3s\';',
+    'GRANT "authenticated" TO "app_worker";',
+    "",
+  ].join("\n"));
 });
 
 test("backup and restore CLIs fail closed on project identity and non-empty targets", () => {
