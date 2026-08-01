@@ -74,6 +74,7 @@ begin
     'public.pos_search_rpc(text,integer)',
     'public.variant_barcodes_apply_rpc(text,jsonb,text,text)',
     'public.variant_barcodes_generate_missing_rpc(text,jsonb,text)',
+    'public.category_catalog_apply_rpc(jsonb,jsonb,uuid[],uuid[])',
     'public.operations_runtime_health_rpc()'
   ] loop
     if pg_catalog.to_regprocedure(signature) is null then raise exception 'missing %', signature; end if;

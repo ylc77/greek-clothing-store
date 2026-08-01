@@ -55,6 +55,7 @@ jobs:
         run: |
           npm run check:p1-static
           npm run check:product-static
+          npm run check:category-static
           npm run check:csv-static
           npm run check:public-data-static
           npm run check:storage-static
@@ -162,6 +163,7 @@ jobs:
         run: |
           npm run test:p1-integration
           npm run test:product-integration
+          npm run test:category-integration
           npm run test:csv-integration
           npm run test:csv-routes
           npm run test:public-data-integration
@@ -276,6 +278,7 @@ jobs:
         run: |
           npm run check:p1-static
           npm run check:product-static
+          npm run check:category-static
           npm run check:csv-static
           npm run check:public-data-static
           npm run check:storage-static

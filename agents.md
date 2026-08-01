@@ -283,3 +283,18 @@ The original customer database was observed with `public.products.image_urls` as
 
 `20260719110000_normalize_legacy_product_image_urls.sql` converts the legacy array to JSONB without changing its URLs and enforces the array contract. Keep the legacy product installation fixture exercising this conversion and a metadata-only RPC call. New product migrations and customer upgrades must preserve `image_urls` as a non-null JSONB array.
 
+
+\---
+
+
+\## 20. Category catalog transaction boundary
+
+
+Category create, update, and delete writes are transactional through `public.category_catalog_apply_rpc`, installed by `20260801191232_transactional_category_catalog.sql`. Never restore the previous Route Handler loops that ignored Supabase upsert errors, and never treat removing a row from React state as a database deletion.
+
+
+New categories and subcategories receive stable client-generated UUIDs before one catalog transaction is submitted, so a new child can safely reference a new parent. Persisted category slugs and persisted subcategory identity `(category_id, slug)` are immutable because products store these slugs as catalog references.
+
+
+Deleting a category or subcategory that is still used by a product must fail with a clear conflict and roll back every other catalog change in the request. Use `is_active=false` when the merchant only wants to hide an in-use category. Keep the RPC service-role-only with an empty `search_path`, explicit revoke/grant, strict request validation, and fail-closed behavior when the migration or admin client is unavailable.
+
