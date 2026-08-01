@@ -1,7 +1,8 @@
 import { getSupabaseClient } from "@/lib/supabase";
+import { loadCategories } from "@/lib/categories-data";
 import { siteUrl } from "@/lib/site";
-import { categories } from "@/lib/types";
 import { SITEMAP_PRODUCT_SELECT } from "@/lib/product-data-boundary";
+import { getStorefrontCategoryNavigation } from "@/lib/storefront-category-navigation";
 import { buildLanguageAlternates } from "@/lib/storefront-seo";
 import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 
@@ -50,6 +51,7 @@ export async function GET() {
   const base = siteUrl();
   const today = new Date().toISOString().split("T")[0];
   const supabase = getSupabaseClient();
+  const categoryNavigation = getStorefrontCategoryNavigation(await loadCategories(), "el");
 
   const urls: string[] = [];
 
@@ -64,7 +66,7 @@ export async function GET() {
   );
 
   // Categories
-  categories.forEach((cat) => {
+  categoryNavigation.forEach((cat) => {
     const catUrl = `${base}/${cat.slug}`;
     urls.push(
       urlEntry(catUrl, today, "weekly", "0.8", languageLinks(`/${cat.slug}`))

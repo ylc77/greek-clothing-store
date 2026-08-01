@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { LanguageSelector } from "@/components/language-selector";
 import { LogoImg } from "@/components/logo-img";
-import { categoryLabels, subcategoryLabels, text, withLanguage, type Language } from "@/lib/i18n";
-import { categories, subcategoryList, type ProductCategory } from "@/lib/types";
+import { loadCategories } from "@/lib/categories-data";
+import { text, withLanguage, type Language } from "@/lib/i18n";
 import type { BusinessSettings } from "@/lib/settings";
+import { getStorefrontCategoryNavigation } from "@/lib/storefront-category-navigation";
+import { splitDesktopCategoryNavigation } from "@/lib/storefront-categories";
+import type { ProductCategory } from "@/lib/types";
 
 function categoryHref(category: ProductCategory, language: Language, subcategory?: string) {
   const params = new URLSearchParams();
@@ -13,13 +16,16 @@ function categoryHref(category: ProductCategory, language: Language, subcategory
   return `/${category}${query ? `?${query}` : ""}`;
 }
 
-export function SiteHeader({
+export async function SiteHeader({
   language,
   settings,
 }: {
   language: Language;
   settings?: BusinessSettings;
 }) {
+  const categoryData = await loadCategories();
+  const categoryNavigation = getStorefrontCategoryNavigation(categoryData, language);
+  const { primary: primaryNavigation, overflow: overflowNavigation } = splitDesktopCategoryNavigation(categoryNavigation);
   const siteName = settings?.business_name || "Online Store";
   const instagramLink = settings?.instagram || "";
   const logoUrl = settings?.logo_url || "";
@@ -36,37 +42,76 @@ export function SiteHeader({
         </Link>
 
         <nav className="hidden items-center gap-1 xl:flex">
-          {categories.map((cat) => (
+          {primaryNavigation.map((cat) => (
             <div className="group relative" key={cat.slug}>
               <Link
                 className="inline-flex rounded-full px-3 py-2 text-sm font-black text-stone-500 transition hover:bg-white hover:text-ink hover:shadow-sm"
                 href={categoryHref(cat.slug, language)}
               >
-                {categoryLabels[cat.slug][language]}
+                {cat.label}
               </Link>
 
-              <div className="invisible absolute left-1/2 top-full z-30 w-56 -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:visible group-hover:opacity-100">
+              <div className="invisible absolute left-1/2 top-full z-30 w-56 -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
                 <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white p-2 shadow-2xl shadow-stone-900/10">
                   <Link
                     className="block rounded-xl px-3 py-2 text-sm font-black text-ink transition hover:bg-stone-100"
                     href={categoryHref(cat.slug, language)}
                   >
-                    {text[language].all} {categoryLabels[cat.slug][language]}
+                    {text[language].all} {cat.label}
                   </Link>
-                  <div className="my-1 border-t border-stone-100" />
-                  {subcategoryList[cat.slug].map((sub) => (
+                  {cat.subcategories.length > 0 ? <div className="my-1 border-t border-stone-100" /> : null}
+                  {cat.subcategories.map((sub) => (
                     <Link
                       className="block rounded-xl px-3 py-2 text-sm font-bold text-stone-600 transition hover:bg-stone-100 hover:text-ink"
-                      href={categoryHref(cat.slug, language, sub)}
-                      key={sub}
+                      href={categoryHref(cat.slug, language, sub.slug)}
+                      key={sub.slug}
                     >
-                      {subcategoryLabels[sub]?.[language] || sub}
+                      {sub.label}
                     </Link>
                   ))}
                 </div>
               </div>
             </div>
           ))}
+          {overflowNavigation.length > 0 ? (
+            <div className="group relative">
+              <button
+                aria-haspopup="true"
+                className="inline-flex rounded-full px-3 py-2 text-sm font-black text-stone-500 transition hover:bg-white hover:text-ink hover:shadow-sm"
+                data-storefront-category-more
+                type="button"
+              >
+                {language === "en" ? "More" : "Περισσότερα"}
+              </button>
+              <div className="invisible absolute right-0 top-full z-30 w-80 pt-2 opacity-0 transition duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                <div className="max-h-[70vh] overflow-y-auto rounded-2xl border border-stone-200 bg-white p-3 shadow-2xl shadow-stone-900/10">
+                  {overflowNavigation.map((category) => (
+                    <div className="border-b border-stone-100 py-2 last:border-b-0" key={category.slug}>
+                      <Link
+                        className="block rounded-xl px-3 py-2 text-sm font-black text-ink transition hover:bg-stone-100"
+                        href={categoryHref(category.slug, language)}
+                      >
+                        {category.label}
+                      </Link>
+                      {category.subcategories.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 px-3 pb-1">
+                          {category.subcategories.map((subcategory) => (
+                            <Link
+                              className="rounded-full bg-stone-100 px-2.5 py-1.5 text-xs font-bold text-stone-600 transition hover:bg-stone-200 hover:text-ink"
+                              href={categoryHref(category.slug, language, subcategory.slug)}
+                              key={subcategory.slug}
+                            >
+                              {subcategory.label}
+                            </Link>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </nav>
 
         <div className="flex items-center gap-2">
@@ -90,14 +135,14 @@ export function SiteHeader({
         <div className="pointer-events-none absolute right-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-stone-200 bg-white/95 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-stone-500 shadow-sm">
           {language === "en" ? "Swipe" : "Σύρετε"} →
         </div>
-        <nav className="ui-container scrollbar-none flex snap-x gap-2 overflow-x-auto pb-3 pr-20 sm:pr-24 lg:justify-center lg:gap-1.5 xl:hidden">
-          {categories.map((cat) => (
+        <nav className="ui-container scrollbar-none flex snap-x gap-2 overflow-x-auto pb-3 pr-20 sm:pr-24 lg:gap-1.5 xl:hidden" data-storefront-mobile-categories>
+          {categoryNavigation.map((cat) => (
             <Link
               className="inline-flex min-h-11 shrink-0 snap-start items-center rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-black text-stone-700 shadow-sm whitespace-nowrap transition hover:border-stone-300 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 lg:px-2.5 lg:text-xs"
               href={withLanguage(`/${cat.slug}`, language)}
               key={cat.slug}
             >
-              {categoryLabels[cat.slug][language]}
+              {cat.label}
             </Link>
           ))}
         </nav>

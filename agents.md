@@ -298,3 +298,15 @@ New categories and subcategories receive stable client-generated UUIDs before on
 
 Deleting a category or subcategory that is still used by a product must fail with a clear conflict and roll back every other catalog change in the request. Use `is_active=false` when the merchant only wants to hide an in-use category. Keep the RPC service-role-only with an empty `search_path`, explicit revoke/grant, strict request validation, and fail-closed behavior when the migration or admin client is unavailable.
 
+
+\---
+
+
+\## 21. Storefront category source of truth
+
+
+Enabled `product_categories` and `product_subcategories` rows are the storefront source of truth. Homepage category cards, desktop and mobile navigation, dynamic category routes, product category labels, and sitemap category URLs must all use `getStorefrontCategoryNavigation`; do not reintroduce direct rendering from the fixed `lib/types.ts` fallback list.
+
+
+The maintained eight-category list is only a read fallback when category data cannot be loaded. More than eight enabled categories must remain reachable: the homepage grid wraps all entries, desktop navigation uses seven direct entries plus a complete More menu, and mobile/tablet navigation keeps every first-level category in the horizontal scroller. Greek and English database names are customer-facing; never fall back to Chinese names on the storefront.
+

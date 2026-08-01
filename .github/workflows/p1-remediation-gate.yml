@@ -206,14 +206,20 @@ jobs:
           export ADMIN_STAFF_PASSWORD="CiStaff!A1$(openssl rand -hex 24)"
           export ADMIN_INVENTORY_PASSWORD="CiInventory!A1$(openssl rand -hex 24)"
           export ADMIN_READONLY_PASSWORD="CiReadonly!A1$(openssl rand -hex 24)"
-          npm run build
-          npm run start -- -p 3010 > "$RUNNER_TEMP/channels-next.log" 2>&1 &
-          SERVER_PID=$!
+          export EXPECT_DYNAMIC_CATEGORY_FIXTURE="true"
+          SERVER_PID=""
           cleanup() {
-            kill "$SERVER_PID" >/dev/null 2>&1 || true
+            if [ -n "$SERVER_PID" ]; then
+              kill "$SERVER_PID" >/dev/null 2>&1 || true
+            fi
+            supabase db query --local "delete from public.product_categories where id in ('90000000-0000-4000-8000-000000000001'::uuid, '90000000-0000-4000-8000-000000000002'::uuid);" >/dev/null 2>&1 || true
             rm -f "$RUNNER_TEMP/channels-next.log"
           }
           trap cleanup EXIT
+          supabase db query --local "insert into public.product_categories (id,slug,name_cn,name_en,name_gr,image_url,sort_order,is_active) values ('90000000-0000-4000-8000-000000000001','seasonal','季节限定','Seasonal','Εποχιακά','',90,true), ('90000000-0000-4000-8000-000000000002','essentials','基础款','Essentials','Βασικά','',91,true); insert into public.product_subcategories (id,category_id,slug,name_cn,name_en,name_gr,sort_order,is_active) values ('91000000-0000-4000-8000-000000000001','90000000-0000-4000-8000-000000000001','seasonal-sale','季节折扣','Seasonal sale','Εποχιακές εκπτώσεις',1,true);"
+          npm run build
+          npm run start -- -p 3010 > "$RUNNER_TEMP/channels-next.log" 2>&1 &
+          SERVER_PID=$!
           for attempt in $(seq 1 45); do
             if curl --fail --silent --show-error "http://127.0.0.1:3010/" >/dev/null; then
               break

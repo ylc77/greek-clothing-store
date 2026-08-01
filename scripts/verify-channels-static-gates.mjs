@@ -54,6 +54,26 @@ assert.match(adminDashboard, /进入 Skroutz 必填/);
 assert.match(adminDashboard, /至少一边 > 1000px/);
 assert.doesNotMatch(adminDashboard, /EAN（Skroutz 选填）|MPN（Skroutz 选填）/);
 
+const homePage = read("app/page.tsx");
+const siteHeader = read("components/site-header.tsx");
+const categoryRoute = read("app/[category]/page.tsx");
+const productPage = read("app/product/[sku]/page.tsx");
+const sitemapRoute = read("app/sitemap.xml/route.ts");
+for (const [name, source] of [
+  ["homepage", homePage],
+  ["site header", siteHeader],
+  ["category route", categoryRoute],
+  ["product page", productPage],
+  ["sitemap", sitemapRoute],
+]) {
+  assert.match(source, /getStorefrontCategoryNavigation/, `${name} must use database-backed storefront categories`);
+}
+assert.doesNotMatch(homePage, /import\s*\{\s*categories\s*\}\s*from\s*["']@\/lib\/types["']/, "homepage must not import the fixed category list");
+assert.doesNotMatch(siteHeader, /import\s*\{[^}]*\bcategories\b[^}]*\}\s*from\s*["']@\/lib\/types["']/, "site header must not import the fixed category list");
+assert.doesNotMatch(sitemapRoute, /import\s*\{\s*categories\s*\}\s*from\s*["']@\/lib\/types["']/, "sitemap must not import the fixed category list");
+assert.match(siteHeader, /splitDesktopCategoryNavigation/);
+assert.match(siteHeader, /data-storefront-category-more/);
+
 const monitor = read("scripts/site-smoke-check.js");
 for (const marker of ["XMLParser", "SkroutzBot v1.0", "Skroutz ImageBot v1", "additionalImages", "variationQuantity", "STRICT_FEED"]) {
   assert.match(monitor, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));

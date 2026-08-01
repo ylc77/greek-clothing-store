@@ -6,15 +6,14 @@ import { ProductImageGallery } from "@/components/product-image-gallery";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import {
-  categoryLabels,
   getLanguage,
   getLocalizedMaterial,
   productDescription,
   productName,
-  subcategoryLabels,
   text,
   withLanguage,
 } from "@/lib/i18n";
+import { loadCategories } from "@/lib/categories-data";
 import { getProductBySku } from "@/lib/products";
 import { getTotalStock } from "@/lib/product-stock";
 import { getFeatureSettings } from "@/lib/features";
@@ -23,6 +22,7 @@ import { siteUrl } from "@/lib/site";
 import { serializeJsonForHtmlScript } from "@/lib/serialize-json-for-html-script";
 import { buildLanguageAlternates } from "@/lib/storefront-seo";
 import { publicVariantOptions } from "@/lib/product-variant-matrix";
+import { getStorefrontCategoryNavigation } from "@/lib/storefront-category-navigation";
 
 type ProductPageProps = {
   params: Promise<{ sku: string }>;
@@ -94,10 +94,11 @@ export default async function ProductPage({
   const [{ sku }, resolvedSearchParams] = await Promise.all([params, searchParams]);
   const language = getLanguage(resolvedSearchParams.lang);
   const t = text[language];
-  const [settings, productResult, featureSettings] = await Promise.all([
+  const [settings, productResult, featureSettings, categoryData] = await Promise.all([
     getBusinessSettings(),
     getProductBySku(decodeURIComponent(sku)),
     getFeatureSettings(),
+    loadCategories(),
   ]);
   const { product, error } = productResult;
 
@@ -139,10 +140,12 @@ export default async function ProductPage({
       : null;
   const safeVariants = publicVariantOptions(product.public_variants);
   const backHref = categoryBackHref(product, language);
-  const backLabel =
-    product.subcategory && subcategoryLabels[product.subcategory]
-      ? subcategoryLabels[product.subcategory][language]
-      : categoryLabels[product.category][language];
+  const categoryEntry = getStorefrontCategoryNavigation(categoryData, language)
+    .find((item) => item.slug === product.category);
+  const categoryLabel = categoryEntry?.label || product.category;
+  const subcategoryLabel = categoryEntry?.subcategories
+    .find((item) => item.slug === product.subcategory)?.label;
+  const backLabel = subcategoryLabel || categoryLabel;
 
   // Filter out placeholder / meaningless values
   function isReal(v: string | null | undefined): v is string {
@@ -163,9 +166,9 @@ export default async function ProductPage({
 
   const detailItems = [
     { label: t.stock, value: stockQty > 0 ? `${t.inStockLabel} (${stockQty})` : t.outOfStockLabel },
-    { label: t.category, value: categoryLabels[product.category][language] },
+    { label: t.category, value: categoryLabel },
     product.subcategory
-      ? { label: t.subcategory, value: subcategoryLabels[product.subcategory]?.[language] || product.subcategory }
+      ? { label: t.subcategory, value: subcategoryLabel || product.subcategory }
       : null,
     isReal(product.brand) ? { label: t.brand, value: product.brand!.trim() } : null,
     isReal(ean) ? { label: t.ean, value: ean } : null,

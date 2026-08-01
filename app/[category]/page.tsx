@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CategoryPage } from "@/components/category-page";
-import { categoryLabels, getLanguage, subcategoryLabels } from "@/lib/i18n";
+import { loadCategories } from "@/lib/categories-data";
+import { getLanguage } from "@/lib/i18n";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
+import { getStorefrontCategoryNavigation } from "@/lib/storefront-category-navigation";
 import { buildLanguageAlternates } from "@/lib/storefront-seo";
-import { isProductCategory } from "@/lib/types";
 
 type CategoryRouteProps = {
   params: Promise<{
@@ -22,24 +23,23 @@ export async function generateMetadata({
   params,
   searchParams,
 }: CategoryRouteProps): Promise<Metadata> {
-  const [{ category }, resolvedSearchParams, settings] = await Promise.all([
+  const [{ category }, resolvedSearchParams, settings, categoryData] = await Promise.all([
     params,
     searchParams,
     getBusinessSettings(),
+    loadCategories(),
   ]);
   const language = getLanguage(resolvedSearchParams.lang);
-
-  if (!isProductCategory(category)) {
+  const categoryNavigation = getStorefrontCategoryNavigation(categoryData, language);
+  const categoryEntry = categoryNavigation.find((item) => item.slug === category);
+  if (!categoryEntry) {
     return { title: settings.business_name };
   }
 
   const selectedSubcategory = resolvedSearchParams.subcategory;
   const page = Math.max(1, Math.trunc(Number(resolvedSearchParams.page) || 1));
-  const categoryLabel = categoryLabels[category][language];
-  const subcategoryLabel =
-    selectedSubcategory && subcategoryLabels[selectedSubcategory]
-      ? subcategoryLabels[selectedSubcategory][language]
-      : "";
+  const categoryLabel = categoryEntry.label;
+  const subcategoryLabel = categoryEntry.subcategories.find((item) => item.slug === selectedSubcategory)?.label || "";
   const pageLabel = subcategoryLabel ? `${subcategoryLabel} · ${categoryLabel}` : categoryLabel;
   const title = `${pageLabel} | ${settings.business_name}`;
   return {
@@ -65,14 +65,16 @@ export default async function DynamicCategoryPage({
   params,
   searchParams,
 }: CategoryRouteProps) {
-  const [{ category }, resolvedSearchParams, settings] = await Promise.all([
+  const [{ category }, resolvedSearchParams, settings, categoryData] = await Promise.all([
     params,
     searchParams,
     getBusinessSettings(),
+    loadCategories(),
   ]);
   const language = getLanguage(resolvedSearchParams.lang);
-
-  if (!isProductCategory(category)) {
+  const categoryEntry = getStorefrontCategoryNavigation(categoryData, language)
+    .find((item) => item.slug === category);
+  if (!categoryEntry) {
     notFound();
   }
 
@@ -82,7 +84,8 @@ export default async function DynamicCategoryPage({
       language={language}
       selectedSubcategory={resolvedSearchParams.subcategory}
       page={Math.max(1, Math.trunc(Number(resolvedSearchParams.page) || 1))}
-      title={categoryLabels[category][language]}
+      title={categoryEntry.label}
+      subcategories={categoryEntry.subcategories}
       settings={settings}
     />
   );
