@@ -5,13 +5,13 @@ import { ProductCard } from "@/components/product-card";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { loadCategories } from "@/lib/categories-data";
-import { categoryLabels, getLanguage, localizeHours, text, withLanguage } from "@/lib/i18n";
+import { getLanguage, localizeHours, text, withLanguage } from "@/lib/i18n";
 import { getCategoryImages, getLatestProducts } from "@/lib/products";
 import { getFeatureSettings } from "@/lib/features";
 import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 import { buildLanguageAlternates } from "@/lib/storefront-seo";
-import { categories } from "@/lib/types";
+import { getStorefrontCategoryNavigation } from "@/lib/storefront-category-navigation";
 
 type HomePageProps = {
   searchParams: Promise<{ lang?: string }>;
@@ -51,6 +51,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     getFeatureSettings(),
   ]);
   const skroutzEnabled = featureSettings.features.skroutz_feed && settings.enable_skroutz;
+  const categoryNavigation = getStorefrontCategoryNavigation(categoryData, language);
   const howToBuySteps = [
     { title: t.step1Title, desc: t.step1Desc },
     { title: t.step2Title, desc: t.step2Desc },
@@ -143,18 +144,19 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </h2>
           </div>
 
-          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
-            {categories.map((cat) => {
-              const img = categoryCoverImages[cat.slug];
+          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4" data-storefront-category-grid>
+            {categoryNavigation.map((cat) => {
+              const img = cat.imageUrl || categoryCoverImages[cat.slug];
               return (
                 <Link
                   key={cat.slug}
                   className="group relative overflow-hidden rounded-2xl border border-stone-200/70 bg-white shadow-sm shadow-stone-900/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-stone-900/10"
+                  data-storefront-category-card={cat.slug}
                   href={withLanguage(`/${cat.slug}`, language)}
                 >
                   <div className="relative flex aspect-[3/4] items-center justify-center overflow-hidden bg-[#f3efe8]">
                     <OptimizedImage
-                      alt={categoryLabels[cat.slug]?.[language] || cat.slug}
+                      alt={cat.label}
                       className="absolute inset-0"
                       fill
                       imageClassName="object-cover object-center transition duration-500 group-hover:scale-[1.04]"
@@ -164,7 +166,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                     {/* gradient overlay for text readability */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
                     <p className="absolute bottom-0 left-0 right-0 p-4 text-base font-bold tracking-wide text-white sm:text-lg">
-                      {categoryLabels[cat.slug]?.[language] || cat.slug}
+                      {cat.label}
                     </p>
                   </div>
                 </Link>

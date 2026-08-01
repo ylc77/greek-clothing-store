@@ -2,10 +2,10 @@ import Link from "next/link";
 import { ProductCard } from "@/components/product-card";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { subcategoryLabels, text, withLanguage } from "@/lib/i18n";
+import { text, withLanguage } from "@/lib/i18n";
 import { getProductsByCategory } from "@/lib/products";
 import type { BusinessSettings } from "@/lib/settings";
-import { isProductSubcategory, subcategoryList, type ProductCategory } from "@/lib/types";
+import type { ProductCategory } from "@/lib/types";
 import type { Language } from "@/lib/i18n";
 
 function categoryHref(category: ProductCategory, language: Language, subcategory?: string, page?: number) {
@@ -33,6 +33,7 @@ export async function CategoryPage({
   selectedSubcategory,
   page,
   title,
+  subcategories,
   settings,
 }: {
   category: ProductCategory;
@@ -40,23 +41,16 @@ export async function CategoryPage({
   selectedSubcategory?: string;
   page?: number;
   title: string;
+  subcategories: Array<{ slug: string; label: string }>;
   settings: BusinessSettings;
 }) {
   const t = text[language];
   const activeSubcategory =
-    selectedSubcategory && isProductSubcategory(category, selectedSubcategory)
+    selectedSubcategory && subcategories.some((subcategory) => subcategory.slug === selectedSubcategory)
       ? selectedSubcategory
       : undefined;
   const currentPage = Math.max(1, Math.trunc(Number(page) || 1));
   const { products, error, total = 0, hasNextPage, hasPreviousPage } = await getProductsByCategory(category, activeSubcategory, currentPage);
-  const subcategories = Array.from(
-    new Set([
-      ...(subcategoryList[category] || []),
-      ...products
-        .map((product) => product.subcategory?.trim().toLowerCase())
-        .filter((value): value is string => Boolean(value)),
-    ]),
-  );
 
   return (
     <main className="min-h-screen bg-paper">
@@ -95,14 +89,14 @@ export async function CategoryPage({
             {subcategories.map((subcategory) => (
               <Link
                 className={`min-h-11 shrink-0 snap-start rounded-full border px-4 py-2.5 text-sm font-black shadow-sm transition ${
-                  activeSubcategory === subcategory
+                  activeSubcategory === subcategory.slug
                     ? "border-ink bg-ink text-white"
                     : "border-stone-200 bg-white text-ink hover:border-stone-300"
                 }`}
-                href={categoryHref(category, language, subcategory)}
-                key={subcategory}
+                href={categoryHref(category, language, subcategory.slug)}
+                key={subcategory.slug}
               >
-                {subcategoryLabels[subcategory]?.[language] || subcategory}
+                {subcategory.label}
               </Link>
             ))}
           </nav>

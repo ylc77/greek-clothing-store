@@ -5,6 +5,7 @@ import { chromium, request } from "playwright";
 const baseUrl = (process.env.BASE_URL || "http://127.0.0.1:3010").replace(/\/$/, "");
 const failures = [];
 const warnings = [];
+const expectDynamicCategoryFixture = process.env.EXPECT_DYNAMIC_CATEGORY_FIXTURE === "true";
 
 function expect(condition, message) {
   if (!condition) throw new Error(message);
@@ -63,6 +64,11 @@ for (const pathname of ["/", "/contact", "/privacy-policy", "/terms-of-service",
   await check(`${label} English raw metadata`, () => rawPage(api, `${pathname}${pathname.includes("?") ? "&" : "?"}lang=en`, "en", pathname));
 }
 
+if (expectDynamicCategoryFixture) {
+  await check("dynamic category Greek raw metadata", () => rawPage(api, "/seasonal", "el", "/seasonal"));
+  await check("dynamic category English raw metadata", () => rawPage(api, "/seasonal?lang=en", "en", "/seasonal"));
+}
+
 await check("security response headers", async () => {
   const response = await api.get(`${baseUrl}/`);
   const headers = response.headers();
@@ -104,8 +110,26 @@ for (const viewport of [
     expect(serious.length === 0, `axe violations: ${axeSummary(serious)}`);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow <= 1, `horizontal overflow is ${overflow}px`);
+    if (expectDynamicCategoryFixture) {
+      expect(await page.locator("[data-storefront-category-card]").count() === 10, "homepage does not render all 10 active categories");
+      expect(await page.locator("[data-storefront-mobile-categories] a").count() === 10, "mobile category navigation does not contain all 10 active categories");
+    }
   });
   if (viewport.label === "desktop") {
+    if (expectDynamicCategoryFixture) {
+      await check("desktop category overflow menu and dynamic route", async () => {
+        const more = page.locator("[data-storefront-category-more]");
+        await more.hover();
+        const seasonalLink = page.locator('[data-storefront-category-overflow] a[href="/seasonal"]');
+        await seasonalLink.waitFor({ state: "visible" });
+        await Promise.all([
+          page.waitForURL((url) => url.pathname === "/seasonal"),
+          seasonalLink.click(),
+        ]);
+        expect(await page.getByRole("heading", { name: "Εποχιακά" }).count() > 0, "dynamic category page heading is missing");
+        expect(await page.getByRole("link", { name: "Εποχιακές εκπτώσεις" }).count() > 0, "dynamic subcategory filter is missing");
+      });
+    }
     await check("admin login keyboard labels", async () => {
       await page.goto(`${baseUrl}/admin`, { waitUntil: "networkidle" });
       const firstCredentialInput = page.getByLabel(/员工邮箱|管理员应急密码/).first();

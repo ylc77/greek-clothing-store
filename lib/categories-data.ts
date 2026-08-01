@@ -32,6 +32,7 @@ async function loadCategoriesRaw(): Promise<{ cats: CatMap; subs: SubMap }> {
       (supabase as any).from("product_categories").select(CATEGORY_SELECT).eq("is_active", true).order("sort_order"),
       (supabase as any).from("product_subcategories").select(SUBCATEGORY_SELECT).eq("is_active", true).order("sort_order"),
     ]);
+    if (cr.error || sr.error) return { cats: {}, subs: {} };
     const cats: CatMap = {};
     if (cr.data) for (const c of cr.data) cats[c.slug] = c as DbCategory;
     const subs: SubMap = {};
