@@ -8,6 +8,7 @@ import {
   type SizeSystem,
   type VariantProcurement
 } from "./types";
+import { FIXED_PRODUCT_VAT_RATE, isFixedProductVat } from "./product-policy";
 
 export { adminPasswordIsValid } from "./admin-auth";
 
@@ -189,7 +190,7 @@ export function validateProductPayload(payload: AdminProductPayload) {
   const subcategory = stringValue(payload.subcategory);
   const price = numberValue(payload.price);
   const stock = numberValue(payload.stock);
-  const vat = payload.vat === undefined || payload.vat === "" ? 24 : numberValue(payload.vat);
+  const vat = FIXED_PRODUCT_VAT_RATE;
   const errors: string[] = [];
 
   if (!sku) {
@@ -212,8 +213,8 @@ export function validateProductPayload(payload: AdminProductPayload) {
     errors.push("stock must be a valid number");
   }
 
-  if (!Number.isFinite(vat) || vat < 0) {
-    errors.push("vat must be a valid number");
+  if (!isFixedProductVat(payload.vat)) {
+    errors.push("vat is fixed at 24");
   }
 
   const mutation: ProductMutation | null =
@@ -291,7 +292,7 @@ export function productForForm(product: Product): ProductFormData & { id: string
     barcode: product.barcode || "",
     ean: product.ean || "",
     mpn: product.mpn || "",
-    vat: Number(product.vat ?? 24),
+    vat: FIXED_PRODUCT_VAT_RATE,
     color: product.color || "",
     skroutz_url: product.skroutz_url || "",
     is_active: product.is_active !== false,

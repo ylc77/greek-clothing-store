@@ -16,6 +16,7 @@ import {
   isProductCategory,
   isProductSubcategory,
 } from "@/lib/types";
+import { FIXED_PRODUCT_VAT_RATE, isFixedProductVat } from "@/lib/product-policy";
 
 export type ProductCsvImportMode = "create_only" | "update_existing" | "upsert";
 export type ProductCsvInventoryMode = "metadata_only" | "set_inventory";
@@ -176,11 +177,10 @@ function createMetadata(
   }
   metadata.sku = sku;
   metadata.price = parseStrictCsvNumber(values.price, { field: "price", min: 0, max: 1_000_000 });
-  if (headers.has("vat")) {
-    metadata.vat = values.vat.trim()
-      ? parseStrictCsvNumber(values.vat, { field: "vat", min: 0, max: 100 })
-      : 24;
+  if (headers.has("vat") && !isFixedProductVat(values.vat)) {
+    throw rowError(rowNumber, "vat", "vat is fixed at 24.");
   }
+  metadata.vat = FIXED_PRODUCT_VAT_RATE;
   if (headers.has("is_active")) {
     metadata.is_active = values.is_active.trim()
       ? parseStrictCsvBoolean(values.is_active, { field: "is_active" })

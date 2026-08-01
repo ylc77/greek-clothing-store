@@ -6,7 +6,7 @@ import process from "node:process";
 import { createInterface } from "node:readline/promises";
 import { createClient } from "@supabase/supabase-js";
 // @ts-ignore Node's strip-only runner requires explicit .ts extensions.
-import { assertProjectRef, resolveManifestFile, verifyCustomerBackup, type CustomerBackupManifest } from "./customer-backup-common.ts";
+import { assertProjectRef, prepareCustomerRoleRestoreSql, resolveManifestFile, verifyCustomerBackup, type CustomerBackupManifest } from "./customer-backup-common.ts";
 
 type Options = {
   projectRef: string;
@@ -186,10 +186,21 @@ end $$;
     } finally {
       await rm(temporaryDirectory, { recursive: true, force: true });
     }
-    for (const name of ["database/roles.sql", "database/schema.sql", "database/data.sql"]) {
-      const entry = manifest.database.find((item) => item.file === name);
-      if (!entry) fail(`backup is missing ${name}`);
-      await runDatabaseFile(database, resolveManifestFile(options.backup, entry.file));
+    const restoreInputDirectory = await mkdtemp(path.join(os.tmpdir(), "clothing-restore-input-"));
+    try {
+      for (const name of ["database/roles.sql", "database/schema.sql", "database/data.sql"]) {
+        const entry = manifest.database.find((item) => item.file === name);
+        if (!entry) fail(`backup is missing ${name}`);
+        let restoreFile = resolveManifestFile(options.backup, entry.file);
+        if (name === "database/roles.sql") {
+          const sanitizedRoles = prepareCustomerRoleRestoreSql(await readFile(restoreFile, "utf8"));
+          restoreFile = path.join(restoreInputDirectory, "roles.sql");
+          await writeFile(restoreFile, sanitizedRoles, "utf8");
+        }
+        await runDatabaseFile(database, restoreFile);
+      }
+    } finally {
+      await rm(restoreInputDirectory, { recursive: true, force: true });
     }
     const migrationHistory = manifest.database.find((item) => item.file === "database/migration-history.sql");
     if (!migrationHistory) fail("backup is missing database/migration-history.sql");

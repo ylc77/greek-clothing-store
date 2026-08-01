@@ -19,6 +19,41 @@ function Assert-TemporaryPath([string]$Path) {
   }
 }
 
+function Test-TcpPortsAvailable([int[]]$Ports) {
+  $listeners = @()
+  try {
+    foreach ($port in $Ports) {
+      $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+      $listener.Start()
+      $listeners += $listener
+    }
+    return $true
+  }
+  catch {
+    return $false
+  }
+  finally {
+    foreach ($listener in $listeners) { $listener.Stop() }
+  }
+}
+
+function Get-RestorePortPlan {
+  foreach ($basePort in @(15320, 17320, 19320, 21320, 23320, 25320, 27320, 29320)) {
+    $candidate = @{
+      Shadow = $basePort
+      Api = $basePort + 1
+      Db = $basePort + 2
+      Studio = $basePort + 3
+      Inbucket = $basePort + 4
+      Analytics = $basePort + 7
+      Pooler = $basePort + 9
+      Inspector = $basePort + 60
+    }
+    if (Test-TcpPortsAvailable @($candidate.Values)) { return $candidate }
+  }
+  throw "Unable to find an isolated local port block for the restore target"
+}
+
 function Read-LocalEnvironment([string]$Workdir = "") {
   if ($Workdir) { $lines = npx supabase status --workdir $Workdir -o env }
   else { $lines = npx supabase status -o env }
@@ -95,8 +130,17 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "Customer backup verification failed" }
 
   New-Item -ItemType Directory -Path (Join-Path $targetRoot "supabase") -Force | Out-Null
+  $portPlan = Get-RestorePortPlan
   $config = [System.IO.File]::ReadAllText($sourceConfig, [System.Text.Encoding]::UTF8)
-  $config = $config.Replace('project_id = "clothing_web"', 'project_id = "clothing_6b_restore_target"').Replace('5532', '5632')
+  $config = $config.Replace('project_id = "clothing_web"', 'project_id = "clothing_6b_restore_target"')
+  $config = $config.Replace('shadow_port = 55320', "shadow_port = $($portPlan.Shadow)")
+  $config = $config.Replace('port = 55321', "port = $($portPlan.Api)")
+  $config = $config.Replace('port = 55322', "port = $($portPlan.Db)")
+  $config = $config.Replace('port = 55323', "port = $($portPlan.Studio)")
+  $config = $config.Replace('port = 55324', "port = $($portPlan.Inbucket)")
+  $config = $config.Replace('port = 55327', "port = $($portPlan.Analytics)")
+  $config = $config.Replace('port = 55329', "port = $($portPlan.Pooler)")
+  $config = $config.Replace('inspector_port = 8183', "inspector_port = $($portPlan.Inspector)")
   $targetConfig = Join-Path (Join-Path $targetRoot "supabase") "config.toml"
   [System.IO.File]::WriteAllText($targetConfig, $config, (New-Object System.Text.UTF8Encoding($false)))
 
@@ -104,8 +148,8 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "Unable to start isolated restore Supabase" }
   $targetStarted = $true
   $target = Read-LocalEnvironment $targetRoot
-  if ($target["API_URL"] -ne "http://127.0.0.1:56321") { throw "Restore target API identity mismatch" }
-  if ($target["DB_URL"] -notmatch '127\.0\.0\.1:56322/postgres$') { throw "Restore target DB identity mismatch" }
+  if ($target["API_URL"] -ne "http://127.0.0.1:$($portPlan.Api)") { throw "Restore target API identity mismatch" }
+  if ($target["DB_URL"] -notmatch "127\.0\.0\.1:$($portPlan.Db)/postgres$") { throw "Restore target DB identity mismatch" }
 
   $env:NEXT_PUBLIC_SUPABASE_URL = $target["API_URL"]
   Set-Item -Path ("Env:" + "SUPABASE_SERVICE_ROLE_KEY") -Value $target["SERVICE_ROLE_KEY"]

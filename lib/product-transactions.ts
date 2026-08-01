@@ -3,6 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { productForForm, validateProductPayload } from "@/lib/admin-products";
 import type { Product } from "@/lib/types";
 import { adminPrivateJson } from "@/lib/admin-response";
+import { variantCatalogKey, variantProcurementKey } from "@/lib/product-variant-matrix";
+import { FIXED_PRODUCT_VAT_RATE, isFixedProductVat } from "@/lib/product-policy";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_CLIENT_REQUEST_ID_LENGTH = 128;
@@ -116,6 +118,8 @@ function normalizeVariant(raw: unknown, index: number) {
     return { error: `variants[${index}].variant_sku must contain 1 to 240 characters` };
   }
   if (!size || size.length > 120) return { error: `variants[${index}].size is invalid` };
+  if (color.length > 120) return { error: `variants[${index}].color must contain at most 120 characters` };
+  if (barcode.length > 250) return { error: `variants[${index}].barcode must contain at most 250 characters` };
   if (!Number.isInteger(quantity) || Number(quantity) > MAX_VARIANT_QUANTITY) {
     return { error: `variants[${index}].quantity must be an integer between 0 and ${MAX_VARIANT_QUANTITY}` };
   }
@@ -170,7 +174,7 @@ function parseVariants(value: unknown, required: boolean) {
     const normalized = normalizeVariant(value[index], index);
     if (normalized.error || !normalized.variant) return { error: normalized.error || "Invalid variant" };
     const variant = normalized.variant;
-    const catalogKey = `${variant.size}\u0000${variant.color}`;
+    const catalogKey = variantCatalogKey(variant.size, variant.color);
     if (variant.id && ids.has(variant.id)) return { error: "Duplicate Variant ID" };
     if (variantSkus.has(variant.variant_sku)) return { error: "Duplicate Variant SKU" };
     if (variant.barcode && barcodeValues.has(variant.barcode)) return { error: "Duplicate Variant barcode" };
@@ -274,9 +278,8 @@ function buildUpdateMetadata(payload: JsonObject) {
     metadata.price = value;
   }
   if ("vat" in payload) {
-    const value = optionalMoney(payload.vat);
-    if (value === null || Number.isNaN(value)) return { error: "vat must be a non-negative number" };
-    metadata.vat = value;
+    if (!isFixedProductVat(payload.vat)) return { error: "vat is fixed at 24" };
+    metadata.vat = FIXED_PRODUCT_VAT_RATE;
   }
   for (const field of ["image_width", "image_height"] as const) {
     if (!(field in payload)) continue;
@@ -468,7 +471,7 @@ function shapeProductSnapshot(product: Product, variantRows: JsonObject[]) {
     structure_version: Number(raw.structure_version || 1),
     variants,
     variant_procurement: Object.fromEntries(variants.map((variant) => [
-      String(variant.size || "ONE SIZE").trim().toUpperCase(),
+      variantProcurementKey(variant.size, variant.color),
       {
         supplier_sku: String(variant.supplier_sku || ""),
         cost_price: variant.cost_price === null || variant.cost_price === undefined

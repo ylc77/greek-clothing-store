@@ -68,6 +68,15 @@ export function resolveManifestFile(backupRoot: string, relativeFile: string) {
   return resolved;
 }
 
+export function prepareCustomerRoleRestoreSql(sql: string) {
+  const newline = sql.includes("\r\n") ? "\r\n" : "\n";
+  const platformManagedParameterGrant = /^\s*GRANT\s+SET\s+ON\s+PARAMETER\s+"?log_min_messages"?\s+TO\s+"?supabase_realtime_admin"?\s*;\s*$/i;
+  return sql
+    .split(/\r?\n/)
+    .filter((line) => !platformManagedParameterGrant.test(line))
+    .join(newline);
+}
+
 export async function sha256File(filePath: string) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(filePath)) hash.update(chunk);
