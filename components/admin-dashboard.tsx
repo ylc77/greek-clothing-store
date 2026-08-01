@@ -50,6 +50,7 @@ import {
   selectVisibleMissingBarcodes,
 } from "@/lib/barcode-label-selection";
 import { MAX_BULK_BARCODE_VARIANTS } from "@/lib/barcode-bulk-request";
+import { CategoryCatalogInputError, parseCategoryCatalogMutation } from "@/lib/category-catalog";
 import { getStockOperationBarcodePlan } from "@/lib/stock-receiving";
 import { FIXED_PRODUCT_VAT_RATE } from "@/lib/product-policy";
 import { ColorSizeInventoryEditor } from "@/components/color-size-inventory-editor";
@@ -6927,25 +6928,115 @@ function SuppliersManager({ authHeaders, initialSuppliers, onChanged, toast }: {
 function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismissConfirm }: { activePassword: string; authHeaders: () => Record<string, string>; toast: (m: string, t?: "ok" | "err") => void; confirm: (c: { open: boolean; title: string; desc: string; confirmText: string; variant: "danger"|"success"|"default"; action: () => void }) => void; dismissConfirm: () => void }) {
   const [cats, setCats] = useState<Array<Record<string, unknown>>>([]);
   const [subs, setSubs] = useState<Array<Record<string, unknown>>>([]);
+  const [deletedCategoryIds, setDeletedCategoryIds] = useState<string[]>([]);
+  const [deletedSubcategoryIds, setDeletedSubcategoryIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  async function load() { setLoading(true); try { const r = await fetch("/api/admin/categories", { headers: authHeaders() }); const d = await r.json(); setCats(d.categories || []); setSubs(d.subcategories || []); } catch {} finally { setLoading(false); } }
-  useEffect(() => { load(); }, [activePassword]);
+  async function load() {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/admin/categories", { headers: authHeaders() });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "分类加载失败");
+      setCats(Array.isArray(data.categories) ? data.categories : []);
+      setSubs(Array.isArray(data.subcategories) ? data.subcategories : []);
+      setDeletedCategoryIds([]);
+      setDeletedSubcategoryIds([]);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "分类加载失败", "err");
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { void load(); }, [activePassword]);
 
   function updateCat(idx: number, key: string, val: unknown) { setCats(prev => { const n = [...prev]; n[idx] = { ...n[idx], [key]: val }; return n; }); }
   function updateSub(idx: number, key: string, val: unknown) { setSubs(prev => { const n = [...prev]; n[idx] = { ...n[idx], [key]: val }; return n; }); }
-  function addCat() { const newCat = { id: "", slug: "", name_cn: "", name_en: "", name_gr: "", image_url: "", sort_order: cats.length + 1, is_active: true }; setCats(prev => [...prev, newCat as Record<string, unknown>]); }
-  function addSub(catId: string) { const newSub = { id: "", category_id: catId, slug: "", name_cn: "", name_en: "", name_gr: "", sort_order: subs.filter(s => s.category_id === catId).length + 1, is_active: true }; setSubs(prev => [...prev, newSub as Record<string, unknown>]); }
-  function removeSub(idx: number) { const s = subs[idx]; const id = String(s.id||""); const slug = String(s.slug||""); confirm({ open: true, title: "删除二级分类", desc: `确认删除二级分类 ${slug}？`, confirmText: "确认删除", variant: "danger", action: () => { setSubs(prev => prev.filter(x => String(x.id||"") !== id || String(x.slug||"") !== slug)); dismissConfirm(); } }); }
-  function removeCat(idx: number) { const c = cats[idx]; const slug = String(c.slug||""); const id = String(c.id||""); if (!slug) return; confirm({ open: true, title: "删除分类", desc: `确认删除分类 ${slug}？`, confirmText: "确认删除", variant: "danger", action: () => { setCats(prev => prev.filter(x => String(x.id||"") !== id || String(x.slug||"") !== slug)); dismissConfirm(); } }); }
+  function addCat() {
+    const newCat = { id: crypto.randomUUID(), slug: "", name_cn: "", name_en: "", name_gr: "", image_url: "", sort_order: cats.length + 1, is_active: true, _is_new: true };
+    setCats(prev => [...prev, newCat as Record<string, unknown>]);
+  }
+  function addSub(catId: string) {
+    const newSub = { id: crypto.randomUUID(), category_id: catId, slug: "", name_cn: "", name_en: "", name_gr: "", sort_order: subs.filter(s => s.category_id === catId).length + 1, is_active: true, _is_new: true };
+    setSubs(prev => [...prev, newSub as Record<string, unknown>]);
+  }
+  function removeSub(idx: number) {
+    const subcategory = subs[idx];
+    if (!subcategory) return;
+    const id = String(subcategory.id || "");
+    const label = String(subcategory.name_cn || subcategory.name_en || subcategory.slug || "未保存的二级分类");
+    confirm({
+      open: true,
+      title: "删除二级分类",
+      desc: `确认删除“${label}”？保存时会检查是否仍有商品使用；正在使用的分类不会被删除。`,
+      confirmText: "移入待删除",
+      variant: "danger",
+      action: () => {
+        setSubs(prev => prev.filter(item => String(item.id || "") !== id));
+        if (subcategory._is_new !== true) setDeletedSubcategoryIds(prev => prev.includes(id) ? prev : [...prev, id]);
+        dismissConfirm();
+      },
+    });
+  }
+  function removeCat(idx: number) {
+    const category = cats[idx];
+    if (!category) return;
+    const id = String(category.id || "");
+    const label = String(category.name_cn || category.name_en || category.slug || "未保存的一级分类");
+    const childSubcategories = subs.filter(item => String(item.category_id || "") === id);
+    confirm({
+      open: true,
+      title: "删除一级分类",
+      desc: `确认删除“${label}”及其 ${childSubcategories.length} 个二级分类？保存时会检查是否仍有商品使用；正在使用的分类不会被删除。`,
+      confirmText: "移入待删除",
+      variant: "danger",
+      action: () => {
+        setCats(prev => prev.filter(item => String(item.id || "") !== id));
+        setSubs(prev => prev.filter(item => String(item.category_id || "") !== id));
+        if (category._is_new !== true) setDeletedCategoryIds(prev => prev.includes(id) ? prev : [...prev, id]);
+        const persistedChildIds = childSubcategories
+          .filter(item => item._is_new !== true)
+          .map(item => String(item.id || ""))
+          .filter(Boolean);
+        if (persistedChildIds.length > 0) {
+          setDeletedSubcategoryIds(prev => Array.from(new Set([...prev, ...persistedChildIds])));
+        }
+        dismissConfirm();
+      },
+    });
+  }
 
-  async function save() { setLoading(true); try { await fetch("/api/admin/categories", { method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ categories: cats, subcategories: subs }) }); toast("分类已保存"); load(); } catch { toast("保存失败", "err"); } finally { setLoading(false); } }
+  async function save() {
+    setLoading(true);
+    try {
+      const mutation = parseCategoryCatalogMutation({ categories: cats, subcategories: subs, deletedCategoryIds, deletedSubcategoryIds });
+      const response = await fetch("/api/admin/categories", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(mutation),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "分类保存失败");
+      setCats(Array.isArray(data.categories) ? data.categories : mutation.categories);
+      setSubs(Array.isArray(data.subcategories) ? data.subcategories : mutation.subcategories);
+      setDeletedCategoryIds([]);
+      setDeletedSubcategoryIds([]);
+      toast("分类已安全保存");
+    } catch (error) {
+      const message = error instanceof CategoryCatalogInputError
+        ? error.message
+        : error instanceof Error ? error.message : "分类保存失败";
+      toast(message, "err");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function uploadCategoryImage(idx: number, file: File | null) {
     if (!file) return;
     const categoryId = String(cats[idx]?.id || "");
-    if (!categoryId) {
+    if (!categoryId || cats[idx]?._is_new === true) {
       toast("请先保存分类，再上传分类图片。", "err");
       return;
     }
@@ -6975,11 +7066,11 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
     <section className="flex flex-col gap-5">
       {/* 一级分类 */}
       <div className="admin-panel">
-        <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-lg font-black text-ink">一级分类</h2><button className="min-h-10 rounded-xl border border-stone-200 px-4 py-2 text-xs font-black hover:bg-stone-50" onClick={addCat} type="button">+ 新增</button></div>
-        <p className="mb-3 text-xs text-stone-400">slug 只允许小写英文和横线。停用后前台不再显示，但已有商品不受影响。</p>
+        <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-lg font-black text-ink">一级分类</h2><button className="min-h-10 rounded-xl border border-stone-200 px-4 py-2 text-xs font-black hover:bg-stone-50 disabled:opacity-50" disabled={loading} onClick={addCat} type="button">+ 新增</button></div>
+        <p className="mb-3 text-xs text-stone-400">新分类的 slug 只允许小写英文、数字和横线，保存后不可修改。停用不会影响已有商品；仍被商品使用的分类不能删除。</p>
         <div className="grid gap-3 lg:hidden">
           {cats.map((c, i) => (
-            <div key={i} className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5">
+            <div key={String(c.id || i)} className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <p className="min-w-0 truncate text-sm font-black text-ink">{String(c.slug || "未设置 slug")} · {String(c.name_cn || fallbackCategoryNamesCn[String(c.slug || "")] || c.name_en || "新分类")}</p>
                 <label className="flex shrink-0 items-center gap-1 text-xs font-bold text-stone-500">
@@ -6988,7 +7079,7 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
                 </label>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-xs font-bold text-stone-500">slug<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base font-mono" value={String(c.slug||"")} onChange={e => updateCat(i, "slug", e.target.value.replace(/[^a-z0-9-]/g,"").toLowerCase())} /></label>
+                <label className="block text-xs font-bold text-stone-500">slug<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base font-mono disabled:bg-stone-100 disabled:text-stone-500" disabled={c._is_new !== true} value={String(c.slug||"")} onChange={e => updateCat(i, "slug", e.target.value.replace(/[^a-z0-9-]/g,"").toLowerCase())} /></label>
                 <label className="block text-xs font-bold text-stone-500">排序<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" type="number" value={Number(c.sort_order||0)} onChange={e => updateCat(i, "sort_order", parseInt(e.target.value)||0)} /></label>
                 <label className="block text-xs font-bold text-stone-500">中文<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.name_cn||"")} onChange={e => updateCat(i, "name_cn", e.target.value)} /></label>
                 <label className="block text-xs font-bold text-stone-500">English<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.name_en||"")} onChange={e => updateCat(i, "name_en", e.target.value)} /></label>
@@ -7002,7 +7093,7 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
                 </div>
                 <label className="block text-xs font-bold text-stone-500 sm:col-span-2">Ελληνικά<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(c.name_gr||"")} onChange={e => updateCat(i, "name_gr", e.target.value)} /></label>
               </div>
-              <button className="mt-3 min-h-10 w-full rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600 hover:bg-red-50" onClick={() => removeCat(i)} type="button">删除分类</button>
+              <button className="mt-3 min-h-10 w-full rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600 hover:bg-red-50 disabled:opacity-50" disabled={loading} onClick={() => removeCat(i)} type="button">删除分类</button>
             </div>
           ))}
         </div>
@@ -7010,8 +7101,8 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
           <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-2 px-2 text-xs font-bold">slug</th><th className="py-2 px-2 text-xs font-bold">中文</th><th className="py-2 px-2 text-xs font-bold">English</th><th className="py-2 px-2 text-xs font-bold">分类图</th><th className="py-2 px-2 text-xs font-bold">Ελληνικά</th><th className="py-2 px-2 text-xs font-bold w-14">排序</th><th className="py-2 px-2 text-xs font-bold w-12">启用</th><th className="py-2 px-2 text-xs font-bold w-12">删除</th></tr></thead>
           <tbody>
             {cats.map((c, i) => (
-              <tr key={i} className="border-t border-stone-50">
-                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base font-mono sm:text-xs" value={String(c.slug||"")} onChange={e => updateCat(i, "slug", e.target.value.replace(/[^a-z0-9-]/g,"").toLowerCase())} /></td>
+              <tr key={String(c.id || i)} className="border-t border-stone-50">
+                <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base font-mono disabled:bg-stone-100 disabled:text-stone-500 sm:text-xs" disabled={c._is_new !== true} value={String(c.slug||"")} onChange={e => updateCat(i, "slug", e.target.value.replace(/[^a-z0-9-]/g,"").toLowerCase())} /></td>
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base sm:text-xs" value={String(c.name_cn||"")} onChange={e => updateCat(i, "name_cn", e.target.value)} /></td>
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base sm:text-xs" value={String(c.name_en||"")} onChange={e => updateCat(i, "name_en", e.target.value)} /></td>
                 <td className="py-1.5 px-2">
@@ -7027,7 +7118,7 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-base sm:text-xs" value={String(c.name_gr||"")} onChange={e => updateCat(i, "name_gr", e.target.value)} /></td>
                 <td className="py-1.5 px-2"><input className="w-full rounded border border-stone-200 px-1.5 py-1 text-center text-base sm:text-xs" type="number" value={Number(c.sort_order||0)} onChange={e => updateCat(i, "sort_order", parseInt(e.target.value)||0)} /></td>
                 <td className="py-1.5 px-2 text-center"><input type="checkbox" checked={c.is_active !== false} onChange={e => updateCat(i, "is_active", e.target.checked)} /></td>
-                <td className="py-1.5 px-2 text-center"><button className="text-xs font-bold text-red-400 hover:text-red-600" onClick={() => removeCat(i)} type="button">×</button></td>
+                <td className="py-1.5 px-2 text-center"><button className="text-xs font-bold text-red-400 hover:text-red-600 disabled:opacity-50" disabled={loading} onClick={() => removeCat(i)} type="button">×</button></td>
               </tr>
             ))}
           </tbody>
@@ -7042,7 +7133,7 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
             <div className="flex min-h-12 cursor-pointer items-center justify-between gap-3 bg-stone-50 px-3 py-2" onClick={() => setCollapsed(prev => { const n = new Set(prev); if (n.has(catId)) n.delete(catId); else n.add(catId); return n; })}>
               <h3 className="min-w-0 text-sm font-bold text-ink"><span className="break-words">{String(c.slug || "未设置 slug")} · {String(c.name_cn || fallbackCategoryNamesCn[String(c.slug || "")] || c.name_en || "未命名分类")}</span> <span className="text-xs font-normal text-stone-400">— {catSubs.length} 个二级分类</span></h3>
               <div className="flex items-center gap-2">
-                <button className="min-h-9 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-[11px] font-black hover:bg-stone-100" onClick={e => { e.stopPropagation(); addSub(catId); }} type="button">+ 新增</button>
+                <button className="min-h-9 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-[11px] font-black hover:bg-stone-100 disabled:opacity-50" disabled={loading} onClick={e => { e.stopPropagation(); addSub(catId); }} type="button">+ 新增</button>
                 <span className="text-xs text-stone-400">{isOpen ? "▲" : "▼"}</span>
               </div>
             </div>
@@ -7050,7 +7141,7 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
               <>
               <div className="grid gap-3 p-3 lg:hidden">
                 {catSubs.map((s) => { const gi = subs.findIndex(x => x === s); return (
-                  <div key={gi} className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5">
+                  <div key={String(s.id || gi)} className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5">
                     <div className="mb-3 flex items-center justify-between gap-2">
                       <p className="min-w-0 truncate text-sm font-black text-ink">{String(s.slug || "未设置 slug")} · {String(s.name_cn || fallbackSubcategoryNamesCn[String(s.slug || "")] || s.name_en || "新二级分类")}</p>
                       <label className="flex shrink-0 items-center gap-1 text-xs font-bold text-stone-500">
@@ -7059,13 +7150,13 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
                       </label>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="block text-xs font-bold text-stone-500">slug<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base font-mono" value={String(s.slug||"")} onChange={e => updateSub(gi, "slug", e.target.value.replace(/[^a-z0-9_-]/g,"").toLowerCase())} /></label>
+                      <label className="block text-xs font-bold text-stone-500">slug<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base font-mono disabled:bg-stone-100 disabled:text-stone-500" disabled={s._is_new !== true} value={String(s.slug||"")} onChange={e => updateSub(gi, "slug", e.target.value.replace(/[^a-z0-9_-]/g,"").toLowerCase())} /></label>
                       <label className="block text-xs font-bold text-stone-500">排序<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" type="number" value={Number(s.sort_order||0)} onChange={e => updateSub(gi, "sort_order", parseInt(e.target.value)||0)} /></label>
                       <label className="block text-xs font-bold text-stone-500">中文<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(s.name_cn||"")} onChange={e => updateSub(gi, "name_cn", e.target.value)} /></label>
                       <label className="block text-xs font-bold text-stone-500">English<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(s.name_en||"")} onChange={e => updateSub(gi, "name_en", e.target.value)} /></label>
                       <label className="block text-xs font-bold text-stone-500 sm:col-span-2">Ελληνικά<input className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-base" value={String(s.name_gr||"")} onChange={e => updateSub(gi, "name_gr", e.target.value)} /></label>
                     </div>
-                    <button className="mt-3 min-h-10 w-full rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600 hover:bg-red-50" onClick={() => removeSub(gi)} type="button">删除二级分类</button>
+                    <button className="mt-3 min-h-10 w-full rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-600 hover:bg-red-50 disabled:opacity-50" disabled={loading} onClick={() => removeSub(gi)} type="button">删除二级分类</button>
                   </div>
                 );})}
               </div>
@@ -7073,14 +7164,14 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
                 <thead><tr className="bg-stone-50/80 text-stone-400"><th className="py-1.5 px-2 text-[11px] font-bold">slug</th><th className="py-1.5 px-2 text-[11px] font-bold">中文</th><th className="py-1.5 px-2 text-[11px] font-bold">English</th><th className="py-1.5 px-2 text-[11px] font-bold">Ελληνικά</th><th className="py-1.5 px-2 text-[11px] font-bold w-12">排序</th><th className="py-1.5 px-2 text-[11px] font-bold w-10">启用</th><th className="py-1.5 px-2 text-[11px] font-bold w-10">删除</th></tr></thead>
                 <tbody>
                   {catSubs.map((s, si) => { const gi = subs.findIndex(x => x === s); return (
-                    <tr key={gi} className="border-t border-stone-50">
-                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-base font-mono sm:text-[11px]" value={String(s.slug||"")} onChange={e => updateSub(gi, "slug", e.target.value.replace(/[^a-z0-9_-]/g,"").toLowerCase())} /></td>
+                    <tr key={String(s.id || gi)} className="border-t border-stone-50">
+                      <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-base font-mono disabled:bg-stone-100 disabled:text-stone-500 sm:text-[11px]" disabled={s._is_new !== true} value={String(s.slug||"")} onChange={e => updateSub(gi, "slug", e.target.value.replace(/[^a-z0-9_-]/g,"").toLowerCase())} /></td>
                       <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-base sm:text-[11px]" value={String(s.name_cn||"")} onChange={e => updateSub(gi, "name_cn", e.target.value)} /></td>
                       <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-base sm:text-[11px]" value={String(s.name_en||"")} onChange={e => updateSub(gi, "name_en", e.target.value)} /></td>
                       <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-base sm:text-[11px]" value={String(s.name_gr||"")} onChange={e => updateSub(gi, "name_gr", e.target.value)} /></td>
                       <td className="py-1 px-2"><input className="w-full rounded border border-stone-200 px-1 py-0.5 text-center text-base sm:text-[11px]" type="number" value={Number(s.sort_order||0)} onChange={e => updateSub(gi, "sort_order", parseInt(e.target.value)||0)} /></td>
                       <td className="py-1 px-2 text-center"><input type="checkbox" checked={s.is_active !== false} onChange={e => updateSub(gi, "is_active", e.target.checked)} /></td>
-                      <td className="py-1 px-2 text-center"><button className="text-[11px] font-bold text-red-400 hover:text-red-600" onClick={() => removeSub(gi)} type="button">×</button></td>
+                      <td className="py-1 px-2 text-center"><button className="text-[11px] font-bold text-red-400 hover:text-red-600 disabled:opacity-50" disabled={loading} onClick={() => removeSub(gi)} type="button">×</button></td>
                     </tr>
                   );})}
                 </tbody>
@@ -7092,8 +7183,8 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
       </div>
 
       <div className="admin-sticky-actions">
-        <button className="admin-button-primary w-full sm:w-auto" onClick={save} disabled={loading} type="button">保存全部分类</button>
-        <p className="text-xs font-bold text-stone-400">修改一级分类或二级分类后，请点击保存才会写入数据库。</p>
+        <button className="admin-button-primary w-full sm:w-auto" onClick={save} disabled={loading} type="button">{loading ? "保存中..." : "保存全部分类"}</button>
+        <p className="text-xs font-bold text-stone-400">新增、修改和待删除项目会在一次数据库事务中提交；任何一项失败都会全部回滚。</p>
       </div>
     </section>
   );
