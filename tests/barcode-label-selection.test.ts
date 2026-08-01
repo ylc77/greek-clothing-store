@@ -29,6 +29,8 @@ test("summary deduplicates products and separates missing from existing barcodes
   });
 
   assert.deepEqual(summary, {
+    allMissingBarcodeProductCount: 2,
+    allMissingBarcodeCount: 2,
     visibleProductCount: 2,
     visibleVariantCount: 3,
     visibleMissingBarcodeCount: 2,

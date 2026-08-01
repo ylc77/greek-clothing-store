@@ -173,10 +173,11 @@ async function selectAdminTab(page, key) {
 async function openLabels(page) {
   await selectAdminTab(page, "labels");
   await page.locator("[data-label-product-card]").first().waitFor();
-  await page.getByRole("button", { name: "仅选缺少 Barcode", exact: true }).click();
+  await page.locator("[data-barcode-recovery]").waitFor();
+  await page.getByRole("button", { name: "选择当前缺失（1）", exact: true }).click();
   await page.getByText("已选择：1 件商品 / 1 个规格", { exact: true }).waitFor();
-  await page.getByRole("button", { name: /批量生成缺失 Barcode（1）/ }).click();
-  const dialog = page.getByRole("heading", { name: "确认批量生成缺失 Barcode？", exact: true }).locator("..");
+  await page.getByRole("button", { name: /补全已选缺失 Barcode（1）/ }).click();
+  const dialog = page.getByRole("heading", { name: "确认补全缺失 Barcode？", exact: true }).locator("..");
   expect((await dialog.innerText()).includes("1 个规格缺少 Barcode"), "bulk Barcode confirmation has incorrect missing count");
   expect((await dialog.innerText()).includes("0 个已有 Barcode"), "bulk Barcode confirmation has incorrect skipped count");
   await page.getByRole("button", { name: "取消", exact: true }).click();
