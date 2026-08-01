@@ -216,7 +216,7 @@ jobs:
             rm -f "$RUNNER_TEMP/channels-next.log"
           }
           trap cleanup EXIT
-          supabase db query --local "insert into public.product_categories (id,slug,name_cn,name_en,name_gr,image_url,sort_order,is_active) values ('90000000-0000-4000-8000-000000000001','seasonal','季节限定','Seasonal','Εποχιακά','',90,true), ('90000000-0000-4000-8000-000000000002','essentials','基础款','Essentials','Βασικά','',91,true); insert into public.product_subcategories (id,category_id,slug,name_cn,name_en,name_gr,sort_order,is_active) values ('91000000-0000-4000-8000-000000000001','90000000-0000-4000-8000-000000000001','seasonal-sale','季节折扣','Seasonal sale','Εποχιακές εκπτώσεις',1,true);"
+          supabase db query --local "with inserted_categories as (insert into public.product_categories (id,slug,name_cn,name_en,name_gr,image_url,sort_order,is_active) values ('90000000-0000-4000-8000-000000000001','seasonal','季节限定','Seasonal','Εποχιακά','',90,true), ('90000000-0000-4000-8000-000000000002','essentials','基础款','Essentials','Βασικά','',91,true) returning id) insert into public.product_subcategories (id,category_id,slug,name_cn,name_en,name_gr,sort_order,is_active) select '91000000-0000-4000-8000-000000000001','90000000-0000-4000-8000-000000000001','seasonal-sale','季节折扣','Seasonal sale','Εποχιακές εκπτώσεις',1,true from inserted_categories where id = '90000000-0000-4000-8000-000000000001'::uuid;"
           npm run build
           npm run start -- -p 3010 > "$RUNNER_TEMP/channels-next.log" 2>&1 &
           SERVER_PID=$!
