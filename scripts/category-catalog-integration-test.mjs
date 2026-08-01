@@ -30,7 +30,7 @@ function sql(statement) {
 
 function localEnvironment() {
   const output = process.platform === "win32"
-    ? command("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "npx supabase status -o env"])
+    ? command(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", "npx.cmd supabase status -o env"])
     : command("npx", ["supabase", "status", "-o", "env"]);
   const values = {};
   for (const line of output.split(/\r?\n/)) {

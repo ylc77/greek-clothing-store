@@ -93,7 +93,14 @@ async function readCatalog() {
     (supabase as any).from("product_categories").select(CATEGORY_SELECT).order("sort_order").order("slug"),
     (supabase as any).from("product_subcategories").select(SUBCATEGORY_SELECT).order("sort_order").order("slug"),
   ]);
-  if (categories.error || subcategories.error) return { response: unavailable() };
+  if (categories.error || subcategories.error) {
+    const error = categories.error || subcategories.error;
+    console.error("[categories] failed to load catalog", {
+      code: String(error?.code || "CATEGORY_DATA_UNAVAILABLE"),
+      message: String(error?.message || "Category catalog query failed"),
+    });
+    return { response: unavailable() };
+  }
   return { categories: categories.data || [], subcategories: subcategories.data || [] };
 }
 

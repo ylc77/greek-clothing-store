@@ -275,6 +275,7 @@ jobs:
         run: |
           npm run test:p1-install-paths
           npm run test:product-install-paths
+          npm run test:category-install-paths
           npm run test:csv-install-paths
           npm run test:public-data-install-paths
           npm run test:storage-install-paths
