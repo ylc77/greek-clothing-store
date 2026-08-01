@@ -22,6 +22,7 @@ import { getBusinessSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 import { serializeJsonForHtmlScript } from "@/lib/serialize-json-for-html-script";
 import { buildLanguageAlternates } from "@/lib/storefront-seo";
+import { publicVariantOptions } from "@/lib/product-variant-matrix";
 
 type ProductPageProps = {
   params: Promise<{ sku: string }>;
@@ -136,6 +137,7 @@ export default async function ProductPage({
     sizeChartRaw && typeof sizeChartRaw === "object" && !Array.isArray(sizeChartRaw)
       ? JSON.parse(JSON.stringify(sizeChartRaw))
       : null;
+  const safeVariants = publicVariantOptions(product.public_variants);
   const backHref = categoryBackHref(product, language);
   const backLabel =
     product.subcategory && subcategoryLabels[product.subcategory]
@@ -265,6 +267,7 @@ export default async function ProductPage({
                 sizes={product.sizes}
                 sizeSystem={product.size_system}
                 sizeStock={safeSizeStock}
+                variants={safeVariants}
                 stock={Number(product.stock)}
                 skroutzUrl={product.skroutz_url}
                 skroutzEnabled={featureSettings.features.skroutz_feed && settings.enable_skroutz}

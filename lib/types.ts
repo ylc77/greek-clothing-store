@@ -99,6 +99,11 @@ export type Product = {
   ean?: string | null;
   vat?: number | null;
   color?: string | null;
+  public_variants?: Array<{
+    size: string;
+    color: string;
+    quantity_available: number;
+  }>;
   additional_image_urls?: string | null;
   skroutz_url?: string | null;
   material?: string | null;

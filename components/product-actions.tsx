@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { text, type Language } from "@/lib/i18n";
 import { getSizeOptions } from "@/lib/product-stock";
 import type { SizeSystem } from "@/lib/types";
+import {
+  publicVariantOptions,
+  sizeOptionsForColor,
+  type PublicProductVariant,
+} from "@/lib/product-variant-matrix";
 
 type ProductActionsProps = {
   productName: string;
@@ -13,6 +18,7 @@ type ProductActionsProps = {
   sizes: string | null;
   sizeSystem?: SizeSystem | null;
   sizeStock?: Record<string, number> | null;
+  variants?: PublicProductVariant[];
   stock: number;
   skroutzUrl?: string | null;
   skroutzEnabled?: boolean;
@@ -42,10 +48,28 @@ function buildSkroutzUrl(skroutzUrl: string | null | undefined, productNameEn: s
   return url.toString();
 }
 
-export function ProductActions({ productName, productNameEn, productNameGr, sku, sizes, sizeSystem, sizeStock, stock, skroutzUrl, skroutzEnabled = true, aiEnabled = true, language, whatsappUrl, category, subcategory, price, imageUrl, sizeChart, fitType }: ProductActionsProps) {
+export function ProductActions({ productName, productNameEn, productNameGr, sku, sizes, sizeSystem, sizeStock, variants, stock, skroutzUrl, skroutzEnabled = true, aiEnabled = true, language, whatsappUrl, category, subcategory, price, imageUrl, sizeChart, fitType }: ProductActionsProps) {
   const waUrl = whatsappUrl || "#";
-  const t = text[language || "el"];
-  const sizeOptions = useMemo(() => getSizeOptions({ sizes, stock, size_stock: sizeStock }), [sizes, stock, sizeStock]);
+  const activeLanguage = language || "el";
+  const t = text[activeLanguage];
+  const normalizedVariants = useMemo(() => publicVariantOptions(variants), [variants]);
+  const colors = useMemo(() => {
+    const seen = new Set<string>();
+    return normalizedVariants.map(variant => variant.color).filter(color => {
+      const key = color.toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [normalizedVariants]);
+  const [selectedColor, setSelectedColor] = useState("");
+  const activeColor = colors.some(color => color.toLocaleLowerCase() === selectedColor.toLocaleLowerCase())
+    ? selectedColor
+    : colors[0] || "";
+  const sizeOptions = useMemo(() => normalizedVariants.length > 0
+    ? sizeOptionsForColor(normalizedVariants, activeColor)
+    : getSizeOptions({ sizes, stock, size_stock: sizeStock }),
+  [activeColor, normalizedVariants, sizeStock, sizes, stock]);
   const [selectedSize, setSelectedSize] = useState("");
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -57,7 +81,9 @@ export function ProductActions({ productName, productNameEn, productNameGr, sku,
   const hasWhatsApp = Boolean(whatsappUrl?.trim());
   const skroutzHref = buildSkroutzUrl(skroutzUrl, productNameEn, sku);
   const selectedSizeText = selectedSize || (sizeOptions.find(s => !s.disabled)?.label) || t.oneSize;
-  const whatsappMessage = [`${t.whatsappAskProduct}: ${productName}`, `${t.whatsappAskSku}: ${sku}`, currentUrl, selectedSizeText ? `${t.whatsappAskSize}: ${selectedSizeText}` : ""].filter(Boolean).join("\n");
+  const colorLabel = activeLanguage === "en" ? "Color" : "Χρώμα";
+  const defaultColorLabel = activeLanguage === "en" ? "Default" : "Βασικό";
+  const whatsappMessage = [`${t.whatsappAskProduct}: ${productName}`, `${t.whatsappAskSku}: ${sku}`, currentUrl, colors.length > 1 ? `${colorLabel}: ${activeColor || defaultColorLabel}` : "", selectedSizeText ? `${t.whatsappAskSize}: ${selectedSizeText}` : ""].filter(Boolean).join("\n");
   const whatsappHref = hasWhatsApp ? buildWhatsAppUrl({ baseUrl: waUrl, text: whatsappMessage }) : "#";
 
   useEffect(() => {
@@ -79,6 +105,27 @@ export function ProductActions({ productName, productNameEn, productNameGr, sku,
 
   return (
     <div>
+      {colors.length > 1 ? (
+        <div className="mb-4">
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-stone-500">{colorLabel}</p>
+          <div className="flex flex-wrap gap-2">
+            {colors.map(color => {
+              const selected = color.toLocaleLowerCase() === activeColor.toLocaleLowerCase();
+              const hasStock = normalizedVariants.some(variant => variant.color.toLocaleLowerCase() === color.toLocaleLowerCase() && variant.quantityAvailable > 0);
+              return (
+                <button
+                  className={`min-h-11 rounded-full border px-4 py-2.5 text-sm font-bold transition ${selected ? "border-ink bg-ink text-white shadow-sm" : "border-stone-200 bg-white text-ink hover:border-ink"}`}
+                  key={color || "__default_color__"}
+                  onClick={() => { setSelectedColor(color); setSelectedSize(""); setMessage(""); }}
+                  type="button"
+                >
+                  {color || defaultColorLabel}{!hasStock ? <span className="ml-1 text-[10px] opacity-60">×</span> : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
       {/* Size selector */}
       {sizeOptions.length > 0 ? (
         <div className="mb-4">
@@ -135,7 +182,7 @@ export function ProductActions({ productName, productNameEn, productNameGr, sku,
       ) : null}
 
       {/* AI Assistant button */}
-      {aiEnabled ? <button className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-6 py-3 text-sm font-bold text-violet-700 transition hover:bg-violet-100 hover:border-violet-300" onClick={() => { window.dispatchEvent(new CustomEvent("openAiChat", { detail: { product: { sku, productName, productNameEn, productNameGr, sizes, sizeSystem, sizeStock, stock, category, subcategory, price, imageUrl, sizeChart, fitType } } })); }} type="button">{t.askAi}</button> : null}
+      {aiEnabled ? <button className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-6 py-3 text-sm font-bold text-violet-700 transition hover:bg-violet-100 hover:border-violet-300" onClick={() => { window.dispatchEvent(new CustomEvent("openAiChat", { detail: { product: { sku, productName, productNameEn, productNameGr, sizes, sizeSystem, sizeStock, variants: normalizedVariants, selectedColor: activeColor, stock, category, subcategory, price, imageUrl, sizeChart, fitType } } })); }} type="button">{t.askAi}</button> : null}
 
       {hasWhatsApp ? (
         <a

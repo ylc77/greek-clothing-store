@@ -7,6 +7,7 @@ import {
 } from "@/lib/product-data-boundary";
 import { getSupabaseClient } from "./supabase";
 import { isProductSubcategory, type Product, type ProductCategory } from "./types";
+import { publicVariantOptions } from "./product-variant-matrix";
 
 export type ProductsResult = {
   products: Product[];
@@ -172,8 +173,21 @@ async function getProductBySkuRaw(sku: string): Promise<{ product: Product | nul
   if (error) {
     return { product: null, error: error.message };
   }
+  if (!data) return { product: null, error: null };
 
-  return { product: data ? mapProduct(data as unknown as Product) : null, error: null };
+  const product = mapProduct(data as unknown as Product);
+  const { data: publicVariants, error: variantError } = await (supabase as any).rpc(
+    "product_public_variants_rpc",
+    { p_product_sku: sku },
+  );
+  if (!variantError) {
+    product.public_variants = publicVariantOptions(publicVariants).map(variant => ({
+      size: variant.size,
+      color: variant.color,
+      quantity_available: variant.quantityAvailable,
+    }));
+  }
+  return { product, error: null };
 }
 
 const getProductBySkuCached = unstable_cache(

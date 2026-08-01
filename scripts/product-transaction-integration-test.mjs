@@ -150,7 +150,10 @@ function productPayload(label, variantSpecs, overrides = {}) {
     spec.quantity,
     { ...spec, sort_order: spec.sort_order ?? index },
   ));
-  const sizeStock = Object.fromEntries(variants.map((variant) => [variant.size, Number(variant.quantity)]));
+  const sizeStock = {};
+  for (const variant of variants) {
+    sizeStock[variant.size] = (sizeStock[variant.size] || 0) + Number(variant.quantity);
+  }
   return {
     sku,
     name_cn: overrides.name_cn || `商品事务测试 ${label}`,
@@ -396,16 +399,17 @@ async function assertProjection(productId) {
   const state = await stateForProduct(productId);
   const quantities = new Map(state.balances.map((row) => [row.variant_id, Number(row.quantity_on_hand)]));
   const activeVariants = state.variants.filter((variant) => variant.active);
-  const expectedSizeStock = Object.fromEntries(activeVariants.map((variant) => [
-    normalizedSize(variant.size),
-    quantities.get(variant.id) || 0,
-  ]));
+  const expectedSizeStock = {};
+  for (const variant of activeVariants) {
+    const size = normalizedSize(variant.size);
+    expectedSizeStock[size] = (expectedSizeStock[size] || 0) + (quantities.get(variant.id) || 0);
+  }
   const expectedStock = Object.values(expectedSizeStock).reduce((sum, quantity) => sum + quantity, 0);
   assert.equal(Number(state.product.stock), expectedStock);
   assert.deepEqual(state.product.size_stock, expectedSizeStock);
   assert.deepEqual(
     String(state.product.sizes || "").split(",").filter(Boolean),
-    activeVariants.map((variant) => normalizedSize(variant.size)),
+    Array.from(new Set(activeVariants.map((variant) => normalizedSize(variant.size)))),
   );
   return state;
 }
@@ -708,6 +712,43 @@ try {
     assert.equal(state.movements.length, 0);
     assert.equal(Number(state.product.stock), 0);
     assert.deepEqual(state.product.size_stock, { XS: 0, S: 0 });
+  });
+
+  await runCase("one product supports independent color and size Variants", async () => {
+    const sku = auditSku("MULTICOLOR");
+    const payload = productPayload("MULTICOLOR", [
+      { size: "L", color: "Yellow", quantity: 2, variant_sku: `${sku}-YELLOW-L`, barcode: `${sku}-YELLOW-L` },
+      { size: "L", color: "Green", quantity: 0, variant_sku: `${sku}-GREEN-L`, barcode: `${sku}-GREEN-L` },
+      { size: "XL", color: "Yellow", quantity: 3, variant_sku: `${sku}-YELLOW-XL`, barcode: `${sku}-YELLOW-XL` },
+      { size: "XL", color: "Green", quantity: 4, variant_sku: `${sku}-GREEN-XL`, barcode: `${sku}-GREEN-XL` },
+    ], { sku, color: "Yellow" });
+    const { product } = await createProductOrThrow(payload);
+    const created = await assertProjection(product.id);
+    assert.equal(created.variants.filter((variant) => variant.active).length, 4);
+    assert.equal(Number(created.product.stock), 9);
+    assert.equal(created.product.sizes, "L,XL");
+    assert.deepEqual(created.product.size_stock, { L: 2, XL: 7 });
+    assert.equal(new Set(created.variants.map((variant) => variant.barcode)).size, 4);
+
+    const publicResult = await supabase.rpc("product_public_variants_rpc", { p_product_sku: sku });
+    if (publicResult.error) throw publicResult.error;
+    assert.equal(publicResult.data.length, 4);
+    assert.ok(publicResult.data.every((variant) => !("barcode" in variant) && !("variant_sku" in variant)));
+    const greenL = publicResult.data.find((variant) => variant.color === "Green" && variant.size === "L");
+    const greenXl = publicResult.data.find((variant) => variant.color === "Green" && variant.size === "XL");
+    assert.equal(Number(greenL.quantity_available), 0);
+    assert.equal(Number(greenXl.quantity_available), 4);
+
+    const changedVariants = authoritativeVariants(product).map((variant) => ({
+      ...variant,
+      quantity: variant.color === "Green" && normalizedSize(variant.size) === "L" ? 1 : Number(variant.quantity),
+    }));
+    const update = await updateProduct(product, auditId("MULTICOLOR-UPDATE"), {}, changedVariants);
+    assert.equal(update.status, 200, JSON.stringify(update.data));
+    const updated = await assertProjection(product.id);
+    assert.equal(Number(updated.product.stock), 10);
+    assert.deepEqual(updated.product.size_stock, { L: 3, XL: 7 });
+    assert.equal(updated.movements.filter((movement) => movement.source_type === "product_update").length, 1);
   });
 
   await runCase("20 different IDs racing on one SKU create one product", async () => {
@@ -1305,10 +1346,13 @@ try {
     ]) assert.ok(Array.isArray(healthyBefore?.[field]), `missing reconciliation field ${field}`);
     assert.equal(healthyBefore.projectionMismatches.some((item) => Number(item.product_id) === Number(product.id)), false);
 
-    const { error: corruptError } = await supabase.from("products")
-      .update({ stock: 999, size_stock: { S: 999 } })
-      .eq("id", product.id);
-    if (corruptError) throw corruptError;
+    sql(`
+      alter table public.products disable trigger products_authoritative_inventory_projection;
+      update public.products
+      set stock = 999, size_stock = '{"S":999}'::jsonb
+      where id = ${Number(product.id)};
+      alter table public.products enable trigger products_authoritative_inventory_projection;
+    `);
     const { data: broken, error: brokenError } = await supabase.rpc("product_reconciliation_rpc");
     if (brokenError) throw brokenError;
     assert.equal(broken.healthy, false, JSON.stringify(broken));

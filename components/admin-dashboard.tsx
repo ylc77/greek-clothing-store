@@ -50,6 +50,22 @@ import {
   selectVisibleMissingBarcodes,
 } from "@/lib/barcode-label-selection";
 import { MAX_BULK_BARCODE_VARIANTS } from "@/lib/barcode-bulk-request";
+import { getStockOperationBarcodePlan } from "@/lib/stock-receiving";
+import { FIXED_PRODUCT_VAT_RATE } from "@/lib/product-policy";
+import { ColorSizeInventoryEditor } from "@/components/color-size-inventory-editor";
+import {
+  buildVariantSku,
+  matrixColors,
+  matrixRowsFromVariants,
+  matrixSizeStock,
+  matrixSizes,
+  matrixTotal,
+  normalizeVariantColor,
+  normalizeVariantSize,
+  type ProductVariantMatrixRow,
+  variantCatalogKey,
+  variantProcurementKey,
+} from "@/lib/product-variant-matrix";
 
 /* ── Types ───────────────────────────────────────────────── */
 type AdminProductVariant = {
@@ -180,6 +196,18 @@ const csvJobStatusLabels: Record<CsvImportJob["status"], string> = {
   failed: "失败",
 };
 type TranslationResult = { name_gr: string; description_gr: string; name_en: string; description_en: string };
+type ProductCopyResult = TranslationResult & {
+  name_cn?: string;
+  description_cn?: string;
+  material?: string;
+  material_evidence?: "label_visible" | "owner_provided" | "visual_guess" | "unknown";
+  fit_type?: "regular" | "slim" | "loose";
+  ai_keywords?: string;
+  style_tags?: string;
+  visual_summary?: string;
+  images_analyzed?: number;
+  generation_mode?: "vision" | "text";
+};
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
 type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "stockLookup" | "stockOperations" | "pos" | "posOrders" | "posDaily" | "inventory" | "labels" | "add" | "csv" | "images" | "skroutz" | "categories" | "suppliers";
@@ -454,9 +482,10 @@ type QuickAddState = {
 };
 
 /* ── Constants ───────────────────────────────────────────── */
-const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_en: "", description_cn: "", description_gr: "", description_en: "", category: "men", subcategory: "tshirts", price: 0, stock: 0, sizes: "", size_system: "letter", image_url: "", image_urls: "", brand: "", supplier_id: "", supplier_style_code: "", barcode: "", ean: "", mpn: "", vat: 24, color: "", skroutz_url: "", is_active: true, fit_type: "regular", material: "", fiber_composition_gr: "", fiber_composition_en: "", care_instructions_gr: "", care_instructions_en: "", country_of_origin: "", manufacturer_name: "", manufacturer_contact: "", eu_responsible_person: "", product_safety_notes_gr: "", product_safety_notes_en: "", ai_keywords: "", style_tags: "", size_chart: "", material_verified: false };
+const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_en: "", description_cn: "", description_gr: "", description_en: "", category: "men", subcategory: "tshirts", price: 0, stock: 0, sizes: "", size_system: "letter", image_url: "", image_urls: "", brand: "", supplier_id: "", supplier_style_code: "", barcode: "", ean: "", mpn: "", vat: FIXED_PRODUCT_VAT_RATE, color: "", skroutz_url: "", is_active: true, fit_type: "regular", material: "", fiber_composition_gr: "", fiber_composition_en: "", care_instructions_gr: "", care_instructions_en: "", country_of_origin: "", manufacturer_name: "", manufacturer_contact: "", eu_responsible_person: "", product_safety_notes_gr: "", product_safety_notes_en: "", ai_keywords: "", style_tags: "", size_chart: "", material_verified: false };
 const csvFields = [...PRODUCT_CSV_FIELDS];
 const quickCsvFields = ["sku","name_cn","description_cn","category","subcategory","price","stock","sizes","size_system","size_stock","brand","color","image_url","image_urls","is_active"];
+const maxProductVisionImages = 2;
 const fallbackCategoryNamesCn: Record<string, string> = {
   women: "女装", men: "男装", shoes: "鞋子", bags: "包包", luggage: "行李箱", hats: "帽子", jewelry: "首饰", other: "其他",
 };
@@ -658,9 +687,9 @@ const stockOperationOptions: Array<{
   },
   {
     key: "receiving",
-    label: "到货入库",
-    shortDescription: "按到货数量增加库存",
-    guidance: "扫描到货商品并填写本次收到的件数。这里只增加库存，不记录或处理真实付款。",
+    label: "到货扫码",
+    shortDescription: "有条码直接扫，无条码先选规格并生成",
+    guidance: "有条码的商品直接扫描；没有条码时输入商品名、商品 SKU、供货商 SKU 或款号，选择正确颜色和尺码。缺少内部 Barcode 的规格会先按 Variant SKU 安全生成，再增加库存。",
     quantityLabel: "本次到货数量",
     quantityPlaceholder: "填写本次增加件数",
     reason: "扫码到货入库",
@@ -699,7 +728,7 @@ function downloadCsvTemplate() {
     size_system: "letter",
     size_stock: "S:2,M:3,L:1",
     brand: "Store Brand",
-    vat: 24,
+    vat: FIXED_PRODUCT_VAT_RATE,
     color: "black",
     is_active: true,
     material: "cotton",
@@ -726,7 +755,7 @@ function cleanImageUrls(raw: string, mainUrl: string): string {
 }
 function normalizeProduct(p: ProductFormData): ProductFormData {
   const img = p.image_url.trim();
-  return { ...p, sku: p.sku.trim(), name_cn: p.name_cn.trim(), name_gr: p.name_gr.trim(), name_en: p.name_en.trim(), description_cn: p.description_cn.trim(), description_gr: p.description_gr.trim(), description_en: p.description_en.trim(), subcategory: p.subcategory.trim(), price: Number(p.price), stock: Number(p.stock), sizes: p.sizes.trim(), image_url: img, image_urls: cleanImageUrls(p.image_urls, img), brand: p.brand.trim(), barcode: p.barcode.trim(), vat: Number(p.vat), color: p.color.trim(), skroutz_url: p.skroutz_url.trim(), is_active: p.is_active, fit_type: p.fit_type, material: p.material.trim(), ai_keywords: p.ai_keywords.trim(), style_tags: p.style_tags.trim(), size_chart: p.size_chart.trim() };
+  return { ...p, sku: p.sku.trim(), name_cn: p.name_cn.trim(), name_gr: p.name_gr.trim(), name_en: p.name_en.trim(), description_cn: p.description_cn.trim(), description_gr: p.description_gr.trim(), description_en: p.description_en.trim(), subcategory: p.subcategory.trim(), price: Number(p.price), stock: Number(p.stock), sizes: p.sizes.trim(), image_url: img, image_urls: cleanImageUrls(p.image_urls, img), brand: p.brand.trim(), barcode: p.barcode.trim(), vat: FIXED_PRODUCT_VAT_RATE, color: p.color.trim(), skroutz_url: p.skroutz_url.trim(), is_active: p.is_active, fit_type: p.fit_type, material: p.material.trim(), ai_keywords: p.ai_keywords.trim(), style_tags: p.style_tags.trim(), size_chart: p.size_chart.trim() };
 }
 function imageLines(v: string) { return v.split(/\r?\n/).map(s => s.trim()).filter(Boolean); }
 function hasText(value: unknown) { return typeof value === "string" && value.trim().length > 0; }
@@ -878,6 +907,7 @@ export function AdminDashboard({
   const [confirm, setConfirm] = useState<{ open: boolean; title: string; desc: ReactNode; confirmText: string; variant: "danger"|"success"|"default"; action: () => void; prompt?: boolean; promptValue?: string }>({ open: false, title: "", desc: "", confirmText: "确认", variant: "default", action: () => {} });
   const [newMainFile, setNewMainFile] = useState<File | null>(null); const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
   const [sizeStock, setSizeStock] = useState<Record<string, number>>({});
+  const [variantMatrix, setVariantMatrix] = useState<ProductVariantMatrixRow[]>([]);
   const [variantProcurement, setVariantProcurement] = useState<Record<string, VariantProcurement>>({});
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [showSizeSummary, setShowSizeSummary] = useState(false);
@@ -885,6 +915,7 @@ export function AdminDashboard({
   const [quickMainFile, setQuickMainFile] = useState<File | null>(null);
   const [quickBackFiles, setQuickBackFiles] = useState<File[]>([]);
   const [quickSizeStock, setQuickSizeStock] = useState<Record<string, number>>({});
+  const [quickVariantMatrix, setQuickVariantMatrix] = useState<ProductVariantMatrixRow[]>([]);
   const [quickSaving, setQuickSaving] = useState(false);
   const [sellingSku, setSellingSku] = useState<string | null>(null);
   const [styleImageSku, setStyleImageSku] = useState<string | null>(null);
@@ -1283,6 +1314,15 @@ export function AdminDashboard({
     return new Map(products.map(product => [Number(product.id), product]));
   }, [products]);
 
+  const stockOperationProduct = stockOperationItem
+    ? productsById.get(stockOperationItem.product_id)
+    : undefined;
+  const stockOperationBarcodePlan = getStockOperationBarcodePlan({
+    mode: stockOperationMode,
+    barcode: stockOperationItem?.barcode,
+    barcodeFeatureEnabled: adminFeatures.barcode_labels,
+  });
+
   const filteredInventoryItems = useMemo(() => {
     const threshold = Math.max(0, Math.trunc(lowStockThreshold) || 0);
     const query = inventoryQ.trim().toLowerCase();
@@ -1584,6 +1624,20 @@ export function AdminDashboard({
     return d;
   }
   async function readJson(r: Response, fallback: string) { const ct = r.headers.get("Content-Type")||""; if (ct.includes("json")) return r.json(); const t = await r.text(); throw new Error(t ? `${fallback}: ${t.slice(0, 160)}` : fallback); }
+  async function generateProductCopyRequest(product: Record<string, unknown>, images: File[]) {
+    const formData = new FormData();
+    formData.append("product", JSON.stringify(product));
+    images.slice(0, maxProductVisionImages).forEach(file => formData.append("images", file));
+    const response = await fetch("/api/admin/generate-product-copy", {
+      method: "POST",
+      headers: adminAuthHeaders(),
+      body: formData,
+    });
+    const data = await readJson(response, "AI 商品资料接口错误") as Record<string, unknown>;
+    if (response.status === 401 && adminSession?.authType === "account") void logoutAdmin();
+    if (!response.ok) throw new AdminApiError(typeof data.error === "string" ? data.error : "AI 商品资料生成失败", response.status, data);
+    return data as ProductCopyResult;
+  }
 
   function posErrorMessage(data: Record<string, unknown>, fallback: string) {
     if (data.variant_sku && data.requested !== undefined && data.available !== undefined) {
@@ -2302,22 +2356,80 @@ export function AdminDashboard({
       setStockOperationLoading(false);
     }
   }
+  async function ensureStockOperationBarcode(item: InventoryItem) {
+    const plan = getStockOperationBarcodePlan({
+      mode: stockOperationMode,
+      barcode: item.barcode,
+      barcodeFeatureEnabled: adminFeatures.barcode_labels,
+    });
+    if (plan.action === "keep") return { item, generated: false };
+    if (plan.action === "unavailable") {
+      throw new Error("当前版本未启用条码与标签打印，无法为无条码商品执行到货扫码。请先启用该功能，或选择已有 Barcode 的规格。");
+    }
+
+    const operationScope = `stock-receiving-barcode:${item.variant_id}`;
+    const fingerprint = createProductOperationFingerprint({
+      variantIds: [item.variant_id],
+      mode: "variant_sku",
+    });
+    let operationId = "";
+    let completed = false;
+    setStockOperationMessage(`正在为 ${item.variant_sku} 生成内部 Barcode，再继续入库...`);
+    try {
+      operationId = productOperationIds().getOrCreate(operationScope, fingerprint);
+      productOperationIds().markAttempt(operationScope, operationId);
+      const result = await api("/api/admin/variants/generate-barcodes", {
+        method: "POST",
+        body: JSON.stringify({
+          variantIds: [item.variant_id],
+          mode: "variant_sku",
+          clientRequestId: operationId,
+        }),
+      });
+      productOperationIds().complete(operationScope, operationId);
+      completed = true;
+
+      const resultItems = Array.isArray(result.items) ? result.items as Array<Record<string, unknown>> : [];
+      const variantResult = resultItems.find(candidate => candidate.variantId === item.variant_id);
+      if (variantResult?.status === "failed" || Number(result.failed || 0) > 0) {
+        throw new Error(typeof variantResult?.message === "string" ? variantResult.message : "内部 Barcode 生成失败，库存尚未入库。");
+      }
+
+      const barcode = typeof variantResult?.barcode === "string" && variantResult.barcode.trim()
+        ? variantResult.barcode.trim()
+        : item.variant_sku.trim();
+      const updatedItem = { ...item, barcode };
+      const updateBarcode = (candidate: InventoryItem) => candidate.variant_id === item.variant_id
+        ? { ...candidate, barcode }
+        : candidate;
+      setStockOperationItem(updatedItem);
+      setStockOperationResults(current => current.map(updateBarcode));
+      setStockLookupItems(current => current.map(updateBarcode));
+      setInventoryItems(current => current.map(updateBarcode));
+      return { item: updatedItem, generated: Number(result.generated || 0) > 0 };
+    } catch (error) {
+      if (operationId && !completed) handleProductOperationFailure(operationScope, operationId, error);
+      throw error;
+    }
+  }
   async function executeStockOperation() {
-    const item = stockOperationItem;
-    if (!item) return;
+    const selectedItem = stockOperationItem;
+    if (!selectedItem) return;
     const quantity = Number(stockOperationQuantity);
     const option = stockOperationOptions.find(candidate => candidate.key === stockOperationMode)!;
     const reference = stockOperationReference.trim();
     const reason = reference ? `${option.reason}；备注/单据号：${reference}` : option.reason;
 
     const mode = stockOperationMode === "stocktake" ? "set_to" : "adjust_by";
-    const operationScope = `stock-operation:${item.variant_id}:${stockOperationMode}`;
-    const fingerprint = JSON.stringify({ variantId: item.variant_id, mode, quantity, reason, operationType: stockOperationMode });
+    const operationScope = `stock-operation:${selectedItem.variant_id}:${stockOperationMode}`;
+    const fingerprint = JSON.stringify({ variantId: selectedItem.variant_id, mode, quantity, reason, operationType: stockOperationMode });
     let operationId = "";
 
     setStockOperationSubmitting(true);
     setStockOperationError("");
     try {
+      const barcodeResult = await ensureStockOperationBarcode(selectedItem);
+      const item = barcodeResult.item;
       operationId = inventoryOperationIds().getOrCreate(operationScope, fingerprint);
       inventoryOperationIds().markAttempt(operationScope, operationId);
       const result = await api("/api/admin/inventory/adjust", {
@@ -2339,9 +2451,10 @@ export function AdminDashboard({
       const actionMessage = result.noChange
         ? `${option.label}完成：库存没有变化（${before} → ${after}）。`
         : `${option.label}完成：${item.variant_sku} 库存 ${before} → ${after}。`;
+      const barcodeMessage = barcodeResult.generated ? `已生成内部 Barcode ${item.barcode}；` : "";
       const warning = result.legacySyncWarning ? ` 旧库存同步需要检查：${result.legacySyncWarning}` : "";
-      setStockOperationMessage(`${actionMessage}${warning}`);
-      toast(`${actionMessage}${warning}`, result.legacySyncWarning ? "err" : "ok");
+      setStockOperationMessage(`${barcodeMessage}${actionMessage}${warning}`);
+      toast(`${barcodeMessage}${actionMessage}${warning}`, result.legacySyncWarning ? "err" : "ok");
 
       const updateQuantity = (candidate: InventoryItem) => {
         if (candidate.variant_id !== item.variant_id) return candidate;
@@ -2392,10 +2505,22 @@ export function AdminDashboard({
     }
     const nextQuantity = stockOperationMode === "stocktake" ? quantity : item.quantity_on_hand + quantity;
     const reference = stockOperationReference.trim();
+    const barcodePlan = getStockOperationBarcodePlan({
+      mode: stockOperationMode,
+      barcode: item.barcode,
+      barcodeFeatureEnabled: adminFeatures.barcode_labels,
+    });
+    if (barcodePlan.action === "unavailable") {
+      setStockOperationError("当前版本未启用条码与标签打印，不能为无条码商品自动生成 Barcode。请先启用该功能，或选择已有 Barcode 的规格。");
+      return;
+    }
+    const barcodeNotice = barcodePlan.action === "generate"
+      ? `该规格目前没有 Barcode，将先生成内部 Barcode ${item.variant_sku}；生成成功后才会入库。`
+      : "";
     setConfirm({
       open: true,
       title: `确认${option.label}`,
-      desc: `${item.product_name || item.product_sku} / ${item.variant_sku}，库存将从 ${item.quantity_on_hand} 变为 ${nextQuantity}${reference ? `。备注/单据号：${reference}` : ""}。`,
+      desc: `${item.product_name || item.product_sku} / ${item.variant_sku}，库存将从 ${item.quantity_on_hand} 变为 ${nextQuantity}${reference ? `。备注/单据号：${reference}` : ""}。${barcodeNotice}`,
       confirmText: `确认${option.label}`,
       variant: "default",
       action: () => {
@@ -2757,65 +2882,69 @@ export function AdminDashboard({
     }
     return `${prefix}${String(max + 1).padStart(3, "0")}`;
   }
+  function syncVariantMatrix(rows: ProductVariantMatrixRow[]) {
+    setVariantMatrix(rows);
+    setSizeStock(matrixSizeStock(rows));
+    setVariantProcurement(Object.fromEntries(rows.map(row => [
+      variantProcurementKey(row.size, row.color),
+      {
+        supplier_sku: row.supplierSku || "",
+        cost_price: row.costPrice ?? null,
+        reorder_level: row.reorderLevel ?? null,
+      },
+    ])));
+  }
+  function syncQuickVariantMatrix(rows: ProductVariantMatrixRow[]) {
+    setQuickVariantMatrix(rows);
+    setQuickSizeStock(matrixSizeStock(rows));
+  }
   function updateQuickAdd<K extends keyof QuickAddState>(key: K, value: QuickAddState[K]) {
     if (key === "category") {
       const nextCategory = value as ProductCategory;
       const nextSizeSystem = inferredSizeSystem(nextCategory);
-      const total = stockTotal(quickSizeStock) || Number(quickAdd.stock) || 1;
-      setQuickSizeStock(current => sizeKindForCategory(nextCategory) === sizeKindForCategory(quickAdd.category) && quickAdd.size_system === nextSizeSystem
-        ? current
-        : sizeKindForCategory(nextCategory) === "one"
-          ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(total)) }
-          : {});
+      const total = matrixTotal(quickVariantMatrix) || Number(quickAdd.stock) || 1;
+      if (!(sizeKindForCategory(nextCategory) === sizeKindForCategory(quickAdd.category) && quickAdd.size_system === nextSizeSystem)) {
+        syncQuickVariantMatrix(sizeKindForCategory(nextCategory) === "one"
+          ? [{ size: oneSizeOptions[0], color: quickAdd.color, quantity: Math.max(0, Math.trunc(total)) }]
+          : []);
+      }
       const nextSubcategory = String(adminSubcategoryOptions(nextCategory)[0]?.slug || "");
       setQuickAdd(current => ({ ...current, category: nextCategory, subcategory: nextSubcategory, size_system: nextSizeSystem }));
       return;
     }
     if (key === "size_system") {
       const nextSizeSystem = value as SizeSystem;
-      const total = stockTotal(quickSizeStock) || Number(quickAdd.stock) || 1;
-      setQuickSizeStock(nextSizeSystem === "one_size" ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(total)) } : {});
+      const total = matrixTotal(quickVariantMatrix) || Number(quickAdd.stock) || 1;
+      syncQuickVariantMatrix(nextSizeSystem === "one_size"
+        ? [{ size: oneSizeOptions[0], color: quickAdd.color, quantity: Math.max(0, Math.trunc(total)) }]
+        : []);
       setQuickAdd(current => ({ ...current, size_system: nextSizeSystem }));
       return;
     }
+    if (key === "color" && matrixColors(quickVariantMatrix).length <= 1) {
+      const nextColor = normalizeVariantColor(value);
+      syncQuickVariantMatrix(quickVariantMatrix.map(row => ({ ...row, color: nextColor })));
+    }
     setQuickAdd(current => ({ ...current, [key]: value }));
   }
-  function addQuickSize(size: string) {
-    const key = size.trim().toUpperCase();
-    if (!key) return;
-    setQuickSizeStock(prev => key in prev ? prev : { ...prev, [key]: 1 });
-  }
-  function setQuickSizeQty(size: string, quantity: number) {
-    const key = size.trim().toUpperCase();
-    if (!key) return;
-    setQuickSizeStock(prev => ({ ...prev, [key]: Math.max(0, Math.trunc(quantity) || 0) }));
-  }
-  function removeQuickSize(size: string) {
-    const key = size.trim().toUpperCase();
-    setQuickSizeStock(prev => { const next = { ...prev }; delete next[key]; return next; });
-  }
   async function generateQuickProductCopy() {
-    if (!quickAdd.category && !quickAdd.subcategory && !quickAdd.name_cn.trim() && !quickAdd.description_cn.trim() && !quickAdd.notes.trim()) { toast("请先填写分类、商品名或备注。", "err"); return; }
+    const sourceImages = [quickMainFile, ...quickBackFiles].filter((file): file is File => Boolean(file)).slice(0, maxProductVisionImages);
+    if (sourceImages.length === 0 && !quickAdd.category && !quickAdd.subcategory && !quickAdd.name_cn.trim() && !quickAdd.description_cn.trim() && !quickAdd.notes.trim()) { toast("请先上传商品照片，或填写分类、商品名或备注。", "err"); return; }
     setAiQuickCopyLoading(true);
     try {
-      const sizes = Object.keys(quickSizeStock).length > 0 ? sortSizeKeys(Object.keys(quickSizeStock)).join(",") : quickAdd.sizes;
-      const photoHints = [quickMainFile?.name, ...quickBackFiles.map(file => file.name)].filter(Boolean).join(", ");
-      const d = await api("/api/admin/generate-product-copy", {
-        method: "POST",
-        body: JSON.stringify({
-          product: {
-            name_cn: quickAdd.name_cn,
-            description_cn: quickAdd.description_cn,
-            category: quickAdd.category,
-            subcategory: quickAdd.subcategory,
-            color: quickAdd.color,
-            brand: quickAdd.brand,
-            sizes,
-            notes: quickAdd.notes,
-            photo_hints: photoHints,
-          },
-        }),
-      }) as TranslationResult & { name_cn?: string; description_cn?: string; material?: string; fit_type?: string; ai_keywords?: string; style_tags?: string };
+      const sizes = quickVariantMatrix.length > 0 ? sortSizeKeys(matrixSizes(quickVariantMatrix)).join(",") : quickAdd.sizes;
+      const colors = matrixColors(quickVariantMatrix).filter(Boolean);
+      const d = await generateProductCopyRequest({
+        name_cn: quickAdd.name_cn,
+        description_cn: quickAdd.description_cn,
+        category: quickAdd.category,
+        subcategory: quickAdd.subcategory,
+        color: colors.join(" / ") || quickAdd.color,
+        brand: quickAdd.brand,
+        material: quickAdd.material,
+        sizes,
+        notes: quickAdd.notes,
+      }, sourceImages);
       setQuickAdd(current => ({
         ...current,
         name_cn: d.name_cn || current.name_cn,
@@ -2829,7 +2958,9 @@ export function AdminDashboard({
         ai_keywords: d.ai_keywords || current.ai_keywords,
         style_tags: d.style_tags || current.style_tags,
       }));
-      toast("拍照上新商品资料已生成，保存前可以继续检查。");
+      toast(d.images_analyzed
+        ? `已读取 ${d.images_analyzed} 张商品照片并生成资料，保存前请检查。`
+        : "商品资料已根据现有文字生成，保存前请检查。");
     } catch (e) {
       toast(e instanceof Error ? e.message : "AI 文案生成失败", "err");
     } finally {
@@ -2842,9 +2973,15 @@ export function AdminDashboard({
     if (key === "category") {
       const nextCat = value as ProductCategory;
       if (sizeKindForCategory(nextCat) !== sizeKindForCategory(form.category)) {
-        const total = stockTotal(sizeStock) || Number(form.stock) || 1;
-        setSizeStock(sizeKindForCategory(nextCat) === "one" ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(total)) } : {});
+        const total = matrixTotal(variantMatrix) || Number(form.stock) || 1;
+        syncVariantMatrix(sizeKindForCategory(nextCat) === "one"
+          ? [{ size: oneSizeOptions[0], color: form.color, quantity: Math.max(0, Math.trunc(total)) }]
+          : []);
       }
+    }
+    if (key === "color" && matrixColors(variantMatrix).length <= 1) {
+      const nextColor = normalizeVariantColor(value);
+      syncVariantMatrix(variantMatrix.map(row => ({ ...row, color: nextColor })));
     }
     setForm(c => {
       if (key === "category") {
@@ -2870,13 +3007,7 @@ export function AdminDashboard({
   function generateNextSku() { const prefix = skuPrefix(form.category, form.subcategory); const existing = products.filter(p => p.sku.startsWith(prefix)); let max = 0; for (const p of existing) { const rest = p.sku.slice(prefix.length); const n = parseInt(rest, 10); if (!isNaN(n) && n > max) max = n; } const next = String(max + 1).padStart(3, "0"); updateField("sku", prefix + next); toast(`SKU 已生成: ${prefix + next}`); }
   function loadSizeStock(p: AdminProduct) {
     if (Array.isArray(p.variants) && p.variants.length > 0) {
-      const authoritative: Record<string, number> = {};
-      for (const variant of p.variants) {
-        if (variant.active === false) continue;
-        const size = String(variant.size || "ONE SIZE").trim().toUpperCase();
-        authoritative[size] = Math.max(0, Math.trunc(Number(variant.quantity_on_hand) || 0));
-      }
-      setSizeStock(authoritative);
+      syncVariantMatrix(matrixRowsFromVariants(p.variants));
       return;
     }
 
@@ -2886,15 +3017,20 @@ export function AdminDashboard({
       for (const [size, quantity] of Object.entries(legacy as Record<string, unknown>)) {
         if (typeof quantity === "number") fallback[size.toUpperCase()] = quantity;
       }
-      setSizeStock(fallback);
+      syncVariantMatrix(Object.entries(fallback).map(([size, quantity]) => ({
+        size,
+        color: p.color || "",
+        quantity,
+        expectedOnHand: quantity,
+      })));
       return;
     }
-    setSizeStock((p.size_system || inferredSizeSystem(p.category)) === "one_size"
-      ? { [oneSizeOptions[0]]: Math.max(0, Math.trunc(Number(p.stock) || 0)) }
-      : {});
+    syncVariantMatrix((p.size_system || inferredSizeSystem(p.category)) === "one_size"
+      ? [{ size: oneSizeOptions[0], color: p.color || "", quantity: Math.max(0, Math.trunc(Number(p.stock) || 0)), expectedOnHand: Math.max(0, Math.trunc(Number(p.stock) || 0)) }]
+      : []);
   }
-  function formFromProduct(p: AdminProduct): ProductFormData { return { sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, size_system:p.size_system || inferredSizeSystem(p.category), image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, supplier_id:p.supplier_id || "", supplier_style_code:p.supplier_style_code || "", barcode:p.barcode, ean:p.ean || "", mpn:p.mpn || "", vat:p.vat, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active, material: p.material || "", fiber_composition_gr:p.fiber_composition_gr || "", fiber_composition_en:p.fiber_composition_en || "", care_instructions_gr:p.care_instructions_gr || "", care_instructions_en:p.care_instructions_en || "", country_of_origin:p.country_of_origin || "", manufacturer_name:p.manufacturer_name || "", manufacturer_contact:p.manufacturer_contact || "", eu_responsible_person:p.eu_responsible_person || "", product_safety_notes_gr:p.product_safety_notes_gr || "", product_safety_notes_en:p.product_safety_notes_en || "", fit_type: (p as Record<string,unknown>).fit_type as string || "regular", ai_keywords: Array.isArray((p as Record<string,unknown>).ai_keywords) ? ((p as Record<string,unknown>).ai_keywords as string[]).join(",") : String((p as Record<string,unknown>).ai_keywords || ""), style_tags: Array.isArray((p as Record<string,unknown>).style_tags) ? ((p as Record<string,unknown>).style_tags as string[]).join(",") : String((p as Record<string,unknown>).style_tags || ""), size_chart: typeof (p as Record<string,unknown>).size_chart === "object" ? JSON.stringify((p as Record<string,unknown>).size_chart) : String((p as Record<string,unknown>).size_chart || ""), material_verified: (p as Record<string,unknown>).material_verified === true }; }
-  function openProductForm(p: AdminProduct) { const nextForm = formFromProduct(p); setEditingId(p.id); setEditingProductSnapshot(p); setForm(nextForm); loadSizeStock(p); setVariantProcurement(p.variant_procurement || {}); setShowSizeChart(!!nextForm.size_chart.trim()); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); return nextForm; }
+  function formFromProduct(p: AdminProduct): ProductFormData { return { sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, size_system:p.size_system || inferredSizeSystem(p.category), image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, supplier_id:p.supplier_id || "", supplier_style_code:p.supplier_style_code || "", barcode:p.barcode, ean:p.ean || "", mpn:p.mpn || "", vat:FIXED_PRODUCT_VAT_RATE, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active, material: p.material || "", fiber_composition_gr:p.fiber_composition_gr || "", fiber_composition_en:p.fiber_composition_en || "", care_instructions_gr:p.care_instructions_gr || "", care_instructions_en:p.care_instructions_en || "", country_of_origin:p.country_of_origin || "", manufacturer_name:p.manufacturer_name || "", manufacturer_contact:p.manufacturer_contact || "", eu_responsible_person:p.eu_responsible_person || "", product_safety_notes_gr:p.product_safety_notes_gr || "", product_safety_notes_en:p.product_safety_notes_en || "", fit_type: (p as Record<string,unknown>).fit_type as string || "regular", ai_keywords: Array.isArray((p as Record<string,unknown>).ai_keywords) ? ((p as Record<string,unknown>).ai_keywords as string[]).join(",") : String((p as Record<string,unknown>).ai_keywords || ""), style_tags: Array.isArray((p as Record<string,unknown>).style_tags) ? ((p as Record<string,unknown>).style_tags as string[]).join(",") : String((p as Record<string,unknown>).style_tags || ""), size_chart: typeof (p as Record<string,unknown>).size_chart === "object" ? JSON.stringify((p as Record<string,unknown>).size_chart) : String((p as Record<string,unknown>).size_chart || ""), material_verified: (p as Record<string,unknown>).material_verified === true }; }
+  function openProductForm(p: AdminProduct) { const nextForm = formFromProduct(p); setEditingId(p.id); setEditingProductSnapshot(p); setForm(nextForm); loadSizeStock(p); setShowSizeChart(!!nextForm.size_chart.trim()); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); return nextForm; }
   function startEdit(p: AdminProduct) { openProductForm(p); }
   function focusAdminField(field: string) {
     window.setTimeout(() => {
@@ -2930,32 +3066,35 @@ export function AdminDashboard({
     openProductForm(product);
     focusAdminField(fieldMap[issueCode] || "sku");
   }
-  function copyProduct(p: AdminProduct) { setEditingId(null); setEditingProductSnapshot(null); setForm({ ...p, sku: p.sku + "-COPY" }); loadSizeStock(p); setVariantProcurement(p.variant_procurement || {}); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
-
-  function productVariantSku(productSku: string, size: string) {
-    const normalized = size
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    return !normalized || normalized === "ONE-SIZE" ? productSku.trim() : `${productSku.trim()}-${normalized}`;
-  }
+  function copyProduct(p: AdminProduct) { setEditingId(null); setEditingProductSnapshot(null); setForm({ ...p, sku: p.sku + "-COPY" }); const copiedRows = matrixRowsFromVariants(p.variants || []).map(row => ({ ...row, id: undefined, variantSku: undefined, barcode: undefined, expectedOnHand: 0, quantityReserved: 0 })); syncVariantMatrix(copiedRows.length > 0 ? copiedRows : []); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }
 
   function buildProductVariantPayloads(productBasePriceChanged = false) {
     const originalVariants = editingProductSnapshot?.variants || [];
-    return sortSizeKeys(Object.keys(sizeStock)).map((size, index) => {
-      const normalizedSize = size.trim().toUpperCase();
+    const colors = matrixColors(variantMatrix);
+    const sizes = sortSizeKeys(matrixSizes(variantMatrix));
+    const orderedRows = [...variantMatrix].sort((left, right) => {
+      const colorOrder = colors.findIndex(color => color.toLocaleLowerCase() === normalizeVariantColor(left.color).toLocaleLowerCase())
+        - colors.findIndex(color => color.toLocaleLowerCase() === normalizeVariantColor(right.color).toLocaleLowerCase());
+      if (colorOrder !== 0) return colorOrder;
+      return sizes.indexOf(normalizeVariantSize(left.size)) - sizes.indexOf(normalizeVariantSize(right.size));
+    });
+    return orderedRows.map((row, index) => {
+      const normalizedSize = normalizeVariantSize(row.size);
+      const normalizedColor = normalizeVariantColor(row.color);
       const original = originalVariants.find(variant =>
-        String(variant.size || "ONE SIZE").trim().toUpperCase() === normalizedSize,
+        (row.id && variant.id === row.id)
+        || variantCatalogKey(variant.size, variant.color) === variantCatalogKey(normalizedSize, normalizedColor),
       );
-      const procurement = variantProcurement[normalizedSize] || variantProcurement[size];
+      const procurement = variantProcurement[variantProcurementKey(normalizedSize, normalizedColor)]
+        || variantProcurement[normalizedSize];
+      const variantSku = original?.variant_sku || row.variantSku || buildVariantSku(form.sku, normalizedSize, normalizedColor);
       return {
         ...(original?.id ? { id: original.id } : {}),
-        variant_sku: original?.variant_sku || productVariantSku(form.sku, normalizedSize),
-        barcode: original?.barcode || (normalizedSize === "ONE SIZE" ? form.barcode.trim() : ""),
+        variant_sku: variantSku,
+        barcode: original?.barcode || row.barcode || variantSku,
         size: normalizedSize,
-        color: form.color.trim(),
-        quantity: Math.max(0, Math.trunc(Number(sizeStock[size]) || 0)),
+        color: normalizedColor,
+        quantity: Math.max(0, Math.trunc(Number(row.quantity) || 0)),
         ...(original ? { expected_on_hand: Math.max(0, Math.trunc(Number(original.quantity_on_hand) || 0)) } : {}),
         price: original
           ? (productBasePriceChanged
@@ -2965,10 +3104,10 @@ export function AdminDashboard({
             ? Number(form.price)
             : original.price ?? null)
           : Number(form.price),
-        supplier_id: form.supplier_id || null,
-        supplier_sku: procurement?.supplier_sku?.trim() || "",
-        cost_price: procurement?.cost_price ?? null,
-        reorder_level: procurement?.reorder_level ?? null,
+        supplier_id: row.supplierId || form.supplier_id || null,
+        supplier_sku: row.supplierSku?.trim() || procurement?.supplier_sku?.trim() || "",
+        cost_price: row.costPrice ?? procurement?.cost_price ?? null,
+        reorder_level: row.reorderLevel ?? procurement?.reorder_level ?? null,
         active: true,
         sort_order: index,
       };
@@ -3018,6 +3157,7 @@ export function AdminDashboard({
     setEditingId(null);
     setEditingProductSnapshot(null);
     setSizeStock({});
+    setVariantMatrix([]);
     setVariantProcurement({});
     setNewMainFile(null);
     setNewGalleryFiles([]);
@@ -3075,24 +3215,23 @@ export function AdminDashboard({
   }
   async function doTranslate() { setTranslating(true); try { const d = await api("/api/admin/translate", { method: "POST", body: JSON.stringify({ name_cn: form.name_cn, description_cn: form.description_cn }) }) as TranslationResult; setForm(c => ({ ...c, name_gr: d.name_gr, description_gr: d.description_gr, name_en: d.name_en, description_en: d.description_en })); toast("翻译已生成，请检查后再保存。"); } catch (e) { toast(e instanceof Error ? e.message : "自动翻译失败", "err"); } finally { setTranslating(false); } }
   async function generateProductCopy() {
-    if (!form.name_cn.trim() && !form.description_cn.trim() && !form.category && !form.subcategory) { toast("请先填写分类、商品名或备注。", "err"); return; }
+    const localImages = [newMainFile, ...newGalleryFiles].filter((file): file is File => Boolean(file)).slice(0, maxProductVisionImages);
+    const canUseStoredImages = Boolean(editingId && form.sku.trim() && (form.image_url.trim() || imageLines(form.image_urls).length > 0));
+    if (localImages.length === 0 && !canUseStoredImages && !form.name_cn.trim() && !form.description_cn.trim() && !form.category && !form.subcategory) { toast("请先上传商品照片，或填写分类、商品名或备注。", "err"); return; }
     setAiCopyLoading(true);
     try {
-      const d = await api("/api/admin/generate-product-copy", {
-        method: "POST",
-        body: JSON.stringify({
-          product: {
-            name_cn: form.name_cn,
-            description_cn: form.description_cn,
-            category: form.category,
-            subcategory: form.subcategory,
-            color: form.color,
-            brand: form.brand,
-            material: form.material,
-            sizes: form.sizes || sortSizeKeys(Object.keys(sizeStock)).join(","),
-          },
-        }),
-      }) as TranslationResult & { name_cn?: string; description_cn?: string; material?: string; fit_type?: string; ai_keywords?: string; style_tags?: string };
+      const d = await generateProductCopyRequest({
+        sku: form.sku,
+        name_cn: form.name_cn,
+        description_cn: form.description_cn,
+        category: form.category,
+        subcategory: form.subcategory,
+        color: matrixColors(variantMatrix).filter(Boolean).join(" / ") || form.color,
+        brand: form.brand,
+        material: form.material,
+        sizes: form.sizes || sortSizeKeys(matrixSizes(variantMatrix).length > 0 ? matrixSizes(variantMatrix) : Object.keys(sizeStock)).join(","),
+        use_stored_images: localImages.length === 0 && canUseStoredImages,
+      }, localImages);
       setForm(c => ({
         ...c,
         name_cn: d.name_cn || c.name_cn,
@@ -3107,7 +3246,9 @@ export function AdminDashboard({
         style_tags: d.style_tags || c.style_tags,
         material_verified: d.material ? false : c.material_verified,
       }));
-      toast("AI 商品文案已生成，请检查后再保存。");
+      toast(d.images_analyzed
+        ? `已读取 ${d.images_analyzed} 张商品照片并生成资料，请检查后再保存。`
+        : "AI 商品文案已生成，请检查后再保存。");
     } catch (e) {
       toast(e instanceof Error ? e.message : "AI 文案生成失败", "err");
     } finally {
@@ -3221,9 +3362,15 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   async function doSubmit() {
     setLoading(true);
     const p = normalizeProduct(form);
-    const sizeKeys = Object.keys(sizeStock);
-    if (sizeKeys.length === 0) {
-      toast("请先在尺码库存里选择尺码并填写库存", "err");
+    const sizeKeys = sortSizeKeys(matrixSizes(variantMatrix));
+    if (variantMatrix.length === 0 || sizeKeys.length === 0) {
+      toast("请先选择尺码并填写库存", "err");
+      setLoading(false);
+      return;
+    }
+    const catalogKeys = variantMatrix.map(row => variantCatalogKey(row.size, row.color));
+    if (new Set(catalogKeys).size !== catalogKeys.length) {
+      toast("存在重复的颜色与尺码组合，请检查后再保存。", "err");
       setLoading(false);
       return;
     }
@@ -3240,13 +3387,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       && Number(p.price) !== Number(editingProductSnapshot.price),
     );
     const variants = buildProductVariantPayloads(productBasePriceChanged);
+    const legacySizeStock = matrixSizeStock(variantMatrix);
+    const colors = matrixColors(variantMatrix).filter(Boolean);
     const catalogChanged = productCatalogChanged(variants) || productBasePriceChanged;
     const payload: Record<string, unknown> = {
       ...(p as Record<string, unknown>),
       ...aiData,
       sizes: sortSizeKeys([...sizeKeys]).join(","),
-      size_stock: sizeStock,
-      stock: stockTotal(sizeStock),
+      size_stock: legacySizeStock,
+      stock: matrixTotal(variantMatrix),
+      color: colors[0] || p.color.trim(),
       variant_procurement: variantProcurement,
       ...(editingId
         ? {
@@ -3737,24 +3887,41 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     if (!quickMainFile) { toast("请先拍摄或选择一张主图", "err"); return; }
     if (!Number.isFinite(Number(quickAdd.price)) || Number(quickAdd.price) <= 0) { toast("请填写正确价格", "err"); return; }
     const sku = quickSku();
-    const parsedSizeStock = Object.keys(quickSizeStock).length > 0 ? quickSizeStock : parseSizeStockText(quickAdd.size_stock);
-    const sizeKeys = Object.keys(parsedSizeStock);
-    if (sizeKeys.length === 0) { toast("请先选择尺码并填写库存", "err"); return; }
-    const stock = sizeKeys.reduce((sum, key) => sum + parsedSizeStock[key], 0);
-    const variants = sortSizeKeys([...sizeKeys]).map((size, index) => ({
-      variant_sku: productVariantSku(sku, size),
-      barcode: "",
-      size: size.trim().toUpperCase(),
-      color: quickAdd.color.trim(),
-      quantity: Math.max(0, Math.trunc(Number(parsedSizeStock[size]) || 0)),
-      price: null,
-      cost_price: null,
-      supplier_id: null,
-      supplier_sku: "",
-      reorder_level: null,
-      active: true,
-      sort_order: index,
-    }));
+    const parsedSizeStock = parseSizeStockText(quickAdd.size_stock);
+    const matrix = quickVariantMatrix.length > 0
+      ? quickVariantMatrix
+      : Object.entries(parsedSizeStock).map(([size, quantity]) => ({ size, color: quickAdd.color, quantity }));
+    const sizeKeys = sortSizeKeys(matrixSizes(matrix));
+    if (matrix.length === 0 || sizeKeys.length === 0) { toast("请先选择尺码并填写库存", "err"); return; }
+    const catalogKeys = matrix.map(row => variantCatalogKey(row.size, row.color));
+    if (new Set(catalogKeys).size !== catalogKeys.length) { toast("存在重复的颜色与尺码组合，请检查后再保存。", "err"); return; }
+    const colors = matrixColors(matrix);
+    const variants = [...matrix]
+      .sort((left, right) => {
+        const colorOrder = colors.findIndex(color => color.toLocaleLowerCase() === normalizeVariantColor(left.color).toLocaleLowerCase())
+          - colors.findIndex(color => color.toLocaleLowerCase() === normalizeVariantColor(right.color).toLocaleLowerCase());
+        if (colorOrder !== 0) return colorOrder;
+        return sizeKeys.indexOf(normalizeVariantSize(left.size)) - sizeKeys.indexOf(normalizeVariantSize(right.size));
+      })
+      .map((row, index) => {
+        const variantSku = buildVariantSku(sku, row.size, row.color);
+        return {
+          variant_sku: variantSku,
+          barcode: variantSku,
+          size: normalizeVariantSize(row.size),
+          color: normalizeVariantColor(row.color),
+          quantity: Math.max(0, Math.trunc(Number(row.quantity) || 0)),
+          price: null,
+          cost_price: null,
+          supplier_id: null,
+          supplier_sku: "",
+          reorder_level: null,
+          active: true,
+          sort_order: index,
+        };
+      });
+    const legacySizeStock = matrixSizeStock(matrix);
+    const stock = matrixTotal(matrix);
     const payload: Record<string, unknown> = {
       sku,
       category: quickAdd.category,
@@ -3763,16 +3930,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       stock,
       sizes: sortSizeKeys(sizeKeys).join(","),
       size_system: quickAdd.size_system,
-      size_stock: parsedSizeStock,
-      name_cn: quickAdd.name_cn.trim() || `${quickAdd.color ? `${quickAdd.color} ` : ""}${quickAdd.category} ${quickAdd.subcategory}`,
+      size_stock: legacySizeStock,
+      name_cn: quickAdd.name_cn.trim() || `${colors[0] ? `${colors[0]} ` : ""}${quickAdd.category} ${quickAdd.subcategory}`,
       description_cn: quickAdd.description_cn.trim() || quickAdd.notes.trim() || "请在保存后检查并补充商品描述。",
       name_en: quickAdd.name_en.trim(),
       name_gr: quickAdd.name_gr.trim(),
       description_en: quickAdd.description_en.trim(),
       description_gr: quickAdd.description_gr.trim(),
       brand: quickAdd.brand.trim(),
-      color: quickAdd.color.trim(),
-      vat: 24,
+      color: colors.find(Boolean) || quickAdd.color.trim(),
+      vat: FIXED_PRODUCT_VAT_RATE,
       image_url: "",
       image_urls: "",
       is_active: quickAdd.is_active,
@@ -3848,6 +4015,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       }
       setQuickAdd(emptyQuickAdd);
       setQuickSizeStock({});
+      setQuickVariantMatrix([]);
       setQuickMainFile(null);
       setQuickBackFiles([]);
       await loadProducts();
@@ -4317,7 +4485,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               }}
             >
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black text-stone-500">扫描或搜索商品</span>
+                <span className="mb-1.5 block text-xs font-black text-stone-500">{stockOperationMode === "receiving" ? "扫描条码，或搜索无条码商品" : "扫描或搜索商品"}</span>
                 <input
                   autoComplete="off"
                   className="input min-h-12 text-base"
@@ -4325,7 +4493,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     setStockOperationQuery(event.target.value);
                     setStockOperationError("");
                   }}
-                  placeholder="扫描条码，或输入 Variant SKU / 供货商 SKU / 商品名"
+                  placeholder={stockOperationMode === "receiving" ? "扫描条码，或输入商品 SKU / 供货商 SKU / 款号 / 商品名" : "扫描条码，或输入 Variant SKU / 供货商 SKU / 商品名"}
                   ref={stockOperationInputRef}
                   value={stockOperationQuery}
                 />
@@ -4358,9 +4526,13 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mt-5 grid gap-4 rounded-2xl border border-stone-200 bg-stone-50/70 p-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:p-5">
                 <div className="rounded-2xl border border-stone-200 bg-white p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="line-clamp-2 text-base font-black text-ink">{stockOperationItem.product_name || stockOperationItem.product_sku}</p>
-                      <p className="mt-1 truncate font-mono text-xs font-bold text-stone-400">{stockOperationItem.variant_sku}</p>
+                    <div className="flex min-w-0 items-start gap-3">
+                      <ProductCardThumb alt={stockOperationItem.product_name || stockOperationItem.product_sku} src={stockOperationProduct?.image_url || ""} />
+                      <div className="min-w-0">
+                        <p className="line-clamp-2 text-base font-black text-ink">{stockOperationItem.product_name || stockOperationItem.product_sku}</p>
+                        <p className="mt-1 truncate font-mono text-xs font-bold text-stone-400">{stockOperationItem.variant_sku}</p>
+                        {stockOperationItem.supplier_style_code ? <p className="mt-1 truncate text-[11px] font-bold text-stone-500">供货商款号：{stockOperationItem.supplier_style_code}</p> : null}
+                      </div>
                     </div>
                     <button className="shrink-0 rounded-lg border border-stone-200 px-3 py-2 text-xs font-black text-stone-600 hover:bg-stone-50" onClick={() => { setStockOperationItem(null); setStockOperationQuantity(""); window.setTimeout(() => stockOperationInputRef.current?.focus(), 30); }} type="button">重选</button>
                   </div>
@@ -4372,8 +4544,15 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-stone-500">
                     <p>尺码：<span className="text-ink">{stockOperationItem.size || "ONE SIZE"}</span></p>
                     <p>颜色：<span className="text-ink">{stockOperationItem.color || "未设置"}</span></p>
-                    {stockOperationItem.barcode ? <p className="col-span-2 truncate">条码：<span className="font-mono text-ink">{stockOperationItem.barcode}</span></p> : null}
+                    {stockOperationItem.barcode ? (
+                      <p className="col-span-2 truncate">条码：<span className="font-mono text-ink">{stockOperationItem.barcode}</span></p>
+                    ) : stockOperationBarcodePlan.action === "generate" ? (
+                      <p className="col-span-2 rounded-lg bg-amber-50 px-3 py-2 text-amber-800">无 Barcode：确认后先生成 <span className="font-mono">{stockOperationItem.variant_sku}</span>，成功后再入库。</p>
+                    ) : stockOperationBarcodePlan.action === "unavailable" ? (
+                      <p className="col-span-2 rounded-lg bg-red-50 px-3 py-2 text-red-700">无 Barcode，且当前版本未启用条码与标签打印，自动入库已阻断。</p>
+                    ) : <p className="col-span-2 text-stone-400">Barcode：未生成</p>}
                     {stockOperationItem.supplier_sku ? <p className="col-span-2 truncate">供货商 SKU：<span className="font-mono text-ink">{stockOperationItem.supplier_sku}</span></p> : null}
+                    {stockOperationItem.supplier_name ? <p className="col-span-2 truncate">供货商：<span className="text-ink">{stockOperationItem.supplier_name}</span></p> : null}
                   </div>
                 </div>
 
@@ -4401,7 +4580,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       ? `提交后系统库存会直接改为你填写的实际数量；当前是 ${stockOperationItem.quantity_on_hand}。`
                       : `提交后会在当前库存 ${stockOperationItem.quantity_on_hand} 的基础上增加填写数量。`}
                   </div>
-                  <button className="mt-4 min-h-12 w-full rounded-xl bg-ink px-5 py-3 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={stockOperationSubmitting} type="submit">
+                  <button className="mt-4 min-h-12 w-full rounded-xl bg-ink px-5 py-3 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={stockOperationSubmitting || stockOperationBarcodePlan.action === "unavailable"} type="submit">
                     {stockOperationSubmitting ? "处理中..." : `检查并${activeStockOperation.label}`}
                   </button>
                 </form>
@@ -4410,24 +4589,33 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mt-5">
                 <p className="mb-2 text-xs font-black text-stone-500">请选择正确尺码 / Variant</p>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {stockOperationResults.map(item => (
-                    <button className="rounded-xl border border-stone-200 bg-white p-3 text-left transition hover:border-stone-400 hover:bg-stone-50" key={item.variant_id} onClick={() => selectStockOperationItem(item)} type="button">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="line-clamp-1 text-sm font-black text-ink">{item.product_name || item.product_sku}</p>
-                          <p className="mt-1 truncate font-mono text-[11px] font-bold text-stone-400">{item.variant_sku}</p>
+                  {stockOperationResults.map(item => {
+                    const product = productsById.get(item.product_id);
+                    return (
+                      <button className="rounded-xl border border-stone-200 bg-white p-3 text-left transition hover:border-stone-400 hover:bg-stone-50" key={item.variant_id} onClick={() => selectStockOperationItem(item)} type="button">
+                        <div className="flex items-start gap-3">
+                          <ProductCardThumb alt={item.product_name || item.product_sku} src={product?.image_url || ""} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="line-clamp-2 text-sm font-black text-ink">{item.product_name || item.product_sku}</p>
+                              <span className="shrink-0 rounded-full bg-stone-100 px-2.5 py-1 text-xs font-black text-stone-700">{item.size || "ONE SIZE"}</span>
+                            </div>
+                            <p className="mt-1 truncate font-mono text-[11px] font-bold text-stone-400">{item.variant_sku}</p>
+                            <p className="mt-1 text-xs font-bold text-stone-500">{item.color || "未设置颜色"}</p>
+                            {item.supplier_style_code ? <p className="mt-1 truncate text-[11px] font-bold text-stone-500">款号：{item.supplier_style_code}</p> : null}
+                            <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-black ${item.barcode ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{item.barcode ? "已有 Barcode" : stockOperationMode === "receiving" ? "将生成 Barcode" : "无 Barcode"}</span>
+                          </div>
                         </div>
-                        <span className="shrink-0 rounded-full bg-stone-100 px-2.5 py-1 text-xs font-black text-stone-700">{item.size || "ONE SIZE"}</span>
-                      </div>
-                      <p className="mt-3 text-xs font-bold text-stone-500">当前 <span className="text-base font-black text-ink">{item.quantity_on_hand}</span> · 可用 <span className="text-emerald-700">{item.quantity_available}</span></p>
-                    </button>
-                  ))}
+                        <p className="mt-3 text-xs font-bold text-stone-500">当前 <span className="text-base font-black text-ink">{item.quantity_on_hand}</span> · 可用 <span className="text-emerald-700">{item.quantity_available}</span></p>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ) : (
               <div className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50/70 px-5 py-9 text-center">
-                <p className="text-base font-black text-ink">等待扫码</p>
-                <p className="mt-2 text-sm text-stone-500">扫码枪输入条码并按 Enter 后，系统会选中对应尺码。</p>
+                <p className="text-base font-black text-ink">{stockOperationMode === "receiving" ? "等待扫码或搜索同款" : "等待扫码"}</p>
+                <p className="mt-2 text-sm text-stone-500">{stockOperationMode === "receiving" ? "有条码直接扫码；没有条码时搜索商品、供货商 SKU 或款号，再选择正确颜色和尺码。" : "扫码枪输入条码并按 Enter 后，系统会选中对应尺码。"}</p>
               </div>
             )}
           </section>
@@ -4447,7 +4635,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="order-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3 lg:order-1">
                 <Field label="一级分类"><select className="input" data-admin-field="quick-category" value={quickAdd.category} onChange={e => updateQuickAdd("category", e.target.value as ProductCategory)}>{adminCategoryOptions.map(category => <option key={String(category.slug)} value={String(category.slug)}>{categoryOptionLabel(category)}</option>)}</select></Field>
                 <Field label="二级分类"><select className="input" data-admin-field="quick-subcategory" value={quickAdd.subcategory} onChange={e => updateQuickAdd("subcategory", e.target.value)}>{adminSubcategoryOptions(quickAdd.category).map(subcategory => <option key={String(subcategory.slug)} value={String(subcategory.slug)}>{subcategoryOptionLabel(subcategory)}</option>)}</select></Field>
-                <Field label="价格"><input className="input" min="0" step="0.01" type="number" value={quickAdd.price} onChange={e => updateQuickAdd("price", Number(e.target.value))} /></Field>
+                <Field label="售价"><input className="input" min="0" step="0.01" type="number" value={quickAdd.price} onChange={e => updateQuickAdd("price", Number(e.target.value))} /></Field>
                 <Field label="上架状态"><select className="input" value={quickAdd.is_active ? "yes" : "no"} onChange={e => updateQuickAdd("is_active", e.target.value === "yes")}><option value="yes">保存后上架</option><option value="no">先存草稿</option></select></Field>
                 <Field label="尺码体系">
                   <select className="input" value={quickAdd.size_system} onChange={e => updateQuickAdd("size_system", e.target.value as SizeSystem)}>
@@ -4461,40 +4649,22 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </Field>
                 <Field label="总库存"><div><input className="input bg-stone-50 text-stone-500 cursor-not-allowed" min="0" step="1" type="number" value={stockTotal(quickSizeStock)} readOnly /><p className="mt-1 text-[10px] text-stone-400">由尺码库存自动计算，不能手动填写</p></div></Field>
                 <div className="md:col-span-2 xl:col-span-3">
-                  <label className="text-sm font-bold text-ink">尺码库存</label>
-                  <div className="mt-2 rounded-2xl border border-stone-200 bg-stone-50/70 p-3">
-                    <div className="mb-3 flex flex-wrap gap-2">
-                      {sizeOptionsForSystem(quickAdd.size_system, quickAdd.category).map(size => (
-                        <button className={`min-h-10 rounded-xl border px-3 py-2 text-xs font-black shadow-sm shadow-stone-900/5 ${size in quickSizeStock ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink hover:bg-stone-100"}`} key={size} onClick={() => addQuickSize(size)} type="button">{size}</button>
-                      ))}
-                      {quickAdd.size_system !== "one_size" ? <button className="min-h-10 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-black text-stone-500 hover:border-stone-400" onClick={() => { const custom = window.prompt("输入自定义尺码"); if (custom) addQuickSize(custom); }} type="button">+ 自定义</button> : null}
-                    </div>
-                    {Object.keys(quickSizeStock).length > 0 ? (
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                        {sortSizeKeys(Object.keys(quickSizeStock)).map(size => (
-                          <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5" key={size}>
-                            <div className="flex items-center justify-between gap-3">
-                              <div><p className="text-base font-black text-ink">{size}</p><p className={`mt-0.5 text-[10px] font-black ${quickSizeStock[size] > 0 ? "text-emerald-700" : "text-stone-400"}`}>{quickSizeStock[size] > 0 ? "有货" : "售罄"}</p></div>
-                              {quickAdd.size_system !== "one_size" ? <button className="min-h-10 rounded-xl border border-red-100 bg-white px-3 text-xs font-black text-red-500" onClick={() => removeQuickSize(size)} type="button">删除</button> : null}
-                            </div>
-                            <div className="mt-3 grid grid-cols-[44px_minmax(0,1fr)_44px] gap-2">
-                              <button className="min-h-11 rounded-xl border border-stone-300 bg-white text-lg font-black text-ink" onClick={() => setQuickSizeQty(size, quickSizeStock[size] - 1)} type="button">−</button>
-                              <input aria-label={`${size} 快速上新库存`} className="min-w-0 rounded-xl border border-stone-300 bg-white px-3 text-center text-lg font-black text-ink" inputMode="numeric" min="0" step="1" type="number" value={quickSizeStock[size]} onChange={e => setQuickSizeQty(size, Number(e.target.value))} />
-                              <button className="min-h-11 rounded-xl border border-stone-300 bg-white text-lg font-black text-ink" onClick={() => setQuickSizeQty(size, quickSizeStock[size] + 1)} type="button">+</button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-stone-500">请先选择尺码并填写库存。首饰、包包、行李箱和其他类默认使用 ONE SIZE。</p>
-                    )}
-                    <p className="mt-2 text-xs text-stone-400">已分配库存：{stockTotal(quickSizeStock)}。保存时会自动同步总库存和 sizes。</p>
+                  <label className="text-sm font-bold text-ink">颜色（选填）× 尺码库存</label>
+                  <p className="mt-1 text-xs text-stone-500">先选择尺码并填写数量；单一款式的颜色名称留空。只有同款有多个颜色时才新增颜色组。</p>
+                  <div className="mt-2">
+                    <ColorSizeInventoryEditor
+                      availableSizes={sizeOptionsForSystem(quickAdd.size_system, quickAdd.category)}
+                      defaultColor={quickAdd.color}
+                      onChange={syncQuickVariantMatrix}
+                      onMessage={(message, tone) => toast(message, tone)}
+                      oneSize={quickAdd.size_system === "one_size"}
+                      rows={quickVariantMatrix}
+                    />
                   </div>
                 </div>
                 <section className="md:col-span-2 xl:col-span-3 rounded-2xl border border-stone-200 bg-white shadow-sm shadow-stone-900/5">
-                  <div className="px-4 py-3 text-sm font-black text-ink">选填商品资料{adminFeatures.ai_tools ? "与 AI 文案" : ""} <span className="ml-2 text-xs font-bold text-stone-400">颜色、品牌、名称、描述等</span></div>
+                  <div className="px-4 py-3 text-sm font-black text-ink">选填商品资料{adminFeatures.ai_tools ? "与 AI 文案" : ""} <span className="ml-2 text-xs font-bold text-stone-400">品牌、名称、描述等</span></div>
                   <div className="grid gap-3 border-t border-stone-100 p-4 md:grid-cols-2">
-                    <Field label="颜色（选填）"><input className="input" value={quickAdd.color} onChange={e => updateQuickAdd("color", e.target.value)} placeholder="black / beige" /></Field>
                     <Field label="品牌（选填）"><input className="input" value={quickAdd.brand} onChange={e => updateQuickAdd("brand", e.target.value)} /></Field>
                     <Field label="中文商品名（选填）"><input className="input" value={quickAdd.name_cn} onChange={e => updateQuickAdd("name_cn", e.target.value)} placeholder="可保存后继续补充" /></Field>
                     <Field label="备注 / 描述（选填）"><textarea className="input min-h-24" value={quickAdd.description_cn} onChange={e => { updateQuickAdd("description_cn", e.target.value); updateQuickAdd("notes", e.target.value); }} placeholder="例如：薄款、适合夏天、宽松版型" /></Field>
@@ -4502,9 +4672,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-sm font-black text-ink">AI 一键生成商品资料</p>
-                          <p className="mt-1 text-xs text-stone-500">根据分类、颜色、品牌、尺码、备注和图片文件名生成多语言文案与导购信息。</p>
+                          <p className="mt-1 text-xs text-stone-500">分类、品牌、颜色及售价由你手动填写；商品仍可上传多张图片，Luna 只读取主图和第一张背面/细节图生成文案，避免浪费 API。</p>
                         </div>
-                        <button className="min-h-11 w-full rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-sm font-black text-violet-700 shadow-sm shadow-violet-950/5 hover:bg-violet-100 disabled:opacity-50 sm:w-auto sm:text-xs" disabled={aiQuickCopyLoading} onClick={() => void generateQuickProductCopy()} type="button">{aiQuickCopyLoading ? "生成中..." : "AI 生成商品资料"}</button>
+                        <button className="min-h-11 w-full rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-sm font-black text-violet-700 shadow-sm shadow-violet-950/5 hover:bg-violet-100 disabled:opacity-50 sm:w-auto sm:text-xs" disabled={aiQuickCopyLoading} onClick={() => void generateQuickProductCopy()} type="button">{aiQuickCopyLoading ? "识别生成中..." : quickMainFile || quickBackFiles.length > 0 ? "AI 识别照片并生成资料" : "AI 生成商品资料"}</button>
                       </div>
                       {quickAdd.name_en || quickAdd.name_gr || quickAdd.description_en || quickAdd.description_gr || quickAdd.material || quickAdd.ai_keywords || quickAdd.style_tags ? (
                         <div className="mt-3 grid gap-2 text-xs text-stone-600 md:grid-cols-2">
@@ -6175,7 +6345,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </Field>
                 <Field label="一级分类"><select className="input" data-admin-field="category" value={form.category} onChange={e => updateField("category", e.target.value as ProductCategory)}>{adminCategoryOptions.map(category => <option key={String(category.slug)} value={String(category.slug)}>{categoryOptionLabel(category)}</option>)}</select></Field>
                 <Field label="二级分类"><select className="input" data-admin-field="subcategory" value={form.subcategory} onChange={e => updateField("subcategory", e.target.value)}>{adminSubcategoryOptions(form.category).map(subcategory => <option key={String(subcategory.slug)} value={String(subcategory.slug)}>{subcategoryOptionLabel(subcategory)}</option>)}</select></Field>
-                <Field label="价格"><input className="input" data-admin-field="price" min="0" step="0.01" type="number" value={form.price} onChange={e => updateField("price", Number(e.target.value))} /></Field>
+                <Field label="售价"><input className="input" data-admin-field="price" min="0" step="0.01" type="number" value={form.price} onChange={e => updateField("price", Number(e.target.value))} /></Field>
                 <Field label="库存">
                   <div>
                     <input className="input bg-stone-50 text-stone-500 cursor-not-allowed" data-admin-field="stock" min="0" step="1" type="number" value={Object.keys(sizeStock).length > 0 ? stockTotal(sizeStock) : form.stock} readOnly />
@@ -6205,68 +6375,18 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
             {/* Size-Stock card */}
             <section className="admin-panel">
-              <h2 className="mb-1 text-base font-black text-ink">尺码库存</h2>
-              <p className="mb-3 text-xs text-stone-500">库存为 0 的尺码在前台显示为售罄。总库存由尺码库存自动计算。</p>
-              {editingId && Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">该商品还没有尺码库存。旧总库存为 <b>{form.stock}</b>，sizes 为 "{form.sizes}"。请手动分配库存到各尺码后保存，保存后将自动计算总库存。</p> : null}
-              <div className="mb-3 flex flex-wrap gap-2">
-                {sizeOptionsForSystem(form.size_system, form.category).map(s => <button key={s} className="min-h-10 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black shadow-sm shadow-stone-900/5 hover:bg-stone-100" onClick={() => addSize(s)} type="button">{s}</button>)}
-                <button className="min-h-10 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-black text-stone-500 hover:border-stone-400" onClick={toggleSizeSummary} type="button">查看 sizes 尺码库存</button>
-                {form.size_system !== "one_size" ? <button className="min-h-10 rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs font-black text-stone-500 hover:border-stone-400" onClick={addCustomSize} type="button">+ 自定义</button> : null}
-              </div>
-              {/* Size summary (lightweight, no duplicate table) */}
-              {showSizeSummary ? (
-                <div className="mb-3 rounded-lg border border-stone-200 bg-stone-50 p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-black text-ink">sizes 字段分析</p>
-                    <button className="text-xs font-bold text-stone-400 hover:text-ink" onClick={() => setShowSizeSummary(false)} type="button">× 关闭</button>
-                  </div>
-                  <p className="text-[11px] text-stone-600">基础 sizes：<span className="font-bold">{form.sizes || "—"}</span></p>
-                  <p className="text-[11px] text-stone-600">库存表已有：<span className="font-bold">{sortSizeKeys(Object.keys(sizeStock)).join(", ") || "无"}</span></p>
-                  {form.sizes ? (() => { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); const missing = parts.filter(s => !(s in sizeStock)); return missing.length > 0 ? <p className="text-[11px] text-amber-700">缺失尺码：<span className="font-bold">{missing.join(", ")}</span></p> : <p className="text-[11px] text-green-700">所有 sizes 尺码都在库存表中 ✓</p>; })() : null}
-                  {form.sizes ? (() => { const parts = form.sizes.split(/[\/,\s]+/).map((s: string) => s.trim().toUpperCase()).filter(Boolean); const missing = parts.filter(s => !(s in sizeStock)); return missing.length > 0 ? <button className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-800 hover:bg-amber-100" onClick={addMissingSizes} type="button">补充缺失尺码（不覆盖已有库存）</button> : null; })() : null}
-                </div>
-              ) : null}
-
-              {Object.keys(sizeStock).length > 0 ? (
-                <>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:hidden">
-                    {sortSizeKeys(Object.keys(sizeStock)).map(sz => { const qty = sizeStock[sz]; return (
-                      <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3" key={`${sz}-compact`}>
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-base font-black text-ink">{sz}</p>
-                            <p className={`mt-0.5 text-[10px] font-black ${qty > 0 ? "text-emerald-700" : "text-stone-400"}`}>{qty > 0 ? "有货" : "售罄"}</p>
-                          </div>
-                          {form.size_system !== "one_size" ? <button className="min-h-10 rounded-xl border border-red-100 bg-white px-3 text-xs font-black text-red-500" onClick={() => { setSizeStock(prev => { const n = { ...prev }; delete n[sz]; return n; }); setVariantProcurement(prev => { const n = { ...prev }; delete n[sz]; return n; }); }} type="button">删除</button> : null}
-                        </div>
-                        <div className="mt-3 grid grid-cols-[44px_minmax(0,1fr)_44px] gap-2">
-                          <button className="min-h-11 rounded-xl border border-stone-300 bg-white text-lg font-black text-ink" onClick={() => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, qty - 1) }))} type="button">−</button>
-                          <input aria-label={`${sz} 库存`} className="min-w-0 rounded-xl border border-stone-300 bg-white px-3 text-center text-lg font-black text-ink" inputMode="numeric" min="0" step="1" type="number" value={qty} onChange={e => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, parseInt(e.target.value) || 0) }))} />
-                          <button className="min-h-11 rounded-xl border border-stone-300 bg-white text-lg font-black text-ink" onClick={() => setSizeStock(prev => ({ ...prev, [sz]: qty + 1 }))} type="button">+</button>
-                        </div>
-                      </div>
-                    )})}
-                  </div>
-                  <div className="hidden overflow-x-auto rounded-lg border border-stone-200 xl:block">
-                    <table className="w-full min-w-[840px] text-sm"><thead><tr className="bg-stone-50 text-stone-500"><th className="py-2 px-3 text-left text-xs font-bold">尺码</th><th className="py-2 px-3 text-left text-xs font-bold">库存</th><th className="py-2 px-3 text-left text-xs font-bold">供货商 SKU（选填）</th><th className="py-2 px-3 text-left text-xs font-bold">成本价 €（选填）</th><th className="py-2 px-3 text-left text-xs font-bold">补货线（选填）</th><th className="py-2 px-3 text-center text-xs font-bold w-20">状态</th><th className="py-2 px-3 text-right text-xs font-bold w-12">操作</th></tr></thead>
-                      <tbody>
-                        {sortSizeKeys(Object.keys(sizeStock)).map(sz => { const qty = sizeStock[sz]; return (
-                          <tr className="border-t border-stone-100" key={sz}>
-                            <td className="py-1.5 px-3 text-sm font-bold text-ink align-middle">{sz}</td>
-                            <td className="py-1.5 px-3 align-middle"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm text-center" min="0" step="1" type="number" value={qty} onChange={e => setSizeStock(prev => ({ ...prev, [sz]: Math.max(0, parseInt(e.target.value) || 0) }))} /></td>
-                            <td className="py-1.5 px-3 align-middle"><input className="w-36 rounded border border-stone-200 px-2 py-1 font-mono text-xs" value={variantProcurement[sz]?.supplier_sku || ""} onChange={e => setVariantProcurement(prev => ({ ...prev, [sz]: { ...(prev[sz] || { cost_price: null, reorder_level: null }), supplier_sku: e.target.value } }))} /></td>
-                            <td className="py-1.5 px-3 align-middle"><input className="w-24 rounded border border-stone-200 px-2 py-1 text-sm" min="0" step="0.01" type="number" value={variantProcurement[sz]?.cost_price ?? ""} onChange={e => setVariantProcurement(prev => ({ ...prev, [sz]: { ...(prev[sz] || { supplier_sku: "", reorder_level: null }), cost_price: e.target.value === "" ? null : Math.max(0, Number(e.target.value)) } }))} /></td>
-                            <td className="py-1.5 px-3 align-middle"><input className="w-20 rounded border border-stone-200 px-2 py-1 text-sm" min="0" step="1" type="number" value={variantProcurement[sz]?.reorder_level ?? ""} onChange={e => setVariantProcurement(prev => ({ ...prev, [sz]: { ...(prev[sz] || { supplier_sku: "", cost_price: null }), reorder_level: e.target.value === "" ? null : Math.max(0, Math.trunc(Number(e.target.value))) } }))} /></td>
-                            <td className="py-1.5 px-3 text-center align-middle">{qty > 0 ? <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800 whitespace-nowrap">有货</span> : <span className="inline-block rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-400 whitespace-nowrap">售罄</span>}</td>
-                            <td className="py-1.5 px-3 text-right">{form.size_system !== "one_size" ? <button className="text-[11px] font-bold text-red-500 hover:text-red-700" onClick={() => { setSizeStock(prev => { const n = { ...prev }; delete n[sz]; return n; }); setVariantProcurement(prev => { const n = { ...prev }; delete n[sz]; return n; }); }} type="button">×</button> : null}</td>
-                          </tr>
-                        )})}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              ) : <p className="text-xs text-stone-400">请选择尺码并填写库存。库存为 0 的尺码前台显示为售罄。</p>}
-              {Object.keys(sizeStock).length > 0 ? <p className="mt-2 text-xs text-stone-500">总库存（所有尺码合计）：{Object.values(sizeStock).reduce((a,b)=>a+b,0)}，保存时自动同步到基础信息的库存和 sizes 字段。</p> : null}
+              <h2 className="mb-1 text-base font-black text-ink">颜色（选填）× 尺码库存</h2>
+              <p className="mb-3 text-xs text-stone-500">先选择尺码并填写库存；单一款式颜色留空。只有同款存在多个颜色时才添加颜色，每个颜色与尺码组合会生成独立 Variant SKU 和内部 Barcode。</p>
+              {editingId && variantMatrix.length === 0 && form.sizes.trim() ? <p className="mb-3 rounded-lg bg-amber-50 p-2 text-xs text-amber-700">该商品还没有规格库存。旧总库存为 <b>{form.stock}</b>，sizes 为 “{form.sizes}”。请手动分配后保存。</p> : null}
+              <ColorSizeInventoryEditor
+                availableSizes={sizeOptionsForSystem(form.size_system, form.category)}
+                defaultColor={form.color}
+                onChange={syncVariantMatrix}
+                onMessage={(message, tone) => toast(message, tone)}
+                oneSize={form.size_system === "one_size"}
+                rows={variantMatrix}
+                showProcurement
+              />
             </section>
 
             <details className="admin-panel hidden xl:block">
@@ -6293,10 +6413,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="space-y-3"><Field label="英文名"><input className="input" data-admin-field="name_en" value={form.name_en} onChange={e => updateField("name_en", e.target.value)} /></Field><Field label="英文描述"><textarea className="input min-h-24" data-admin-field="description_en" value={form.description_en} onChange={e => updateField("description_en", e.target.value)} /></Field></div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                {adminFeatures.ai_tools ? <button className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiCopyLoading} onClick={() => void generateProductCopy()} type="button">{aiCopyLoading ? "生成中..." : "AI 生成商品文案"}</button> : null}
+                {adminFeatures.ai_tools ? <button className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={aiCopyLoading} onClick={() => void generateProductCopy()} type="button">{aiCopyLoading ? "识别生成中..." : newMainFile || newGalleryFiles.length > 0 || editingId && (form.image_url || imageLines(form.image_urls).length > 0) ? "AI 识别照片并生成资料" : "AI 生成商品文案"}</button> : null}
                 {adminFeatures.ai_tools ? <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" disabled={translating} onClick={() => void translateProduct()} type="button">{translating ? "翻译中..." : "自动翻译"}</button> : null}
                 {editingId ? <button className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-bold hover:bg-stone-50" onClick={cancelProductEditor} type="button">取消编辑</button> : null}
               </div>
+              {adminFeatures.ai_tools ? <p className="mt-2 text-xs text-stone-500">一级和二级分类、品牌、颜色及售价均由你手动填写；图库可正常上传多张图片，Luna 每次只读取主图和第一张背面/细节图。AI 不会修改这些资料、库存、尺码或条码。</p> : null}
             </section>
 
             {/* Optional product and AI shopping-assistant data */}
@@ -6423,8 +6544,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <Field label="内部条码（可选）"><input className="input" value={form.barcode} onChange={e => updateField("barcode", e.target.value)} placeholder="门店扫码使用，不自动当作 EAN" /></Field>
                   {adminFeatures.skroutz_feed ? <Field label="真实 EAN（进入 Skroutz 必填）"><input className="input" inputMode="numeric" value={form.ean} onChange={e => updateField("ean", e.target.value)} placeholder="8 或 13 位真实 EAN；缺失时不进入 Feed" /></Field> : null}
                   {adminFeatures.skroutz_feed ? <Field label="制造商 MPN（进入 Skroutz 必填）"><input className="input" value={form.mpn} onChange={e => updateField("mpn", e.target.value)} placeholder="真实制造商编号；缺失时不进入 Feed" /></Field> : null}
-                  <Field label="VAT"><input className="input" min="0" step="0.01" type="number" value={form.vat} onChange={e => updateField("vat", Number(e.target.value))} /></Field>
-                  <Field label="颜色（选填）"><input className="input" value={form.color} onChange={e => updateField("color", e.target.value)} placeholder="black / red / blue，可留空" /></Field>
+                  <Field label="VAT（固定）"><div><input aria-readonly="true" className="input cursor-not-allowed bg-stone-50 text-stone-500" readOnly type="text" value={`${FIXED_PRODUCT_VAT_RATE}%`} /><p className="mt-1 text-[10px] text-stone-400">服装商品固定为 24%，不可调整。</p></div></Field>
                   <div className="md:col-span-2 lg:col-span-4"><Field label="多图 URL（一行一个，可用逗号分隔）"><textarea className="input min-h-24" value={form.image_urls} onChange={e => updateField("image_urls", e.target.value)} /></Field></div>
                 </div>
               </div>

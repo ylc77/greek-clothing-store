@@ -16,6 +16,7 @@ import {
   beginSharedAiRequest,
   finishSharedAiRequest,
 } from "@/lib/abuse-protection";
+import { publicVariantOptions } from "@/lib/product-variant-matrix";
 
 const SYSTEM_PROMPT = `You are a customer-facing shopping assistant for a clothing store in Greece.
 
@@ -89,6 +90,9 @@ STOCK AND LABEL RULES:
 - ALL_SIZES is the complete known label list. Do not invent a label outside it.
 - A size with quantity 0 is sold out even if it appears in the old sizes text.
 - Never silently convert between EU numeric, letter, shoe, One Size, or custom systems.
+- When VARIANTS or AVAILABLE_SIZES_BY_COLOR are present, availability is specific to the exact color and size combination. Never claim that a size is available in every color.
+- If the customer names a color, use only that color's Variant rows. A quantity of 0 for that color/size combination means sold out even when the same size is available in another color.
+- If a product has one or no named color, do not invent a color choice.
 - If the customer asks for a conversion and this product has no explicit mapping in SIZE_CHART, say that sizing varies by brand and ask for measurements or recommend trying it in store.
 
 PRIORITY 1: size_chart exists on CURRENT_PRODUCT
@@ -161,6 +165,14 @@ function buildProductSummary(products: Record<string, unknown>[]) {
     const soldOutSizes = stockEntries.length > 0
       ? stockEntries.filter(([, quantity]) => quantity <= 0).map(([label]) => label)
       : Number(p.stock) <= 0 ? fallbackSizes : [];
+    const variants = publicVariantOptions(p.variants);
+    const colors = Array.from(new Set(variants.map(variant => variant.color).filter(Boolean)));
+    const availableByColor = Object.fromEntries(colors.map(color => [
+      color,
+      variants
+        .filter(variant => variant.color.toLocaleLowerCase() === color.toLocaleLowerCase() && variant.quantityAvailable > 0)
+        .map(variant => variant.size),
+    ]));
 
     return {
       sku: p.sku,
@@ -177,6 +189,13 @@ function buildProductSummary(products: Record<string, unknown>[]) {
       available_sizes: availableSizes,
       sold_out_sizes: soldOutSizes,
       size_stock: sizeStock,
+      colors,
+      variants: variants.map(variant => ({
+        size: variant.size,
+        color: variant.color,
+        quantity_available: variant.quantityAvailable,
+      })),
+      available_sizes_by_color: availableByColor,
       size_chart: p.size_chart || {},
       fit_type: p.fit_type || "regular",
       material: p.material || "",
@@ -351,6 +370,23 @@ export async function POST(request: NextRequest) {
     currentProduct = requestedProduct as Record<string, unknown> | null;
     if (currentProduct) allProducts = [currentProduct, ...allProducts];
   }
+
+  const productSkus = Array.from(new Set(allProducts.map(product => String(product.sku || "").trim()).filter(Boolean))).slice(0, 20);
+  const { data: variantsBySku, error: variantsError } = await (supabase as any).rpc(
+    "product_public_variants_batch_rpc",
+    { p_product_skus: productSkus },
+  );
+  if (variantsError || !variantsBySku || typeof variantsBySku !== "object" || Array.isArray(variantsBySku)) {
+    return withAiSession(NextResponse.json({ reply: localizedUnavailable(language), code: "AI_DATA_UNAVAILABLE" }, { status: 503 }), sessionId);
+  }
+  const variantMap = variantsBySku as Record<string, unknown>;
+  allProducts = allProducts.map(product => ({
+    ...product,
+    variants: publicVariantOptions(variantMap[String(product.sku || "")]),
+  }));
+  currentProduct = requestedProductSku
+    ? allProducts.find(product => String(product.sku || "") === requestedProductSku) || null
+    : null;
 
   const productSummary = buildProductSummary(allProducts);
   const currentProductSummary = currentProduct ? buildProductSummary([currentProduct])[0] : undefined;
