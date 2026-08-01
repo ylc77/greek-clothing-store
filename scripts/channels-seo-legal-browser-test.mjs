@@ -120,11 +120,12 @@ for (const viewport of [
       await check("desktop category overflow menu and dynamic route", async () => {
         const more = page.locator("[data-storefront-category-more]");
         await more.hover();
-        const seasonalLink = page.getByRole("link", { name: "Εποχιακά", exact: true }).first();
-        await seasonalLink.waitFor();
-        await seasonalLink.click();
-        await page.waitForLoadState("networkidle");
-        expect(page.url().includes("/seasonal"), "dynamic category link did not open /seasonal");
+        const seasonalLink = page.locator('[data-storefront-category-overflow] a[href="/seasonal"]');
+        await seasonalLink.waitFor({ state: "visible" });
+        await Promise.all([
+          page.waitForURL((url) => url.pathname === "/seasonal"),
+          seasonalLink.click(),
+        ]);
         expect(await page.getByRole("heading", { name: "Εποχιακά" }).count() > 0, "dynamic category page heading is missing");
         expect(await page.getByRole("link", { name: "Εποχιακές εκπτώσεις" }).count() > 0, "dynamic subcategory filter is missing");
       });

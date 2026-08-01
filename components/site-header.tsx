@@ -83,7 +83,10 @@ export async function SiteHeader({
               >
                 {language === "en" ? "More" : "Περισσότερα"}
               </button>
-              <div className="invisible absolute right-0 top-full z-30 w-80 pt-2 opacity-0 transition duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+              <div
+                className="invisible absolute right-0 top-full z-30 w-80 pt-2 opacity-0 transition duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+                data-storefront-category-overflow
+              >
                 <div className="max-h-[70vh] overflow-y-auto rounded-2xl border border-stone-200 bg-white p-3 shadow-2xl shadow-stone-900/10">
                   {overflowNavigation.map((category) => (
                     <div className="border-b border-stone-100 py-2 last:border-b-0" key={category.slug}>
