@@ -15,6 +15,27 @@ function Remove-TestContainer {
   }
 }
 
+function Start-TestContainer {
+  Remove-TestContainer
+  docker run -d --name $container -e POSTGRES_PASSWORD=postgres $postgresImage | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Failed to start test container $container" }
+
+  $deadline = (Get-Date).AddSeconds(90)
+  do {
+    Start-Sleep -Milliseconds 500
+    docker exec $container pg_isready -U postgres 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+      # The Supabase image briefly accepts connections before its first-start
+      # initialization restart. Wait through that window before running SQL.
+      Start-Sleep -Seconds 6
+      docker exec $container pg_isready -U postgres 2>$null | Out-Null
+      if ($LASTEXITCODE -eq 0) { return }
+    }
+  } while ((Get-Date) -lt $deadline)
+
+  throw "Timed out waiting for test container $container"
+}
+
 function Invoke-SqlText([string]$Sql, [string]$Label) {
   $Sql | docker exec -i $container psql -q -X -U postgres -d postgres -v ON_ERROR_STOP=1
   if ($LASTEXITCODE -ne 0) { throw "$Label failed" }
@@ -27,17 +48,7 @@ function Invoke-SqlFile([string]$Path) {
 }
 
 try {
-  Remove-TestContainer
-  docker run -d --name $container -e POSTGRES_PASSWORD=postgres $postgresImage | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "Failed to start test container $container" }
-
-  $deadline = (Get-Date).AddSeconds(90)
-  do {
-    Start-Sleep -Milliseconds 500
-    docker exec $container pg_isready -U postgres 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { break }
-  } while ((Get-Date) -lt $deadline)
-  if ($LASTEXITCODE -ne 0) { throw "Timed out waiting for test container $container" }
+  Start-TestContainer
 
   $fixture = @'
 create table public.product_categories (
