@@ -1496,6 +1496,11 @@ export function AdminDashboard({
     () => selectedLabelItems.filter(item => !barcodeIsPresent(item.barcode)),
     [selectedLabelItems],
   );
+  useEffect(() => {
+    if (labelSelectionSummary.allMissingBarcodeCount === 0 && labelOnlyMissingBarcode) {
+      setLabelOnlyMissingBarcode(false);
+    }
+  }, [labelSelectionSummary.allMissingBarcodeCount, labelOnlyMissingBarcode]);
 
   const selectedLabelGroups = useMemo(() => {
     return labelProductGroups
@@ -2676,7 +2681,7 @@ export function AdminDashboard({
   }
   function confirmGenerateSelectedBarcodes() {
     if (selectedLabelItems.length === 0) {
-      toast("请先选择需要生成 Barcode 的规格", "err");
+      toast("请先选择需要补全 Barcode 的规格", "err");
       return;
     }
     if (selectedMissingBarcodeItems.length === 0) {
@@ -2686,7 +2691,7 @@ export function AdminDashboard({
       return;
     }
     if (selectedMissingBarcodeItems.length > MAX_BULK_BARCODE_VARIANTS) {
-      const message = `单次最多生成 ${MAX_BULK_BARCODE_VARIANTS} 个规格，请先缩小筛选范围或减少选择。`;
+      const message = `单次最多补全 ${MAX_BULK_BARCODE_VARIANTS} 个规格，请先缩小筛选范围或减少选择。`;
       setLabelMessage(message);
       toast(message, "err");
       return;
@@ -2694,15 +2699,15 @@ export function AdminDashboard({
     const variantIds = selectedMissingBarcodeItems.map(item => item.variant_id).sort();
     setConfirm({
       open: true,
-      title: "确认批量生成缺失 Barcode？",
+      title: "确认补全缺失 Barcode？",
       desc: (
         <div className="space-y-2">
           <p>已选择 {labelSelectionSummary.selectedProductCount} 件商品，共 {labelSelectionSummary.selectedVariantCount} 个规格。</p>
-          <p>{labelSelectionSummary.selectedMissingBarcodeCount} 个规格缺少 Barcode，将按 Variant SKU 生成。</p>
+          <p>{labelSelectionSummary.selectedMissingBarcodeCount} 个规格缺少 Barcode，将按 Variant SKU 补全。</p>
           <p>{labelSelectionSummary.selectedExistingBarcodeCount} 个已有 Barcode 的规格将被跳过，不会覆盖。</p>
         </div>
       ),
-      confirmText: "确认生成",
+      confirmText: "确认补全",
       variant: "default",
       action: () => {
         setConfirm(current => ({ ...current, open: false }));
@@ -2736,13 +2741,13 @@ export function AdminDashboard({
       });
       productOperationIds().complete(operationScope, operationId);
       const failed = Number(result.failed || 0);
-      const message = `已生成 ${Number(result.generated || 0)} 个，跳过已有 Barcode ${Number(result.skippedExisting || 0)} 个，失败 ${failed} 个。`;
+      const message = `已补全 ${Number(result.generated || 0)} 个，跳过已有 Barcode ${Number(result.skippedExisting || 0)} 个，失败 ${failed} 个。`;
       setLabelMessage(message);
       toast(message, failed > 0 ? "err" : "ok");
       await loadLabelInventoryData();
     } catch (error) {
       if (operationId) handleProductOperationFailure(operationScope, operationId, error);
-      const message = error instanceof Error ? error.message : "生成条码失败";
+      const message = error instanceof Error ? error.message : "补全 Barcode 失败";
       setLabelMessage(message);
       toast(message, "err");
     } finally {
@@ -6098,18 +6103,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Barcode Labels</p>
                   <h2 className="mt-1 text-xl font-black text-ink">标签打印</h2>
-                  <p className="mt-1 text-xs text-stone-500">先查找并选择商品，再勾选需要打印的尺码。条码规则为 barcode = variant SKU。</p>
+                  <p className="mt-1 text-xs text-stone-500">新商品保存时会自动生成内部 Barcode；这里主要用于选择规格和打印标签，只有发现历史或异常缺失时才显示补全入口。</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={inventoryLoading} onClick={() => void loadLabelInventoryData()} type="button">刷新</button>
                   <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={visibleLabelItems.length === 0} onClick={selectAllVisibleLabelVariants} type="button">
                     全选当前结果（{visibleLabelItems.length}）
-                  </button>
-                  <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={visibleLabelItems.length === 0} onClick={selectOnlyVisibleMissingBarcodes} type="button">
-                    仅选缺少 Barcode
-                  </button>
-                  <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={selectedMissingBarcodeItems.length === 0 || labelGenerating} onClick={confirmGenerateSelectedBarcodes} type="button">
-                    {labelGenerating ? "生成中..." : `批量生成缺失 Barcode（${selectedMissingBarcodeItems.length}）`}
                   </button>
                   <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={selectedLabelItems.length === 0} onClick={openLabelPreview} type="button">打印标签（{selectedLabelCopies} 张）</button>
                   <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={selectedLabelVariantIds.size === 0} onClick={cancelLabelSelection} type="button">取消选择</button>
@@ -6117,6 +6116,24 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
               {inventoryError ? <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{inventoryError}</p> : null}
               {labelMessage ? <p className="mt-4 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-bold text-stone-700">{labelMessage}</p> : null}
+              {labelSelectionSummary.allMissingBarcodeCount > 0 ? (
+                <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 lg:flex-row lg:items-center lg:justify-between" data-barcode-recovery>
+                  <div>
+                    <p className="text-sm font-black text-amber-900">条码补全 · 异常处理</p>
+                    <p className="mt-1 text-xs font-bold leading-relaxed text-amber-800">
+                      发现 {labelSelectionSummary.allMissingBarcodeProductCount} 件商品、{labelSelectionSummary.allMissingBarcodeCount} 个规格缺少 Barcode。这里只补全空值，不会修改已有 Barcode。
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button className="min-h-10 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-black text-amber-900 hover:bg-amber-100 disabled:opacity-50" disabled={labelSelectionSummary.visibleMissingBarcodeCount === 0} onClick={selectOnlyVisibleMissingBarcodes} type="button">
+                      选择当前缺失（{labelSelectionSummary.visibleMissingBarcodeCount}）
+                    </button>
+                    <button className="min-h-10 rounded-xl bg-amber-900 px-3 py-2 text-xs font-black text-white hover:bg-amber-800 disabled:opacity-50" disabled={selectedMissingBarcodeItems.length === 0 || labelGenerating} onClick={confirmGenerateSelectedBarcodes} type="button">
+                      {labelGenerating ? "补全中..." : `补全已选缺失 Barcode（${selectedMissingBarcodeItems.length}）`}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(180px,0.8fr)_minmax(180px,0.8fr)]">
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-black text-stone-600">查找商品</span>
@@ -6168,10 +6185,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   </select>
                 </label>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                  <label className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-300 bg-white px-3 text-xs font-bold text-stone-700">
-                    <input checked={labelOnlyMissingBarcode} onChange={e => setLabelOnlyMissingBarcode(e.target.checked)} type="checkbox" />
-                    只看无 barcode
-                  </label>
+                  {labelSelectionSummary.allMissingBarcodeCount > 0 ? (
+                    <label className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-300 bg-white px-3 text-xs font-bold text-stone-700">
+                      <input checked={labelOnlyMissingBarcode} onChange={e => setLabelOnlyMissingBarcode(e.target.checked)} type="checkbox" />
+                      只看无 Barcode
+                    </label>
+                  ) : null}
                   <label className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-300 bg-white px-3 text-xs font-bold text-stone-700">
                     <input checked={labelShowSupplierSku} onChange={e => setLabelShowSupplierSku(e.target.checked)} type="checkbox" />
                     标签显示供货商 SKU
@@ -6181,9 +6200,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-stone-500">
                 <span className="rounded-full bg-stone-100 px-3 py-1.5">当前显示：{labelSelectionSummary.visibleProductCount} 件商品 / {labelSelectionSummary.visibleVariantCount} 个规格</span>
                 <span className="rounded-full bg-stone-100 px-3 py-1.5 text-ink">已选择：{labelSelectionSummary.selectedProductCount} 件商品 / {labelSelectionSummary.selectedVariantCount} 个规格</span>
-                <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800">缺少 Barcode：{labelSelectionSummary.visibleMissingBarcodeCount} 个规格</span>
+                {labelSelectionSummary.visibleMissingBarcodeCount > 0 ? <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800">缺少 Barcode：{labelSelectionSummary.visibleMissingBarcodeCount} 个规格</span> : null}
                 <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-800">已有 Barcode：{labelSelectionSummary.visibleExistingBarcodeCount} 个规格</span>
-                <span className="rounded-full bg-blue-50 px-3 py-1.5 text-blue-800">已选待生成：{labelSelectionSummary.selectedMissingBarcodeCount} / 已有将跳过：{labelSelectionSummary.selectedExistingBarcodeCount}</span>
+                {labelSelectionSummary.selectedMissingBarcodeCount > 0 ? <span className="rounded-full bg-blue-50 px-3 py-1.5 text-blue-800">已选待补全：{labelSelectionSummary.selectedMissingBarcodeCount} / 已有将跳过：{labelSelectionSummary.selectedExistingBarcodeCount}</span> : null}
                 <span className="rounded-full bg-stone-900 px-3 py-1.5 text-white">预计打印：{labelSelectionSummary.estimatedPrintCopies} 张</span>
               </div>
             </div>

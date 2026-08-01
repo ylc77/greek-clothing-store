@@ -56,10 +56,13 @@ export function getBarcodeLabelSelectionSummary<T extends BarcodeLabelItem>({
   copyCounts: Readonly<Record<string, number>>;
 }) {
   const selectedItems = allItems.filter((item) => selectedVariantIds.has(item.variant_id));
+  const allMissingBarcodeItems = allItems.filter((item) => !barcodeIsPresent(item.barcode));
   const visibleMissingBarcodeCount = visibleItems.filter((item) => !barcodeIsPresent(item.barcode)).length;
   const selectedMissingBarcodeCount = selectedItems.filter((item) => !barcodeIsPresent(item.barcode)).length;
 
   return {
+    allMissingBarcodeProductCount: new Set(allMissingBarcodeItems.map((item) => String(item.product_id))).size,
+    allMissingBarcodeCount: allMissingBarcodeItems.length,
     visibleProductCount: new Set(visibleItems.map((item) => String(item.product_id))).size,
     visibleVariantCount: visibleItems.length,
     visibleMissingBarcodeCount,
