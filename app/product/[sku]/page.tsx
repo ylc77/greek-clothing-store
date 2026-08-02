@@ -259,22 +259,7 @@ export default async function ProductPage({
               </p>
             ) : null}
 
-            {/* Product facts stay with the introduction. */}
-            {detailItems.length > 0 ? (
-              <details className="mt-6 rounded-2xl border border-stone-200/70 bg-stone-50/70 p-4" open>
-                <summary className="cursor-pointer list-none text-sm font-black text-ink">{t.details}</summary>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2 sm:gap-x-4">
-                  {detailItems.map((d) => (
-                    <p key={d.label} className="flex items-start justify-between gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs sm:bg-transparent sm:px-0 sm:py-0 sm:text-sm">
-                      <span className="shrink-0 text-stone-600">{d.label}</span>
-                      <span className="min-w-0 [overflow-wrap:anywhere] text-right font-bold text-stone-700">{d.value}</span>
-                    </p>
-                  ))}
-                </div>
-              </details>
-            ) : null}
-
-            {/* The purchase controls stay aligned at the bottom on desktop. */}
+            {/* Flexible desktop space keeps the introduction visually separate from purchasing. */}
             <div className="mt-10 border-t border-stone-200/70 pt-6 lg:mt-auto lg:pt-8">
               <ProductActions
                 productName={productName(product, language)}
@@ -298,6 +283,21 @@ export default async function ProductPage({
                 whatsappUrl={settings.whatsapp || undefined}
               />
             </div>
+
+            {/* Supporting product facts follow the primary purchase actions. */}
+            {detailItems.length > 0 ? (
+              <details className="mt-6 rounded-2xl border border-stone-200/70 bg-stone-50/70 p-4" open>
+                <summary className="cursor-pointer list-none text-sm font-black text-ink">{t.details}</summary>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 sm:gap-x-4">
+                  {detailItems.map((d) => (
+                    <p key={d.label} className="flex items-start justify-between gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs sm:bg-transparent sm:px-0 sm:py-0 sm:text-sm">
+                      <span className="shrink-0 text-stone-600">{d.label}</span>
+                      <span className="min-w-0 [overflow-wrap:anywhere] text-right font-bold text-stone-700">{d.value}</span>
+                    </p>
+                  ))}
+                </div>
+              </details>
+            ) : null}
           </div>
         </div>
       </section>

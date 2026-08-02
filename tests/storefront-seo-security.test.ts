@@ -62,4 +62,5 @@ test("product details retain accessible text contrast without duplicating checko
   assert.doesNotMatch(source, /Current size and color availability/);
   assert.doesNotMatch(source, /Cash on delivery/);
   assert.doesNotMatch(source, /Store pickup/);
+  assert.ok(source.indexOf("<ProductActions") < source.indexOf("<details className="));
 });
