@@ -272,8 +272,7 @@ export default async function ProductPage({
                 sizeStock={safeSizeStock}
                 variants={safeVariants}
                 stock={Number(product.stock)}
-                skroutzUrl={product.skroutz_url}
-                skroutzEnabled={featureSettings.features.skroutz_feed && settings.enable_skroutz}
+                onlineStoreEnabled={featureSettings.features.online_orders && settings.online_store_enabled}
                 aiEnabled={featureSettings.features.ai_tools}
                 language={language}
                 category={product.category}
@@ -288,13 +287,24 @@ export default async function ProductPage({
 
             {/* Purchase note */}
             <p className="mt-4 text-xs leading-relaxed text-stone-600">
-              {featureSettings.features.skroutz_feed && settings.enable_skroutz ? t.purchaseNote : t.purchaseContactNote}
+              {settings.online_store_enabled
+                ? language === "en"
+                  ? "Current size and color availability is checked again when you place the order. Payment is made on delivery or collection."
+                  : "Η διαθεσιμότητα μεγέθους και χρώματος ελέγχεται ξανά κατά την παραγγελία. Η πληρωμή γίνεται κατά την παράδοση ή την παραλαβή."
+                : t.purchaseContactNote}
             </p>
+
+            {settings.online_store_enabled ? (
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {settings.delivery_enabled ? <div className="rounded-2xl border border-stone-200 bg-white p-4"><p className="text-sm font-black text-ink">{language === "en" ? "Cash on delivery" : "Αντικαταβολή"}</p><p className="mt-1 text-xs leading-5 text-stone-500">{language === "en" ? settings.delivery_instructions_en : settings.delivery_instructions_gr}</p></div> : null}
+                {settings.pickup_enabled ? <div className="rounded-2xl border border-stone-200 bg-white p-4"><p className="text-sm font-black text-ink">{language === "en" ? "Store pickup" : "Παραλαβή από το κατάστημα"}</p><p className="mt-1 text-xs leading-5 text-stone-500">{language === "en" ? settings.pickup_instructions_en : settings.pickup_instructions_gr}</p></div> : null}
+              </div>
+            ) : null}
 
             {/* Details (collapsible or always shown) */}
             {detailItems.length > 0 ? (
-              <div className="mt-6 rounded-2xl border border-stone-200/70 bg-stone-50/70 p-4">
-                <h3 className="text-sm font-black text-ink">{t.details}</h3>
+              <details className="mt-6 rounded-2xl border border-stone-200/70 bg-stone-50/70 p-4" open>
+                <summary className="cursor-pointer list-none text-sm font-black text-ink">{t.details}</summary>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2 sm:gap-x-4">
                   {detailItems.map((d) => (
                     <p key={d.label} className="flex items-start justify-between gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs sm:bg-transparent sm:px-0 sm:py-0 sm:text-sm">
@@ -303,7 +313,7 @@ export default async function ProductPage({
                     </p>
                   ))}
                 </div>
-              </div>
+              </details>
             ) : null}
           </div>
         </div>

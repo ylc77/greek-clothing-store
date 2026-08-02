@@ -10,9 +10,7 @@ Production status at the time of this checklist:
 - Latest production deployment commit checked: `074972ce69ce7b6b422772b5430b4afd9aec311d`
 - `USE_POS_RPC=true`
 - `USE_VARIANT_INVENTORY=false` or unset
-- Public storefront and Skroutz Feed still read legacy stock fields:
-  - `products.stock`
-  - `products.size_stock`
+- Public storefront and online ordering read the maintained product and Variant inventory projections.
 
 ## Local Build Checks
 
@@ -46,7 +44,7 @@ Open these pages before a demo:
 | POS checkout tab | Admin -> POS checkout | Search and cart UI loads |
 | POS orders tab | Admin -> POS orders | Order history UI loads |
 | Label printing | Admin -> Label printing | Variant list and print controls load |
-| Feed | `/feed.xml` | Returns `application/xml` |
+| Cart | `/cart` | Renders the shopping-cart page |
 | Sitemap | `/sitemap.xml` | Returns `application/xml` |
 | Unauthorized API | Admin API without password | Returns 401 |
 
@@ -129,7 +127,7 @@ must remain ignored and must not be committed.
 - Admin product management
 - Image upload
 - CSV import
-- Skroutz Feed
+- Online shopping and online-order management
 - ERP inventory tables
 - Inventory management tab
 - Manual inventory adjustment
@@ -156,7 +154,7 @@ Do not present these as completed:
 - Complex refund / partial return
 - Supplier purchasing
 - Multi-location / multi-store inventory
-- Switching storefront and Feed to read ERP inventory directly
+- Multi-location online-order routing
 
 ## Demo Day Checklist
 
@@ -164,7 +162,7 @@ Do not present these as completed:
 2. Open storefront home page.
 3. Open one category page.
 4. Open one product detail page.
-5. Open `/feed.xml`.
+5. Open `/cart` and `/checkout`.
 6. Login to `/admin`.
 7. Show product list.
 8. Show inventory tab and reconciliation status.

@@ -127,7 +127,6 @@ try {
     pos_reports: false,
     receipt_printing: false,
     staff_accounts: false,
-    skroutz_feed: false,
     ai_tools: false,
   };
   const { error: updateError } = await supabase.from("feature_settings")
@@ -140,7 +139,7 @@ try {
     .eq("id", 1)
     .single();
   if (persistedFeatureError) throw persistedFeatureError;
-  for (const key of ["quick_sell", "pos_checkout", "pos_orders", "pos_void", "staff_accounts", "skroutz_feed", "ai_tools"]) {
+  for (const key of ["quick_sell", "pos_checkout", "pos_orders", "pos_void", "staff_accounts", "ai_tools"]) {
     assert.equal(persistedFeature.features[key], false, `${key} was not disabled in the local test database`);
   }
 
@@ -171,7 +170,7 @@ try {
     assert.equal(response.data.code, "FEATURE_DISABLED");
   });
 
-  await runCase("disabled AI and Skroutz public and admin endpoints stay closed", async () => {
+  await runCase("disabled AI stays closed and the retired feed stays unavailable", async () => {
     const responses = await Promise.all([
       request("/api/admin/generate-ai-meta", { role: "owner", body: {} }),
       request("/api/ai-shop-assistant", { body: { message: "test" } }),
@@ -181,7 +180,7 @@ try {
     assert.equal(responses[0].data.code, "FEATURE_DISABLED");
     assert.equal(responses[1].status, 403);
     assert.equal(responses[1].data.code, "FEATURE_DISABLED");
-    assert.equal(responses[2].status, 404);
+    assert.equal(responses[2].status, 410);
   });
 
   await runCase("disabled staff accounts reject staff while owner remains authorized", async () => {

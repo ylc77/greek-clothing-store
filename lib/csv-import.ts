@@ -84,7 +84,6 @@ const TEXT_FIELDS = [
   "ean",
   "mpn",
   "color",
-  "skroutz_url",
   "material",
   "fiber_composition_gr",
   "fiber_composition_en",

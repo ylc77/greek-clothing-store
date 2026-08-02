@@ -1,6 +1,6 @@
 # Fashion Boutique 服装店系统
 
-面向希腊服装零售店的双语网站与后台系统，包含商品展示、库存、POS、Skroutz Feed、员工权限、法律页面和客户版本控制。
+面向希腊服装零售店的希腊语 / 英语在线商店与中文后台系统，包含购物车、货到付款、到店自取、在线订单、商品、库存、POS、AI 导购、员工权限和法律页面。
 
 ## v1 发布与运维文档
 
@@ -98,6 +98,7 @@ AUTH_RATE_LIMIT_SECRET=
 USE_POS_RPC=true
 USE_PRODUCT_RPC=true
 USE_CSV_IMPORT_RPC=true
+USE_ONLINE_ORDER_RPC=true
 ```
 
 POS 使用前必须确认数据库已包含以下事务 RPC migrations（新客户的 `client-init.sql` 已自动包含）：
@@ -113,6 +114,8 @@ POS 使用前必须确认数据库已包含以下事务 RPC migrations（新客�
 商品新增和编辑还必须包含 `20260715143949_transactional_product_operations.sql`，并设置 `USE_PRODUCT_RPC=true`。正式商品写入只允许调用事务 RPC；配置不是 `true`、migration 未部署、函数无执行权限或 RPC 不可用时，商品 API 返回 503，不会创建或部分修改商品、Variant、库存余额、库存流水。系统不会回退到历史 JavaScript 多步双写。
 
 CSV 导入还必须包含 `20260716100000_transactional_csv_import_jobs.sql`，并同时设置 `USE_PRODUCT_RPC=true` 与 `USE_CSV_IMPORT_RPC=true`。配置、migration、RPC 执行权限或服务不可用时，导入 API 返回 503，且不会回退到直接写表或 Node.js 多步 upsert。
+
+在线购物还必须包含 `20260802120000_online_store_orders.sql`，并设置 `USE_ONLINE_ORDER_RPC=true`。第一版支持货到付款和到店自取：顾客提交订单时在 `MAIN_STORE` 事务内预留对应尺码 / 颜色库存，取消时释放预留，完成交付时才正式扣减库存。配置、migration、RPC 或 service role 不可用时订单 API 返回 503，不会创建半完成订单或绕过库存校验。
 
 CSV 会先完成整份文件预检，再建立可恢复的持久 Job，并按行事务提交。商品模式必须显式选择 `create_only`（默认，仅新增）、`update_existing`（仅更新）或 `upsert`（新增或更新）；库存模式必须选择 `metadata_only`（不改库存）或 `set_inventory`（明确按盘点数量设置库存）。可选翻译发生在最终预览和提交之前，不在数据库事务内调用。网络中断或刷新后应恢复原 Job；失败行可以下载并安全重试，成功行不会重复执行。
 
@@ -148,7 +151,7 @@ OPENAI_IMAGE_MODEL=gpt-image-2
 SERVER_IMAGE_FETCH_ALLOWED_ORIGINS=
 ```
 
-AI 模特图默认使用最多两张真实商品参考图，通过 GPT Image 2 生成 `1024×1536` 竖版、`medium` 品质、WebP 85% 压缩的图片。服务端只允许当前客户 Supabase Storage 或 `SERVER_IMAGE_FETCH_ALLOWED_ORIGINS` 中的精确 HTTPS origin；会重新校验 DNS、重定向、私网/metadata 地址、响应类型、下载体积、magic bytes、像素和尺寸，并重新编码为 WebP。不符合标准的来源或结果不会写入商品多图。
+商品主图和多图在后台选择后，会先在浏览器本地提供可拖动、缩放的 `3:4` 裁剪预览，适配常见手机竖拍比例；确认后转成 WebP 再走现有安全上传流程，不消耗 AI API。AI 模特图默认使用最多两张真实商品参考图，通过 GPT Image 2 使用受支持的 `1024×1536` 竖版规格生成，再由服务端校验并裁成约 `1024×1365` 的 `3:4`、`medium` 品质、WebP 85% 压缩图片。服务端只允许当前客户 Supabase Storage 或 `SERVER_IMAGE_FETCH_ALLOWED_ORIGINS` 中的精确 HTTPS origin；会重新校验 DNS、重定向、私网/metadata 地址、响应类型、下载体积、magic bytes、像素和尺寸，并重新编码为 WebP。不符合标准的来源或结果不会写入商品多图。
 
 前台 AI 导购在用户明确勾选隐私同意前不会发送身体测量数据。同意后也只发送当前回答所需的身高、体重、胸围、腰围、臀围等最小字段；这些数据不写入数据库、浏览器存储或应用日志。AI 商品上下文由服务端从公开商品字段重新读取，浏览器不能伪造采购价、供应商信息或任意推荐 SKU。共享数据库限流同时约束 IP、浏览器会话、店铺、全局分钟请求、每日预算和并发数；上游超时、异常或输出过大时安全失败，不会无限占用费用。
 
@@ -164,16 +167,16 @@ AI 模特图默认使用最多两张真实商品参考图，通过 GPT Image 2 �
 2. 维护者使用 `ADMIN_PASSWORD` 登录，并为商家创建所需的员工账号；不要把紧急 owner 密码交给商家。
 3. 进入 **店铺设置**，再用维护者专属的开发者密码解锁，填写店铺名称、地址、电话、营业时间和联系方式。
 4. 上传 Logo 和首页图片。
-5. 设置 WhatsApp、Instagram、Google Maps 和 Skroutz。
+5. 设置 WhatsApp、Instagram、Google Maps，并开启在线购物；选择货到付款、到店自取、配送费和免运费门槛。
 6. 添加商品或通过 CSV 导入商品。
 7. 进入 **Settings → Legal Settings**，使用同一个开发者密码解锁，填写商家法律信息并发布 `v1`。
 8. 根据客户购买内容选择 Basic、Standard 或 Advanced。
 
 当前三档版本：
 
-- **Basic 基础版**：双语前台、商品 / 图片 / 分类 / 供货商、尺码库存快查、库存作业、调整、流水和对账。
+- **Basic 基础版**：双语在线商店、货到付款 / 到店自取、商品 / 图片 / 分类 / 供货商、尺码库存快查、库存作业、流水和对账。
 - **Standard 标准版（推荐实体店）**：包含基础版，并增加 POS 扫码扣库存、销售记录与作废恢复、日报、销售记录小票、条码标签、CSV 导入和员工账号。
-- **Advanced 高级版**：包含标准版，并增加 Skroutz Feed 与前台入口、AI 商品 / 图片 / 导购工具和维护数据导出。
+- **Advanced 高级版**：包含标准版，并增加 AI 商品 / 图片 / 导购工具和维护数据导出。
 
 POS 模块只负责系统内扫码销售记录和库存同步，不代替真实收银机、银行 POS、税务小票或 myDATA。
 
@@ -185,8 +188,10 @@ POS 模块只负责系统内扫码销售记录和库存同步，不代替真实�
 - [ ] 希腊语 / 英语切换正常。
 - [ ] Logo、首页图片和商品图片正常显示。
 - [ ] WhatsApp、Instagram 和地图链接正确。
+- [ ] 购物车可以按尺码 / 颜色加入商品，货到付款和到店自取均能提交测试订单。
+- [ ] 后台在线订单可以确认、备货 / 发货、完成和取消，库存预留与释放正确。
 - [ ] Privacy、Terms、Cookie、Contact、Refund、Return、Shipping 页面可以打开。
-- [ ] `/feed.xml` 按客户版本正常输出或关闭。
+- [ ] `/feed.xml` 返回 410，确认旧 Skroutz Feed 已停用。
 
 后台：
 
@@ -302,8 +307,8 @@ npm run test:inventory
 npm run test:inventory-install-paths
 npm run test:developer
 npm run test:developer-install-paths
+npm run test:online-orders
 npm run check:site
-npm run check:skroutz
 ```
 
 ## 相关文档

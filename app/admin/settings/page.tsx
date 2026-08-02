@@ -54,8 +54,16 @@ const emptySettings: BusinessSettings = {
   google_maps_url: "",
   opening_hours: "",
   footer_text: "",
-  enable_skroutz: false,
-  feed_min_stock: 1,
+  online_store_enabled: false,
+  delivery_enabled: true,
+  pickup_enabled: true,
+  shipping_fee: 0,
+  free_shipping_threshold: null,
+  pickup_instructions_en: "",
+  pickup_instructions_gr: "",
+  delivery_instructions_en: "",
+  delivery_instructions_gr: "",
+  order_notification_email: "",
 };
 
 function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
@@ -319,7 +327,7 @@ export default function AdminSettingsPage() {
             <p className="text-xs font-black uppercase tracking-[0.18em] text-olive">Store Settings</p>
             <h1 className="mt-1 text-2xl font-black text-ink">店铺设置</h1>
             <p className="mt-1 text-xs leading-5 text-stone-400">
-              控制前台品牌信息、联系方式、首页视觉和 Skroutz Feed 规则。
+              控制前台品牌信息、联系方式、首页视觉和在线购物规则。
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -458,39 +466,41 @@ export default function AdminSettingsPage() {
             </div>
           </Section>
 
-          <Section title="Skroutz 与页脚" desc="控制商品详情页 Skroutz 按钮和 /feed.xml 的最低库存规则。">
+          <Section title="在线购物与履约" desc="第一版支持货到付款和到店自取；正式开启前请先确认配送费用、地址和法律页面。">
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Skroutz 入口" hint="开启后，商品详情页会显示 Skroutz 跳转入口；feed.xml 保持可访问。">
+              <Field label="在线下单" hint="关闭时商品仍可浏览，但购物车和结账不会接受订单。">
                 <select
                   className="input"
-                  onChange={(event) => updateField("enable_skroutz", event.target.value === "true")}
-                  value={settings.enable_skroutz ? "true" : "false"}
+                  onChange={(event) => updateField("online_store_enabled", event.target.value === "true")}
+                  value={settings.online_store_enabled ? "true" : "false"}
                 >
                   <option value="true">开启</option>
                   <option value="false">关闭</option>
                 </select>
               </Field>
-              <Field label="进入 Feed 的最低库存" hint="小店库存少时建议设置为 1 或 2，避免无库存商品进入 Skroutz Feed。">
+              <Field label="订单通知邮箱" hint="用于维护订单通知配置；本轮不自动发送邮件。">
                 <input
                   className="input"
-                  min="1"
-                  onChange={(event) => updateField("feed_min_stock", Math.max(1, Number(event.target.value) || 1))}
-                  step="1"
-                  type="number"
-                  value={settings.feed_min_stock}
+                  onChange={(event) => updateField("order_notification_email", event.target.value)}
+                  type="email"
+                  value={settings.order_notification_email}
                 />
               </Field>
-              <div className="md:col-span-2">
-                <Field label="页脚文字">
-                  <input
-                    className="input"
-                    onChange={(event) => updateField("footer_text", event.target.value)}
-                    placeholder={`© ${new Date().getFullYear()} ${settings.business_name || "Fashion Boutique"}. All rights reserved.`}
-                    value={settings.footer_text}
-                  />
-                </Field>
-              </div>
+              <Field label="货到付款配送"><select className="input" onChange={(event) => updateField("delivery_enabled", event.target.value === "true")} value={settings.delivery_enabled ? "true" : "false"}><option value="true">开启</option><option value="false">关闭</option></select></Field>
+              <Field label="到店自取"><select className="input" onChange={(event) => updateField("pickup_enabled", event.target.value === "true")} value={settings.pickup_enabled ? "true" : "false"}><option value="true">开启</option><option value="false">关闭</option></select></Field>
+              <Field label="配送费（EUR）"><input className="input" min="0" onChange={(event) => updateField("shipping_fee", Math.max(0, Number(event.target.value) || 0))} step="0.01" type="number" value={settings.shipping_fee} /></Field>
+              <Field label="免配送费门槛（选填）"><input className="input" min="0" onChange={(event) => updateField("free_shipping_threshold", event.target.value === "" ? "" : Math.max(0, Number(event.target.value) || 0))} step="0.01" type="number" value={settings.free_shipping_threshold ?? ""} /></Field>
+              <Field label="Pickup instructions (English)"><textarea className="input min-h-24" onChange={(event) => updateField("pickup_instructions_en", event.target.value)} value={settings.pickup_instructions_en} /></Field>
+              <Field label="Οδηγίες παραλαβής (Ελληνικά)"><textarea className="input min-h-24" onChange={(event) => updateField("pickup_instructions_gr", event.target.value)} value={settings.pickup_instructions_gr} /></Field>
+              <Field label="Delivery instructions (English)"><textarea className="input min-h-24" onChange={(event) => updateField("delivery_instructions_en", event.target.value)} value={settings.delivery_instructions_en} /></Field>
+              <Field label="Οδηγίες παράδοσης (Ελληνικά)"><textarea className="input min-h-24" onChange={(event) => updateField("delivery_instructions_gr", event.target.value)} value={settings.delivery_instructions_gr} /></Field>
             </div>
+          </Section>
+
+          <Section title="页脚" desc="前台页脚版权文字。">
+            <Field label="页脚文字">
+              <input className="input" onChange={(event) => updateField("footer_text", event.target.value)} placeholder={`© ${new Date().getFullYear()} ${settings.business_name || "Fashion Boutique"}. All rights reserved.`} value={settings.footer_text} />
+            </Field>
           </Section>
 
           <Section title="版本与功能" desc="按当前服装实体店工作流划分；客户版本控制模块，员工角色继续限制个人权限。">

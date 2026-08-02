@@ -55,7 +55,7 @@ Important:
 Tips:
 
 - Use clear product photos.
-- For Skroutz, use public image URLs and sufficient image size.
+- Use the 3:4 crop flow so product photos display consistently on desktop and mobile.
 
 ## Manage Inventory
 
@@ -219,26 +219,6 @@ After import:
 - Failed rows are not reported as successful and do not leave partial product/inventory writes.
 - `metadata_only` never changes inventory; `set_inventory` must be selected deliberately.
 - Product CSV export is a product-data export, not a complete database backup.
-
-## Check Skroutz Feed
-
-Open `Skroutz Feed`.
-
-1. Copy `/feed.xml`.
-2. Open the feed in a browser.
-3. Confirm it returns XML.
-4. Check products have:
-   - SKU
-   - Name
-   - Price
-   - Stock
-   - Public image URL
-   - Product URL
-
-Notes:
-
-- Feed still reads legacy `products.stock` and `products.size_stock`.
-- ERP sync keeps these fields accurate.
 
 ## Demo Safety Rules
 

@@ -5,7 +5,6 @@ export function invalidateProductsCache(sku?: string | null) {
   revalidateTag(cacheTags.products);
   revalidateTag(cacheTags.product);
   revalidatePath("/");
-  revalidatePath("/feed.xml");
   revalidatePath("/sitemap.xml");
 
   if (sku) {
@@ -17,7 +16,6 @@ export function invalidateSettingsCache() {
   revalidateTag(cacheTags.settings);
   revalidatePath("/");
   revalidatePath("/contact");
-  revalidatePath("/feed.xml");
   revalidatePath("/sitemap.xml");
 }
 

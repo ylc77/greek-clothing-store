@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LanguageSelector } from "@/components/language-selector";
+import { CartLink } from "@/components/cart-link";
 import { LogoImg } from "@/components/logo-img";
 import { loadCategories } from "@/lib/categories-data";
 import { text, withLanguage, type Language } from "@/lib/i18n";
@@ -128,6 +129,7 @@ export async function SiteHeader({
               Instagram
             </a>
           ) : null}
+          <CartLink language={language} />
           <LanguageSelector language={language} />
         </div>
       </div>

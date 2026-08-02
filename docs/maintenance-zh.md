@@ -8,7 +8,7 @@ app/                    Next.js App Router
   api/admin/            后台 API
   [category]/           分类商品列表页
   product/[sku]/        商品详情页
-  feed.xml/             Skroutz feed
+  feed.xml/             已停用的旧 Feed（返回 410）
   contact/              联系我们
   sitemap.xml/          站点地图
   robots.txt/           robots.txt
@@ -19,7 +19,6 @@ lib/                    工具库
   products.ts           商品查询
   product-stock.ts      尺码库存统一逻辑（hasSizeStock/getTotalStock/getSizeOptions）
   settings.ts           店铺设置加载（getBusinessSettings, 30s 缓存）
-  feed.ts               Feed 生成器（getFeedProducts, buildSkroutzFeed）
   admin-products.ts     管理员验证 + validateProductPayload
   categories-data.ts    分类数据加载（DB 优先，硬编码 fallback）
 supabase/
@@ -34,7 +33,7 @@ supabase/
 | 表 | 说明 | 关键字段 |
 |----|------|---------|
 | `products` | 商品 | sku(PK), size_stock(jsonb), image_urls(jsonb), is_active |
-| `business_settings` | 店铺设置 | 单行，business_name, logo_url, hero_image_url, enable_skroutz |
+| `business_settings` | 店铺设置 | 单行，店铺资料、在线购物、配送与自取配置 |
 | `product_categories` | 一级分类 | slug(PK), name_cn/en/gr, sort_order |
 | `product_subcategories` | 二级分类 | category_id(FK), slug, name_cn/en/gr, unique(category_id,slug) |
 
@@ -96,10 +95,8 @@ npm run storage:recover -- --project-ref 客户项目ref
 2. 确认 RLS policy 允许 public select
 3. 前台需使用 `loadCategories()` 加载
 
-### feed.xml 不显示商品
-1. 确认 `business_settings.enable_skroutz=true`
-2. 确认商品 `is_active=true` 且 `stock>=0`
-3. 检查 `/feed.xml` 是否返回 404（Skroutz 被关闭）
+### feed.xml 返回 410
+这是预期行为。Skroutz Feed 已停用，商品销售改由站内购物车、货到付款和到店自取完成。
 
 ### Vercel 部署失败
 1. `npm run build` 本地先通过
@@ -133,18 +130,15 @@ npm run customer:restore -- --project-ref 目标测试项目ref --backup D:\encr
 ### 线上自动监控
 项目已包含 GitHub Actions 定时检查：`.github/workflows/site-monitor.yml`。
 
-- 默认每天检查一次线上网站和 `/feed.xml`。
-- 检查内容包括：首页、分类页、商品详情、联系页、后台入口、`/feed.xml`、`/sitemap.xml`、`/robots.txt`。
-- `/feed.xml` 会额外抽查测试商品、库存、价格格式、商品链接、公网图片；图片尺寸默认记为警告。
+- 默认每天检查一次线上网站和主要购买路径。
+- 检查内容包括：首页、分类页、商品详情、购物车、结账页、联系页、后台入口、`/feed.xml` 停用状态、`/sitemap.xml` 和 `/robots.txt`。
 - 失败时会上传 `automation-reports/`，里面包含 JSON 报告和失败截图。
 - 如需改线上域名，在 GitHub 仓库 Settings → Secrets and variables → Actions → Variables 中新增或修改 `BASE_URL`。
-- 正式提交 Skroutz 前建议运行严格检查，图片尺寸不足会直接失败。
 
 本地也可以手动运行：
 
 ```bash
 BASE_URL=https://你的域名.vercel.app npm run check:site
-BASE_URL=https://你的域名.vercel.app npm run check:skroutz
 ```
 
 ## 后续维护规则

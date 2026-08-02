@@ -5,8 +5,10 @@ import path from "node:path";
 const root = process.cwd();
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
 const normalizeLineEndings = (value) => value.replace(/\r\n?/g, "\n");
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const migrationsDirectory = path.join(root, "supabase", "migrations");
 const migrations = fs.readdirSync(migrationsDirectory).filter((name) => name.endsWith(".sql")).sort();
+
 const legalMigrations = migrations.filter((name) => /^\d+_transactional_legal_settings_publish\.sql$/.test(name));
 assert.equal(legalMigrations.length, 1, "expected exactly one transactional legal publish migration");
 assert.equal(legalMigrations[0], "20260718064715_transactional_legal_settings_publish.sql");
@@ -22,7 +24,7 @@ for (const marker of [
   "pg_advisory_xact_lock",
   "revoke all on function public.legal_settings_publish_rpc(jsonb, text) from public, anon, authenticated",
   "grant execute on function public.legal_settings_publish_rpc(jsonb, text) to service_role",
-]) assert.match(legalMigration.toLowerCase(), new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+]) assert.match(legalMigration.toLowerCase(), new RegExp(escapeRegExp(marker)));
 
 const legalRoute = read("app/api/admin/legal-settings/route.ts");
 const legalPost = legalRoute.slice(legalRoute.indexOf("export async function POST"));
@@ -30,29 +32,39 @@ assert.match(legalPost, /\.rpc\(\s*"legal_settings_publish_rpc"/);
 assert.match(legalPost, /LEGAL_PUBLISH_UNAVAILABLE/);
 assert.doesNotMatch(legalPost, /\.from\("legal_settings_versions"\)/);
 
-const feed = read("lib/skroutz-feed.ts");
-for (const marker of [
-  "MAIN_STORE",
-  "quantity_reserved",
-  "image_width",
-  "image_height",
-  "validEan",
-  "isTestSku",
-  "name_en",
-  "description_en",
-]) assert.match(feed, new RegExp(marker));
-assert.doesNotMatch(feed, /product\.brand\s*\|\|\s*fallbackBrand/, "store name must never be substituted for a real manufacturer");
-assert.match(feed, /hasUnmappedSizedStock/, "sized stock without a complete variation must fail closed");
-
-const readiness = read("lib/skroutz-readiness.ts");
-for (const marker of ["name_en", "description_en", "image_width", "image_height", "manufacturer", "https:"]) {
-  assert.match(readiness, new RegExp(marker));
-}
-assert.match(readiness, /\^\(\?:\\d\{8\}\|\\d\{13\}\)\$/);
 const adminDashboard = read("components/admin-dashboard.tsx");
-assert.match(adminDashboard, /进入 Skroutz 必填/);
-assert.match(adminDashboard, /至少一边 > 1000px/);
-assert.doesNotMatch(adminDashboard, /EAN（Skroutz 选填）|MPN（Skroutz 选填）/);
+assert.match(adminDashboard, /OnlineOrdersManager/);
+assert.match(adminDashboard, /onlineOrders/);
+for (const retiredAdminMarker of [
+  "Skroutz Feed 状态",
+  "Skroutz URL",
+  "可进 Skroutz",
+  "skroutzReadinessIssues",
+  "adminFeatures.skroutz_feed",
+  'tab === "skroutz"',
+]) {
+  assert.doesNotMatch(
+    adminDashboard,
+    new RegExp(escapeRegExp(retiredAdminMarker)),
+    `retired admin Skroutz surface returned: ${retiredAdminMarker}`,
+  );
+}
+for (const [name, source] of [
+  ["store settings page", read("app/admin/settings/page.tsx")],
+  ["store settings API", read("app/api/admin/settings/route.ts")],
+  ["feature catalog", read("lib/feature-catalog.ts")],
+]) {
+  assert.doesNotMatch(source, /skroutz_feed|enable_skroutz|feed_min_stock/i, `${name} still exposes retired Skroutz settings`);
+}
+const onlineOrderRoute = read("app/api/orders/route.ts");
+const onlineOrderMigration = read("supabase/migrations/20260802120000_online_store_orders.sql");
+for (const marker of ["USE_ONLINE_ORDER_RPC", "online_order_create_rpc", "AUTH_RATE_LIMIT_SECRET", "online_orders"]) {
+  assert.match(onlineOrderRoute, new RegExp(marker));
+}
+for (const marker of ["security definer", "set search_path = ''", "for update of b", "quantity_reserved", "online_order_insufficient_stock"]) {
+  assert.match(onlineOrderMigration.toLowerCase(), new RegExp(escapeRegExp(marker)));
+}
+assert.match(read("app/feed.xml/route.ts"), /status:\s*410/);
 
 const homePage = read("app/page.tsx");
 const siteHeader = read("components/site-header.tsx");
@@ -75,11 +87,11 @@ assert.match(siteHeader, /splitDesktopCategoryNavigation/);
 assert.match(siteHeader, /data-storefront-category-more/);
 
 const monitor = read("scripts/site-smoke-check.js");
-for (const marker of ["XMLParser", "SkroutzBot v1.0", "Skroutz ImageBot v1", "additionalImages", "variationQuantity", "STRICT_FEED"]) {
-  assert.match(monitor, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+for (const marker of ["retired product feed", '"/cart"', '"/checkout"', "expected 410"]) {
+  assert.match(monitor, new RegExp(escapeRegExp(marker)));
 }
 const monitorWorkflow = read(".github/workflows/site-monitor.yml");
-assert.match(monitorWorkflow, /STRICT_FEED:\s*"true"/);
+assert.doesNotMatch(monitorWorkflow, /STRICT_FEED/);
 for (const action of ["actions/checkout@v6", "actions/setup-node@v6", "actions/upload-artifact@v6"]) assert.match(monitorWorkflow, new RegExp(action.replace("@", "@")));
 
 const middleware = read("middleware.ts");

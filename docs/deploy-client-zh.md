@@ -87,10 +87,11 @@ npx supabase db push
 6. 如需翻译，先查看最终翻译预览，再确认提交；提交阶段不会调用外部 AI
 7. 导入结果保存为 Job。刷新或网络中断后恢复原 Job，下载失败行并只重试失败行
 
-## 9. 检查 feed.xml
-1. 访问 `https://你的域名.vercel.app/feed.xml`
-2. 确认 XML 正常输出
-3. 进入后台「Skroutz Feed」查看统计
+## 9. 检查在线购物
+1. 在商品详情页选择有库存的规格并加入购物车
+2. 分别验证货到付款和到店自取
+3. 在后台「在线订单」确认订单可查看和处理
+4. 访问 `/feed.xml`，确认旧 Feed 返回 410
 
 ## 10. 绑定域名（可选）
 Vercel → Settings → Domains → 添加自定义域名
@@ -100,7 +101,7 @@ Vercel → Settings → Domains → 添加自定义域名
 - [ ] Logo 和首页大图正常显示
 - [ ] 分类页正常，所有分类可点击
 - [ ] 至少 4 件上架商品
-- [ ] 商品详情页：图片、价格、尺码、Skroutz 按钮正常
+- [ ] 商品详情页：图片、价格、规格选择和加入购物车正常
 - [ ] 英语 / 希腊语切换正常
 - [ ] 后台登录正常，密码已更换
 - [ ] developer status 为 Initialized=true、Must rotate=false
@@ -111,7 +112,7 @@ Vercel → Settings → Domains → 添加自定义域名
 - [ ] 商品 CSV 导出完整；已确认它不是数据库灾难恢复备份
 - [ ] 维护者已执行数据库 + Storage 完整备份，`customer:backup:verify` 通过
 - [ ] 已在空白隔离项目执行一次恢复演练；数据库对账与 Storage 清单一致
-- [ ] /feed.xml 可公网访问
+- [ ] `/feed.xml` 返回 410，旧 Skroutz Feed 已停用
 - [ ] 店铺设置已填写完整（名称、联系方式、地址、营业时间）
 - [ ] WhatsApp / Instagram / Google Maps 链接已更新
 
@@ -134,7 +135,7 @@ Vercel → Settings → Domains → 添加自定义域名
 - 如果 status 显示未初始化，使用 bootstrap；显示 Must rotate=true，使用 rotate。
 
 ## 14. 每月维护建议
-- 检查 /feed.xml 是否正常
+- 检查购物车、结账和后台在线订单是否正常
 - 导出 CSV 留存商品资料；数据库与 Storage 另行做完整备份
 - 更新商品库存和价格
 - 新增当季新品

@@ -28,8 +28,16 @@ export type BusinessSettings = {
   google_maps_url: string;
   opening_hours: string;
   footer_text: string;
-  enable_skroutz: boolean;
-  feed_min_stock: number;
+  online_store_enabled: boolean;
+  delivery_enabled: boolean;
+  pickup_enabled: boolean;
+  shipping_fee: number;
+  free_shipping_threshold: number | null;
+  pickup_instructions_en: string;
+  pickup_instructions_gr: string;
+  delivery_instructions_en: string;
+  delivery_instructions_gr: string;
+  order_notification_email: string;
 };
 
 const defaults: BusinessSettings = {
@@ -49,8 +57,16 @@ const defaults: BusinessSettings = {
   google_maps_url: "",
   opening_hours: "",
   footer_text: "",
-  enable_skroutz: false,
-  feed_min_stock: 1,
+  online_store_enabled: false,
+  delivery_enabled: true,
+  pickup_enabled: true,
+  shipping_fee: 0,
+  free_shipping_threshold: null,
+  pickup_instructions_en: "Pay when you collect your order from the store.",
+  pickup_instructions_gr: "Πληρώστε κατά την παραλαβή της παραγγελίας σας από το κατάστημα.",
+  delivery_instructions_en: "Pay cash when your order is delivered.",
+  delivery_instructions_gr: "Πληρώστε με μετρητά κατά την παράδοση της παραγγελίας σας.",
+  order_notification_email: "",
 };
 
 const SETTINGS_SELECT = [
@@ -70,8 +86,16 @@ const SETTINGS_SELECT = [
   "google_maps_url",
   "opening_hours",
   "footer_text",
-  "enable_skroutz",
-  "feed_min_stock",
+  "online_store_enabled",
+  "delivery_enabled",
+  "pickup_enabled",
+  "shipping_fee",
+  "free_shipping_threshold",
+  "pickup_instructions_en",
+  "pickup_instructions_gr",
+  "delivery_instructions_en",
+  "delivery_instructions_gr",
+  "order_notification_email",
 ].join(",");
 
 async function loadBusinessSettings(): Promise<BusinessSettings> {
@@ -106,8 +130,16 @@ async function loadBusinessSettings(): Promise<BusinessSettings> {
     google_maps_url: String(data.google_maps_url || ""),
     opening_hours: storefrontText(data.opening_hours),
     footer_text: storefrontText(data.footer_text),
-    enable_skroutz: data.enable_skroutz === true,
-    feed_min_stock: Math.max(1, Number(data.feed_min_stock || defaults.feed_min_stock)),
+    online_store_enabled: data.online_store_enabled === true,
+    delivery_enabled: data.delivery_enabled !== false,
+    pickup_enabled: data.pickup_enabled !== false,
+    shipping_fee: Math.max(0, Number(data.shipping_fee || 0)),
+    free_shipping_threshold: data.free_shipping_threshold == null ? null : Math.max(0, Number(data.free_shipping_threshold)),
+    pickup_instructions_en: storefrontText(data.pickup_instructions_en, defaults.pickup_instructions_en),
+    pickup_instructions_gr: storefrontText(data.pickup_instructions_gr, defaults.pickup_instructions_gr),
+    delivery_instructions_en: storefrontText(data.delivery_instructions_en, defaults.delivery_instructions_en),
+    delivery_instructions_gr: storefrontText(data.delivery_instructions_gr, defaults.delivery_instructions_gr),
+    order_notification_email: String(data.order_notification_email || ""),
   };
 
   return settings;

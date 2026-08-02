@@ -37,7 +37,6 @@
 - POS 收银、订单、日报和作废。
 - Barcode 生成和标签打印。
 - CSV 批量导入。
-- Skroutz Feed。
 - AI 文案、翻译和图片功能。
 - 员工账号。
 
@@ -56,7 +55,6 @@
 
 默认关闭：
 
-- Skroutz Feed 和前台 Skroutz 入口。
 - AI 商品、图片和前台导购功能。
 - 维护数据导出。
 - 尚未完成的税务发票、myDATA、银行 POS 联动和硬件打印桥。
@@ -64,11 +62,10 @@
 
 ### 高级版 Advanced
 
-适合需要 Skroutz 渠道、AI 商品工具和维护数据导出的客户。
+适合需要 AI 商品工具、AI 导购和维护数据导出的客户。
 
 包含标准版，并启用：
 
-- Skroutz Feed、XML 输出、前台 Skroutz 入口和对应商品资料检查。
 - AI 翻译、商品文案、导购信息、商品图片和前台 AI 导购。
 - 仅维护者 / owner 可见的数据导出入口。
 - 所有当前已稳定的运营模块。
@@ -98,7 +95,6 @@
 | `receipt_printing` | 销售记录小票 | 浏览器预览和打印，不是正式税务发票 |
 | `barcode_labels` | 条码与标签打印 | Variant Barcode API、筛选、预览和打印 |
 | `csv_import` | CSV 批量导入 | 商品、尺码和库存 CSV 导入 |
-| `skroutz_feed` | Skroutz 渠道 | Feed 管理、`/feed.xml` 和前台入口 |
 | `staff_accounts` | 员工账号与角色 | Supabase Auth 员工账号和角色权限 |
 | `ai_tools` | AI 商品与导购 | 翻译、文案、资料补全、图片和前台导购 |
 | `backup_tools` | 维护数据导出 | 仅维护者 / owner 的导出入口 |
@@ -174,15 +170,14 @@
 - `inventory` 需要 `inventory` + `inventory:read`。
 - `labels` 需要 `barcode_labels` + `labels:write`。
 - `csv` 需要 `csv_import` + 商品写权限。
-- `skroutz` 需要 `skroutz_feed` + `feed:read`。
 
 ## 7. 前台与公共接口边界
 
 - 基础商品展示保持可用，除非整个项目被配置成仅后台模式。
-- `skroutz_feed=false` 时，`/feed.xml` 应返回 404 或明确的禁用响应，不能继续暴露 Feed。
+- `/feed.xml` 已永久停用并返回 410，不再属于任何客户版本。
 - `ai_tools=false` 时，公开 AI 客服和后台 AI API 都应禁用。
 - `ai_tools=false` 时，前台悬浮按钮、商品页 AI 按钮和后台全部 AI 操作也应隐藏。
-- `skroutz_feed=false` 时，首页和商品页不得继续显示 Skroutz 文案或入口。
+- 首页、商品页和后台不得显示 Skroutz 文案或入口。
 - `staff_accounts=false` 时，非 owner 员工账号和角色密码不能继续调用后台 API。
 - 法律页面、Contact、Sitemap 不应作为付费开关关闭，它们属于基本上线能力。
 - 关闭模块只停止入口和调用，不删除历史订单、库存流水或 Barcode 数据。
@@ -218,7 +213,7 @@
 - API 是否正确拒绝。
 - 员工权限是否仍然生效。
 - 切换版本不会删除数据。
-- 前台、后台和 Feed 行为符合版本定义。
+- 前台、后台和在线订单行为符合版本定义。
 
 ## 9. 风险与注意事项
 

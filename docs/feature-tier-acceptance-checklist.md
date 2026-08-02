@@ -63,7 +63,7 @@
 - [ ] POS 收银、订单和日报入口隐藏。
 - [ ] 标签打印入口隐藏。
 - [ ] CSV 导入入口隐藏。
-- [ ] Skroutz Feed 入口隐藏，`/feed.xml` 返回 404。
+- [ ] 后台无 Skroutz Feed 入口，`/feed.xml` 返回 410。
 - [ ] AI 操作入口隐藏，公开 AI 客服返回 404。
 - [ ] 前台 AI 悬浮按钮和商品页 AI 按钮不渲染。
 - [ ] 首页、商品页和后台不显示 Skroutz 入口或营销文案。
@@ -92,7 +92,7 @@
 
 应关闭：
 
-- [ ] Skroutz Feed 入口隐藏，`/feed.xml` 返回 404，前台无 Skroutz 文案。
+- [ ] 后台无 Skroutz Feed 入口，`/feed.xml` 返回 410，前台无 Skroutz 文案。
 - [ ] AI 生成接口返回 403，公开 AI 客服返回 404。
 - [ ] 备份按钮不显示，备份 API 返回 403。
 
@@ -105,8 +105,8 @@
 - [ ] POS 订单、作废和日报 API 正常。
 - [ ] ERP 库存接口正常。
 - [ ] Barcode、CSV、AI 和备份接口正常。
-- [ ] `/feed.xml` 正常返回 XML。
-- [ ] 首页和商品页显示 Skroutz 入口，前台 AI 导购入口显示。
+- [ ] `/feed.xml` 返回 410，确认旧 Feed 保持停用。
+- [ ] 前台 AI 导购入口按高级版配置显示。
 - [ ] 员工角色仍不能越过原有 `AdminPermission`。
 
 本轮不应执行真实 production checkout、void 或库存调整；如需写入验收，必须使用测试 SKU 和测试项目。
@@ -136,7 +136,7 @@
 - [ ] 一个商品详情页
 - [ ] `/admin`
 - [ ] `/admin/settings`
-- [ ] `/feed.xml`，按版本预期为 XML 或 404
+- [ ] `/feed.xml` 返回 410
 - [ ] `/sitemap.xml`
 
 ## 10. 回滚

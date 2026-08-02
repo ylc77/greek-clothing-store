@@ -90,7 +90,7 @@ const gateChecks = [
   ["app/api/admin/inventory/adjust/route.ts", /isFeatureEnabledUncached\("inventory"\)/],
   ["app/api/admin/products/sell/route.ts", /isFeatureEnabledUncached\("quick_sell"\)/],
   ["app/api/ai-shop-assistant/route.ts", /isFeatureEnabled\("ai_tools"\)/],
-  ["app/feed.xml/route.ts", /isFeatureEnabled\("skroutz_feed"\)/],
+  ["app/api/orders/route.ts", /isFeatureEnabled\("online_orders"\)/],
   ["lib/admin-auth.ts", /isFeatureEnabled\("staff_accounts"\)/],
 ];
 for (const [file, pattern] of gateChecks) assert.match(read(file), pattern, `${file} is missing its server-side feature gate`);
