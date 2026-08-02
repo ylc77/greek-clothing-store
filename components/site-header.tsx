@@ -134,16 +134,32 @@ export async function SiteHeader({
         </div>
       </div>
 
-      <div className="relative xl:hidden">
-        <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-paper to-transparent" />
-        <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-gradient-to-l from-paper to-transparent" />
-        <div className="pointer-events-none absolute right-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-stone-200 bg-white/95 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-stone-500 shadow-sm">
-          {language === "en" ? "Swipe" : "Σύρετε"} →
-        </div>
-        <nav className="ui-container scrollbar-none flex snap-x gap-2 overflow-x-auto pb-3 pr-20 sm:pr-24 lg:gap-1.5 xl:hidden" data-storefront-mobile-categories>
+      <div className="border-t border-stone-200/60 xl:hidden">
+        <details className="group ui-container pb-3 sm:hidden" data-storefront-mobile-categories>
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-2 text-sm font-black text-ink shadow-sm [&::-webkit-details-marker]:hidden">
+            <span>{text[language].categories}</span>
+            <span className="flex items-center gap-2 text-xs text-stone-500">
+              {categoryNavigation.length}
+              <span aria-hidden="true" className="text-base transition-transform group-open:rotate-180">⌄</span>
+            </span>
+          </summary>
+          <nav className="mt-2 grid grid-cols-2 gap-2 rounded-2xl border border-stone-200 bg-white p-2 shadow-lg shadow-stone-900/5">
+            {categoryNavigation.map((cat) => (
+              <Link
+                className="flex min-h-11 min-w-0 items-center justify-center rounded-xl bg-stone-50 px-3 py-2 text-center text-sm font-black leading-tight text-stone-700 transition hover:bg-stone-100 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2"
+                href={withLanguage(`/${cat.slug}`, language)}
+                key={cat.slug}
+              >
+                <span className="break-words">{cat.label}</span>
+              </Link>
+            ))}
+          </nav>
+        </details>
+
+        <nav className="ui-container hidden flex-wrap justify-center gap-2 pb-3 sm:flex xl:hidden">
           {categoryNavigation.map((cat) => (
             <Link
-              className="inline-flex min-h-11 shrink-0 snap-start items-center rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-black text-stone-700 shadow-sm whitespace-nowrap transition hover:border-stone-300 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 lg:px-2.5 lg:text-xs"
+              className="inline-flex min-h-10 items-center rounded-full border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-700 shadow-sm transition hover:border-stone-300 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2"
               href={withLanguage(`/${cat.slug}`, language)}
               key={cat.slug}
             >
