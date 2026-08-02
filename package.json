@@ -18,6 +18,7 @@
     "test:product-unit": "node --experimental-strip-types --test tests/product-operation-id.test.ts tests/product-cache-policy.test.ts tests/product-variant-matrix.test.ts tests/product-policy.test.ts tests/category-catalog.test.ts",
     "test:product-integration": "node scripts/product-transaction-integration-test.mjs",
     "test:category-integration": "node scripts/category-catalog-integration-test.mjs",
+    "test:category-install-paths": "node scripts/run-powershell.mjs scripts/verify-category-install-paths.ps1",
     "test:product-install-paths": "node scripts/run-powershell.mjs scripts/verify-product-install-paths.ps1",
     "check:product-static": "node scripts/verify-product-static-gates.mjs",
     "check:category-static": "node scripts/verify-category-static-gates.mjs",

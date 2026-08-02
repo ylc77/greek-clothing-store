@@ -310,3 +310,15 @@ Enabled `product_categories` and `product_subcategories` rows are the storefront
 
 The maintained eight-category list is only a read fallback when category data cannot be loaded. More than eight enabled categories must remain reachable: the homepage grid wraps all entries, desktop navigation uses seven direct entries plus a complete More menu, and mobile/tablet navigation keeps every first-level category in the horizontal scroller. Greek and English database names are customer-facing; never fall back to Chinese names on the storefront.
 
+
+\---
+
+
+\## 22. Legacy category timestamp compatibility
+
+
+The pre-release Production database was observed with `public.product_categories` and `public.product_subcategories` missing `updated_at`, even though the baseline migration was present in migration history. The baseline uses `create table if not exists`, so it does not add newer columns to a pre-existing legacy table; the category API then fails when its explicit select includes `updated_at`, and update triggers cannot safely run.
+
+
+Keep `20260802103000_repair_legacy_category_timestamps.sql` in every existing-customer upgrade. It must create its own `public.set_updated_at()` helper, add and backfill both timestamp columns without changing category data, enforce defaults and non-null constraints, and recreate both triggers. Verify the dedicated legacy category installation fixture as well as the empty migration reset before deploying category-management code.
+
