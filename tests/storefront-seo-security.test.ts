@@ -64,3 +64,14 @@ test("product details retain accessible text contrast without duplicating checko
   assert.doesNotMatch(source, /Store pickup/);
   assert.ok(source.indexOf("<ProductActions") < source.indexOf("<details className="));
 });
+
+test("desktop product cards share one height and reserve a wider information column", () => {
+  const pageSource = fs.readFileSync(path.join(process.cwd(), "app", "product", "[sku]", "page.tsx"), "utf8");
+  const gallerySource = fs.readFileSync(path.join(process.cwd(), "components", "product-image-gallery.tsx"), "utf8");
+
+  assert.match(pageSource, /max-w-\[90rem\]/);
+  assert.match(pageSource, /lg:min-h-\[900px\][^"\n]*lg:grid-cols-\[55fr_45fr\][^"\n]*lg:items-stretch/);
+  assert.match(pageSource, /lg:h-full/);
+  assert.doesNotMatch(pageSource, /lg:self-start/);
+  assert.match(gallerySource, /lg:h-full lg:aspect-auto/);
+});

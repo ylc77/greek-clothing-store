@@ -201,7 +201,7 @@ export default async function ProductPage({
     <main className="min-h-screen bg-paper">
       <SiteHeader language={language} settings={settings} />
 
-      <section className="ui-container py-4 sm:py-6">
+      <section className="mx-auto max-w-[90rem] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
         {/* Breadcrumb */}
         <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold text-stone-500 sm:mb-5 sm:text-sm">
           <Link
@@ -225,9 +225,9 @@ export default async function ProductPage({
         </div>
 
         {/* Main layout */}
-        <div className="grid min-w-0 gap-6 lg:grid-cols-[58fr_42fr] lg:gap-12">
+        <div className="grid min-w-0 gap-6 lg:min-h-[900px] lg:grid-cols-[55fr_45fr] lg:items-stretch lg:gap-10 xl:min-h-[960px] xl:gap-12">
           {/* Left: image gallery */}
-          <div className="min-w-0">
+          <div className="min-w-0 lg:h-full">
             <ProductImageGallery
               images={images}
               alt={productName(product, language)}
@@ -236,7 +236,7 @@ export default async function ProductPage({
           </div>
 
           {/* Right: info */}
-          <div className="flex min-w-0 flex-col rounded-3xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5 sm:p-7 lg:sticky lg:top-28 lg:min-h-[880px] lg:self-start xl:min-h-[960px]">
+          <div className="flex min-w-0 flex-col rounded-3xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5 sm:p-7 lg:h-full">
             {/* SKU */}
             <p className="break-all text-xs font-bold uppercase tracking-[0.15em] text-olive">
               {product.sku}
