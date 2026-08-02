@@ -7,6 +7,8 @@ import test from "node:test";
 import { buildLanguageAlternates, localizedStorefrontUrl } from "../lib/storefront-seo.ts";
 // @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
 import { buildContentSecurityPolicy, securityResponseHeaders } from "../lib/security-headers.ts";
+// @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
+import { selectRelatedProducts } from "../lib/related-products.ts";
 
 test("Greek and English storefront URLs have stable canonicals and reciprocal hreflang", () => {
   const greek = buildLanguageAlternates("/women", "el", { subcategory: "dresses" }, "https://shop.example");
@@ -74,4 +76,34 @@ test("desktop product cards share one height and reserve a wider information col
   assert.match(pageSource, /lg:h-full/);
   assert.doesNotMatch(pageSource, /lg:self-start/);
   assert.match(gallerySource, /lg:h-full lg:aspect-auto/);
+});
+
+test("related products prioritize the same subcategory, exclude the current SKU, and deduplicate", () => {
+  const selected = selectRelatedProducts([
+    { sku: "OTHER-1", category: "shoes", subcategory: "boots" },
+    { sku: "CURRENT", category: "women", subcategory: "shirts" },
+    { sku: "WOMEN-OTHER", category: "women", subcategory: "dresses" },
+    { sku: "SHIRT-2", category: "women", subcategory: "shirts" },
+    { sku: "shirt-2", category: "women", subcategory: "shirts" },
+    { sku: "SHIRT-3", category: "women", subcategory: "shirts" },
+  ], {
+    sku: "current",
+    category: "women",
+    subcategory: "shirts",
+  }, 4);
+
+  assert.deepEqual(selected.map((product) => product.sku), ["SHIRT-2", "SHIRT-3", "WOMEN-OTHER", "OTHER-1"]);
+});
+
+test("related product carousel auto-advances, loops, pauses for interaction, and respects reduced motion", () => {
+  const pageSource = fs.readFileSync(path.join(process.cwd(), "app", "product", "[sku]", "page.tsx"), "utf8");
+  const carouselSource = fs.readFileSync(path.join(process.cwd(), "components", "related-products-carousel.tsx"), "utf8");
+
+  assert.match(pageSource, /<RelatedProductsCarousel/);
+  assert.match(carouselSource, /window\.setInterval/);
+  assert.match(carouselSource, /scrollTo\(\{ left: target/);
+  assert.match(carouselSource, /prefers-reduced-motion: reduce/);
+  assert.match(carouselSource, /onMouseEnter=\{\(\) => setHovered\(true\)\}/);
+  assert.match(carouselSource, /focusedWithin \|\| hovered \|\| pointerActive/);
+  assert.match(carouselSource, /snap-mandatory/);
 });

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProductActions } from "@/components/product-actions";
 import { ProductImageGallery } from "@/components/product-image-gallery";
+import { RelatedProductsCarousel } from "@/components/related-products-carousel";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import {
@@ -14,7 +15,7 @@ import {
   withLanguage,
 } from "@/lib/i18n";
 import { loadCategories } from "@/lib/categories-data";
-import { getProductBySku } from "@/lib/products";
+import { getLatestProducts, getProductBySku, getProductsByCategory } from "@/lib/products";
 import { getTotalStock } from "@/lib/product-stock";
 import { getFeatureSettings } from "@/lib/features";
 import { getBusinessSettings } from "@/lib/settings";
@@ -23,6 +24,7 @@ import { serializeJsonForHtmlScript } from "@/lib/serialize-json-for-html-script
 import { buildLanguageAlternates } from "@/lib/storefront-seo";
 import { publicVariantOptions } from "@/lib/product-variant-matrix";
 import { getStorefrontCategoryNavigation } from "@/lib/storefront-category-navigation";
+import { selectRelatedProducts } from "@/lib/related-products";
 
 type ProductPageProps = {
   params: Promise<{ sku: string }>;
@@ -197,6 +199,21 @@ export default async function ProductPage({
     isReal(product.season) ? { label: t.season, value: product.season!.trim() } : null,
   ].filter(Boolean) as { label: string; value: string }[];
 
+  const [categoryProductsResult, latestProductsResult] = await Promise.all([
+    getProductsByCategory(product.category, undefined, 1, 48),
+    getLatestProducts(24),
+  ]);
+  const relatedProducts = selectRelatedProducts(
+    [...categoryProductsResult.products, ...latestProductsResult.products]
+      .filter((candidate) => getTotalStock(candidate) > 0),
+    {
+      sku: product.sku,
+      category: product.category,
+      subcategory: product.subcategory,
+    },
+    12,
+  );
+
   return (
     <main className="min-h-screen bg-paper">
       <SiteHeader language={language} settings={settings} />
@@ -301,6 +318,8 @@ export default async function ProductPage({
           </div>
         </div>
       </section>
+
+      <RelatedProductsCarousel language={language} products={relatedProducts} />
 
       {/* Product JSON-LD */}
       <script
