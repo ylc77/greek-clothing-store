@@ -26,14 +26,14 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
   if (!hasImages) {
     const t = text[(language || "el") as Language];
     return (
-      <div className="flex min-h-[340px] items-center justify-center rounded-2xl border border-dashed border-stone-300 bg-[#f5f1ea] text-sm font-bold text-stone-500 md:min-h-[680px]">
+      <div className="flex min-h-[340px] items-center justify-center rounded-2xl border border-dashed border-stone-300 bg-[#f5f1ea] text-sm font-bold text-stone-500 md:min-h-[680px] lg:h-full">
         {t.noImage}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-3 md:flex-row md:gap-4">
+    <div className="flex flex-col gap-3 md:flex-row md:gap-4 lg:h-full">
       {hasMultipleImages ? (
         <div className="scrollbar-none order-2 flex snap-x gap-2 overflow-x-auto pb-1 pr-6 md:order-1 md:max-h-[800px] md:w-20 md:shrink-0 md:flex-col md:overflow-x-hidden md:overflow-y-auto md:pb-0 md:pr-0">
           {images.map((imageUrl, index) => (
@@ -61,7 +61,7 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
         </div>
       ) : null}
 
-      <div className="relative order-1 aspect-[3/4] w-full flex-1 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm shadow-stone-900/5 md:order-2">
+      <div className="relative order-1 aspect-[3/4] w-full flex-1 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm shadow-stone-900/5 md:order-2 lg:h-full lg:aspect-auto">
         <Image
           alt={alt}
           className="object-contain object-center"
