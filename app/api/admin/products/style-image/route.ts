@@ -13,9 +13,11 @@ import { createSupabaseStorageLifecycleBackend, uploadAndCommitStorageObject } f
 export const runtime = "nodejs";
 
 const imageModelFallback = "gpt-image-2";
-const imageWidth = 1024;
-const imageHeight = 1536;
-const imageSize = `${imageWidth}x${imageHeight}`;
+const generationWidth = 1024;
+const generationHeight = 1536;
+const generationSize = `${generationWidth}x${generationHeight}`;
+const outputWidth = 1024;
+const outputHeight = 1365;
 const imageQuality = "medium";
 const imageOutputFormat = "webp";
 const imageOutputCompression = 85;
@@ -68,7 +70,7 @@ function buildStyleImagePrompt(product: Record<string, unknown>, modelType: stri
     "Any supporting garments or accessories must be simple, neutral, unbranded, and must not cover the referenced garment.",
     `Visual direction: ${style}.`,
     "Scene: clean Mediterranean boutique or understated Athens street setting, natural light, realistic skin and fabric texture, commercial fashion photography.",
-    "Composition: vertical 2:3 portrait, single adult model, no extra people, no collage, no duplicated body parts.",
+    "Composition: final image will be a vertical 3:4 portrait. Keep the garment, head, hands, and feet inside the central safe area with generous top and bottom margins so a 3:4 crop remains complete. Use a single adult model, no extra people, no collage, and no duplicated body parts.",
     "Do not include text, prices, discount labels, borders, logos, watermarks, or invented branding.",
     "The result is a styling reference image for the product gallery, not a replacement for the original product photo.",
   ].join("\n");
@@ -186,7 +188,7 @@ export async function POST(request: NextRequest) {
   form.append("model", imageModel);
   form.append("prompt", prompt);
   form.append("n", "1");
-  form.append("size", imageSize);
+  form.append("size", generationSize);
   form.append("quality", imageQuality);
   form.append("output_format", imageOutputFormat);
   form.append("output_compression", String(imageOutputCompression));
@@ -214,9 +216,10 @@ export async function POST(request: NextRequest) {
   }
 
   const imageBuffer = Buffer.from(b64, "base64");
-  let validatedOutput;
+  let generatedOutput: Awaited<ReturnType<typeof optimizeUploadedImage>>;
+  let validatedOutput: Awaited<ReturnType<typeof optimizeUploadedImage>>;
   try {
-    validatedOutput = await optimizeUploadedImage(imageBuffer, {
+    generatedOutput = await optimizeUploadedImage(imageBuffer, {
       declaredMimeType: "image/webp",
       maxBytes: maxSourceImageBytes,
       maxPixels: maxSourcePixels,
@@ -224,13 +227,35 @@ export async function POST(request: NextRequest) {
       maxHeight: maxSourceDimension,
       quality: imageOutputCompression,
     });
+    if (generatedOutput.width !== generationWidth || generatedOutput.height !== generationHeight) {
+      return NextResponse.json(
+        {
+          error: `AI image output did not match the required ${generationSize} ${imageOutputFormat.toUpperCase()} generation standard.`,
+          received: {
+            width: generatedOutput.width || null,
+            height: generatedOutput.height || null,
+            format: generatedOutput.format || null,
+          },
+        },
+        { status: 502 },
+      );
+    }
+    validatedOutput = await optimizeUploadedImage(generatedOutput.buffer, {
+      declaredMimeType: "image/webp",
+      maxBytes: maxSourceImageBytes,
+      maxPixels: maxSourcePixels,
+      maxWidth: maxSourceDimension,
+      maxHeight: maxSourceDimension,
+      resize: { width: outputWidth, height: outputHeight, fit: "cover" },
+      quality: imageOutputCompression,
+    });
   } catch (error) {
     return NextResponse.json({ error: "AI image response was not a valid image." }, { status: 502 });
   }
-  if (validatedOutput.width !== imageWidth || validatedOutput.height !== imageHeight) {
+  if (validatedOutput.width !== outputWidth || validatedOutput.height !== outputHeight) {
     return NextResponse.json(
       {
-        error: `AI image output did not match the required ${imageSize} ${imageOutputFormat.toUpperCase()} standard.`,
+        error: `AI image could not be normalized to the required ${outputWidth}x${outputHeight} 3:4 storefront standard.`,
         received: {
           width: validatedOutput.width || null,
           height: validatedOutput.height || null,

@@ -10,7 +10,7 @@ export const featureKeys = [
   "receipt_printing",
   "barcode_labels",
   "csv_import",
-  "skroutz_feed",
+  "online_orders",
   "staff_accounts",
   "ai_tools",
   "backup_tools",
@@ -39,7 +39,7 @@ export const featureCatalog: Record<FeatureKey, {
   barcode_labels: { label: "条码与标签打印", desc: "按商品和尺码生成 Variant 条码、筛选、预览和打印", group: "store" },
   csv_import: { label: "CSV 批量导入", desc: "批量导入商品、尺码和库存资料", group: "store" },
   staff_accounts: { label: "员工账号与角色", desc: "员工登录并按收银、库存或只读角色限制权限", group: "store" },
-  skroutz_feed: { label: "Skroutz 渠道", desc: "Feed 管理、XML 输出及前台 Skroutz 入口", group: "growth" },
+  online_orders: { label: "在线购物", desc: "购物车、货到付款、到店自取和在线订单管理", group: "core", alwaysOn: true },
   ai_tools: { label: "AI 商品与导购工具", desc: "翻译、商品文案、资料补全、图片生成和前台 AI 导购", group: "growth" },
   backup_tools: { label: "维护数据导出", desc: "仅维护者 / owner 使用的后台数据导出入口", group: "growth" },
 };
@@ -47,7 +47,7 @@ export const featureCatalog: Record<FeatureKey, {
 export const featureGroups: Array<{ key: FeatureGroupKey; label: string; desc: string }> = [
   { key: "core", label: "所有版本共同具备", desc: "服装店网站、商品资料和尺码库存是本模板的固定基础，不能关闭。" },
   { key: "store", label: "实体店日常运营", desc: "标准版开始提供扫码扣库存、纠错、标签、批量导入和员工账号。" },
-  { key: "growth", label: "渠道与增值能力", desc: "高级版增加 Skroutz、AI 和维护数据导出。" },
+  { key: "growth", label: "增值能力", desc: "高级版增加 AI 商品与导购工具及维护数据导出。" },
 ];
 
 const basicFeatures: FeatureFlags = {
@@ -62,7 +62,7 @@ const basicFeatures: FeatureFlags = {
   receipt_printing: false,
   barcode_labels: false,
   csv_import: false,
-  skroutz_feed: false,
+  online_orders: true,
   staff_accounts: false,
   ai_tools: false,
   backup_tools: false,
@@ -80,7 +80,7 @@ const standardFeatures: FeatureFlags = {
   receipt_printing: true,
   barcode_labels: true,
   csv_import: true,
-  skroutz_feed: false,
+  online_orders: true,
   staff_accounts: true,
   ai_tools: false,
   backup_tools: false,
@@ -103,18 +103,18 @@ export const featurePlanInfo: Record<Exclude<FeaturePlan, "custom">, {
 }> = {
   basic: {
     label: "基础版",
-    audience: "适合单人维护、重点使用网站与尺码库存快查的小型服装店。",
-    highlights: ["双语前台", "商品与图片", "尺码库存快查", "库存调整与流水"],
+    audience: "适合单人维护、需要双语网店与尺码库存管理的小型服装店。",
+    highlights: ["双语在线商店", "货到付款与到店自取", "商品与图片", "尺码库存快查"],
   },
   standard: {
     label: "标准版",
     audience: "推荐实体店日常使用，覆盖扫码扣库存、标签和员工协作。",
-    highlights: ["基础版全部功能", "POS 扫码与纠错", "条码标签", "CSV 导入", "员工账号"],
+    highlights: ["基础版全部功能", "POS 扫码与纠错", "在线订单", "条码标签", "CSV 导入", "员工账号"],
   },
   advanced: {
     label: "高级版",
-    audience: "适合需要 Skroutz 渠道、AI 商品工具和维护导出的客户。",
-    highlights: ["标准版全部功能", "Skroutz Feed", "AI 商品与导购", "维护数据导出"],
+    audience: "适合需要 AI 商品工具、AI 导购和维护导出的客户。",
+    highlights: ["标准版全部功能", "AI 商品与导购", "维护数据导出"],
   },
 };
 
@@ -127,7 +127,7 @@ const requirements: Partial<Record<FeatureKey, FeatureKey[]>> = {
   receipt_printing: ["pos_orders"],
   barcode_labels: ["product_management", "inventory"],
   csv_import: ["product_management"],
-  skroutz_feed: ["storefront", "product_management"],
+  online_orders: ["storefront", "product_management", "inventory"],
   ai_tools: ["storefront", "product_management"],
 };
 

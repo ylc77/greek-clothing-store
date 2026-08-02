@@ -15,7 +15,7 @@ Suggested tone:
 
 这是一套专门为服装店准备的商品展示网站和轻量后台系统。
 
-前台可以展示商品、分类、价格、尺码和库存；后台可以管理商品、图片、库存、CSV、Skroutz Feed；同时也已经有实体店 POS 收银、订单记录、库存流水、条码标签和小票打印预览。
+前台可以展示商品、分类、价格、尺码和库存，并支持购物车、货到付款和到店自取；后台可以管理商品、图片、库存、CSV 和在线订单，同时也有实体店 POS、库存流水、条码标签和小票打印预览。
 
 这不是一个只给客户看的网页，而是一个可以帮小店同时管理线上展示和线下收银的完整演示系统。
 
@@ -61,7 +61,7 @@ Talking points:
 
 - 展示商品图、价格、SKU、尺码和库存。
 - 可以引导顾客通过 WhatsApp 咨询。
-- 商品详情页也为后续 Skroutz 和 SEO 做准备。
+- 商品详情页支持规格选择、库存状态、加入购物车和 AI 咨询。
 
 Suggested line:
 
@@ -76,7 +76,7 @@ Open `/admin`.
 Talking points:
 
 - 后台是给商家使用的管理系统。
-- 商品、库存、POS、Feed、标签都集中在一个地方。
+- 商品、库存、POS、在线订单和标签都集中在一个地方。
 
 Suggested line:
 
@@ -184,20 +184,20 @@ Suggested line:
 这里可以打印普通销售小票，但它还不是正式税务发票。正式发票和 myDATA 会放在后续阶段接入。
 ```
 
-### 11. Skroutz Feed
+### 11. Online Shopping
 
-Open `/feed.xml`.
+Open a product page, add an in-stock Variant to the cart, then open `/checkout` and the admin `在线订单` page.
 
 Talking points:
 
-- 系统可以输出 Skroutz Feed。
-- 商品、价格、库存、图片链接会进入 XML。
-- 后台商品更新后，Feed 会跟着更新。
+- 顾客可以选择有库存的尺码或颜色并加入购物车。
+- 第一版支持货到付款和到店自取。
+- 后台可以查看订单，库存由事务流程安全预留和扣减。
 
 Suggested line:
 
 ```txt
-如果商家未来要接 Skroutz，可以把这个 Feed 链接提交给平台，商品数据会从系统里自动输出。
+顾客可以直接在网站下单，商家在后台处理在线订单；第一版先使用货到付款和到店自取，不依赖第三方支付。
 ```
 
 ### 12. Documentation
@@ -258,7 +258,7 @@ Use this wording if the client asks about employee accounts:
 ```txt
 这套系统把服装店的线上展示和线下管理放在一起。
 
-顾客可以在前台浏览商品、分类、价格和库存；商家可以在后台管理商品、图片、库存和 Skroutz Feed。
+顾客可以在前台浏览商品、分类、价格和库存并提交订单；商家可以在后台管理商品、图片、库存和在线订单。
 
 线下店员可以用 POS 收银，系统会自动扣库存、记录订单和库存流水；如果点错，也可以作废订单并恢复库存。
 

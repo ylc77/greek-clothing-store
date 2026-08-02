@@ -27,7 +27,7 @@ const ownerPermissions = [
 const features = {
   storefront: true, product_management: true, inventory: true, pos_checkout: true, pos_orders: true,
   pos_void: true, pos_reports: true, receipt_printing: true, barcode_labels: true, csv_import: true,
-  skroutz_feed: true, staff_accounts: true, ai_tools: true, backup_tools: true,
+  staff_accounts: true, ai_tools: true, backup_tools: true,
 };
 const variantId = "6b000000-0000-4000-8000-000000000001";
 const orderId = "6b000000-0000-4000-8000-000000000002";

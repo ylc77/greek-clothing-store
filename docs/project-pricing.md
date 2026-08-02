@@ -13,7 +13,7 @@
 - Privacy Policy / Terms / Cookie Policy / Refund Policy 等基础法律页面
 - Cookie Banner 结构
 - Footer 法律链接
-- `/feed.xml`
+- 购物车、货到付款和到店自取
 - `/sitemap.xml`
 - `/robots.txt`
 - AI 客服入口，需配置 OpenAI / DeepSeek 等 API Key 后使用
@@ -26,7 +26,7 @@
 - 分类管理
 - 店铺设置
 - CSV 导入
-- Skroutz Feed 管理
+- 在线订单管理
 - 库存管理 tab
 - 手动库存调整
 - 库存流水查看
@@ -118,7 +118,7 @@
 - 支持扫码收银和商品标签打印
 - 支持库存流水追踪
 - 支持低库存提醒
-- 支持 Skroutz Feed
+- 支持站内购物车、货到付款和到店自取
 - 支持后台快速维护商品
 - 支持订单记录和作废
 - 减少人工 Excel 管库存的错误
@@ -131,12 +131,12 @@
 - 饰品店
 - 小型买手店
 - 希望同时经营实体店和网店的商家
-- 需要接 Skroutz 的零售店
+- 希望用自有网站接收在线订单的零售店
 - 不想一开始购买复杂 ERP 的中小商家
 
 ### 相比普通展示网站的优势
 
-普通展示网站通常只有页面展示。本项目已经接近“官网 + 后台 + ERP 库存 + POS 收银 + 标签打印 + Skroutz Feed”的一体化系统。
+普通展示网站通常只有页面展示。本项目已经接近“在线商店 + 后台 + ERP 库存 + POS 扫码 + 标签打印”的一体化系统。
 
 核心优势：
 
@@ -175,6 +175,8 @@
 - 尺码库存快查
 - 库存作业、手动调整、流水和对账
 - 快速售出扣库存
+- 购物车、货到付款和到店自取
+- 在线订单管理
 - 联系页面
 - 基础法律页面模板
 - Cookie Banner 结构
@@ -189,7 +191,6 @@
 - POS 扫码扣库存和销售记录
 - Barcode 标签打印
 - CSV 批量导入
-- Skroutz Feed
 - AI 商品与前台导购
 - 员工权限
 - 维护数据导出
@@ -232,7 +233,6 @@
 
 不包含：
 
-- Skroutz Feed 与渠道配置
 - AI 商品文案、翻译、图片和前台导购
 - 维护数据导出
 - myDATA
@@ -255,15 +255,13 @@
 
 适合客户：
 
-- 需要实体店运营能力并同时拓展 Skroutz 渠道
+- 需要实体店运营能力并希望通过自有网店接单
 - 希望使用 AI 加快商品资料、翻译和导购内容维护
 - 需要完整现有模块和维护数据导出
 
 包含功能：
 
 - 标准版全部功能
-- Skroutz Feed、XML 输出和商品完整度检查
-- 前台 Skroutz 入口
 - AI 商品文案、希腊语 / 英语翻译和资料补全
 - AI 商品图片能力（需要对应 API Key）
 - 前台 AI 导购
@@ -375,7 +373,7 @@
 
 我们提供一套适合服装店的官网 + 后台管理 + 库存 + POS 收银系统。
 
-系统可以帮助商家展示商品、管理尺码库存、打印商品标签、扫码记录销售并同步扣减系统库存，也可以按高级版启用 Skroutz 和 AI。真实收款仍由实体收银机完成。
+系统可以帮助商家在线接单、管理尺码库存、打印商品标签、扫码记录销售并同步扣减系统库存，也可以按高级版启用 AI 工具。线下真实收款仍由实体收银机完成。
 
 报价方案：
 
@@ -384,7 +382,7 @@
 - 标准版：`€2,200 - €3,500`  
   推荐实体店使用，包含 POS 扫码扣库存、销售记录与作废、CSV、Barcode 标签和员工账号。
 - 高级版：`€4,500 - €7,500`  
-  在标准版之上增加 Skroutz Feed、AI 商品与导购工具和维护数据导出。
+  在标准版之上增加 AI 商品与导购工具和维护数据导出。
 
 说明：当前系统不包含正式税务发票、myDATA、银行 POS 联动和电子发票服务商对接。这些功能可以根据客户需求后续定制开发。
 
@@ -392,7 +390,7 @@
 
 We provide a custom website, admin dashboard, inventory system and POS solution for fashion and retail stores.
 
-The system helps merchants display products online, manage size-level inventory, print barcode labels, scan sales and update system stock. Skroutz and AI are available in the Advanced Plan; real payment remains on the physical cash register.
+The system helps merchants accept online orders, manage size-level inventory, print barcode labels, scan sales and update system stock. AI tools are available in the Advanced Plan; in-store payment remains on the physical cash register.
 
 Pricing options:
 
@@ -401,7 +399,7 @@ Pricing options:
 - Standard Plan: `€2,200 - €3,500`  
   Recommended for physical stores that need POS barcode stock deduction, sale records and voids, CSV import, barcode labels and staff accounts.
 - Advanced Plan: `€4,500 - €7,500`  
-  Adds Skroutz Feed, AI product and shopping-assistant tools, and maintenance data export to the Standard Plan.
+  Adds AI product and shopping-assistant tools, and maintenance data export to the Standard Plan.
 
 Note: This version does not include official tax invoicing, myDATA, bank POS integration or electronic invoice provider integration. These can be added later as custom development.
 
@@ -418,7 +416,7 @@ Note: This version does not include official tax invoicing, myDATA, bank POS int
 - Standard Plan: `€2,200 - €3,500`  
   Για φυσικά καταστήματα που χρειάζονται σάρωση barcode για αφαίρεση αποθέματος, ιστορικό και ακύρωση πωλήσεων, CSV, labels και λογαριασμούς προσωπικού.
 - Advanced Plan: `€4,500 - €7,500`  
-  Περιλαμβάνει επιπλέον Skroutz Feed, εργαλεία AI για προϊόντα και εξαγωγή δεδομένων συντήρησης.
+  Περιλαμβάνει επιπλέον εργαλεία AI για προϊόντα και εξαγωγή δεδομένων συντήρησης.
 
 Σημείωση: Η παρούσα έκδοση δεν περιλαμβάνει επίσημη φορολογική τιμολόγηση, myDATA, σύνδεση με τραπεζικό POS ή πάροχο ηλεκτρονικής τιμολόγησης. Αυτές οι λειτουργίες μπορούν να προστεθούν αργότερα ως custom development.
 
@@ -428,13 +426,13 @@ Note: This version does not include official tax invoicing, myDATA, bank POS int
 
 推荐话术：
 
-> 这不是普通展示网站，而是一套可以继续扩展成 ERP + POS + Skroutz + 发票系统的商业基础平台。第一版可以先帮你上线官网、后台、库存和 POS，后续再根据你店里的实际流程接电子发票、银行 POS 和打印设备。
+> 这不是普通展示网站，而是一套可以继续扩展成在线商店 + ERP + POS + 发票系统的商业基础平台。第一版可以先帮你上线官网、购物车、后台、库存和 POS，后续再根据你店里的实际流程接电子发票、银行 POS 和打印设备。
 
 建议优先成交：
 
 - 标准版客户
 - 高级版早期客户
-- 有实体店、商品数量较多、想接 Skroutz 的客户
+- 有实体店、商品数量较多、希望用自有网店接单的客户
 
 不建议一开始承诺：
 

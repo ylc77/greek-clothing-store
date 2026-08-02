@@ -28,7 +28,7 @@ test("builds deterministic readable Variant SKUs and keeps colors independent", 
 
 test("public options disable sold-out sizes only for the selected color", () => {
   const variants = publicVariantOptions([
-    { size: "L", color: "Yellow", quantity_available: 2 },
+    { size: "L", color: "Yellow", quantity_available: 2, price: "34.90" },
     { size: "L", color: "Green", quantity_available: 0 },
     { size: "XL", color: "Green", quantity_available: 3 },
   ]);
@@ -39,4 +39,5 @@ test("public options disable sold-out sizes only for the selected color", () => 
   assert.deepEqual(sizeOptionsForColor(variants, "Yellow"), [
     { label: "L", quantity: 2, disabled: false },
   ]);
+  assert.equal(variants[0].unitPrice, 34.9);
 });

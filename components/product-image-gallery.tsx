@@ -35,11 +35,11 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
   return (
     <div className="flex flex-col gap-3 md:flex-row md:gap-4">
       {hasMultipleImages ? (
-        <div className="scrollbar-none order-2 flex snap-x gap-2 overflow-x-auto pb-1 pr-6 md:order-1 md:max-h-[680px] md:w-20 md:shrink-0 md:flex-col md:overflow-x-hidden md:overflow-y-auto md:pb-0 md:pr-0">
+        <div className="scrollbar-none order-2 flex snap-x gap-2 overflow-x-auto pb-1 pr-6 md:order-1 md:max-h-[800px] md:w-20 md:shrink-0 md:flex-col md:overflow-x-hidden md:overflow-y-auto md:pb-0 md:pr-0">
           {images.map((imageUrl, index) => (
             <button
               aria-label={`Show image ${index + 1}`}
-              className={`h-24 w-20 shrink-0 snap-start overflow-hidden rounded-xl border bg-white shadow-sm transition md:h-24 md:w-20 ${
+              className={`aspect-[3/4] w-20 shrink-0 snap-start overflow-hidden rounded-xl border bg-white shadow-sm transition ${
                 activeIndex === index ? "border-ink ring-2 ring-ink/15" : "border-stone-200 hover:border-stone-400"
               }`}
               key={`${imageUrl}-${index}`}
@@ -48,12 +48,12 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
             >
               <Image
                 alt={`${alt} ${index + 1}`}
-                className="h-full w-full object-cover"
+                className="h-full w-full object-contain"
                 loading="lazy"
                 sizes="80px"
                 src={imageUrl}
                 width={80}
-                height={96}
+                height={107}
                 unoptimized={isSvg(imageUrl)}
               />
             </button>
@@ -61,7 +61,7 @@ export function ProductImageGallery({ images, alt, language }: ProductImageGalle
         </div>
       ) : null}
 
-      <div className="relative order-1 min-h-[360px] flex-1 overflow-hidden rounded-2xl border border-stone-200 bg-[#f5f1ea] shadow-sm shadow-stone-900/5 md:order-2 md:min-h-[680px]">
+      <div className="relative order-1 aspect-[3/4] w-full flex-1 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm shadow-stone-900/5 md:order-2">
         <Image
           alt={alt}
           className="object-contain object-center"

@@ -20,7 +20,6 @@ import type { AdminPermission, AdminRole } from "@/lib/admin-auth";
 import { featurePlanPresets, type FeatureFlags, type FeatureKey } from "@/lib/feature-catalog";
 import { getSupabaseBrowserAuthClient } from "@/lib/supabase";
 import { tokenUpdateForSupabaseAuthEvent } from "@/lib/admin-session-lifecycle";
-import { skroutzReadinessIssues } from "@/lib/skroutz-readiness";
 import { PosOperationIdStore } from "@/lib/pos-operation-id";
 import { InventoryOperationIdStore, InventoryOperationStateError } from "@/lib/inventory-operation-id";
 import {
@@ -54,6 +53,8 @@ import { CategoryCatalogInputError, parseCategoryCatalogMutation } from "@/lib/c
 import { getStockOperationBarcodePlan } from "@/lib/stock-receiving";
 import { FIXED_PRODUCT_VAT_RATE } from "@/lib/product-policy";
 import { ColorSizeInventoryEditor } from "@/components/color-size-inventory-editor";
+import { OnlineOrdersManager } from "@/components/online-orders-manager";
+import { ProductImageCropDialog } from "@/components/product-image-crop-dialog";
 import {
   buildVariantSku,
   matrixColors,
@@ -84,6 +85,12 @@ type AdminProductVariant = {
   sort_order: number;
   quantity_on_hand: number;
   quantity_reserved: number;
+};
+
+type ProductImageCropRequest = {
+  files: File[];
+  title: string;
+  onComplete: (files: File[]) => void;
 };
 type AdminProduct = ProductFormData & {
   id: string;
@@ -211,7 +218,7 @@ type ProductCopyResult = TranslationResult & {
 };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "stockLookup" | "stockOperations" | "pos" | "posOrders" | "posDaily" | "inventory" | "labels" | "add" | "csv" | "images" | "skroutz" | "categories" | "suppliers";
+type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "stockLookup" | "stockOperations" | "pos" | "posOrders" | "onlineOrders" | "posDaily" | "inventory" | "labels" | "add" | "csv" | "images" | "categories" | "suppliers";
 type AdminSession = { role: AdminRole; permissions: AdminPermission[]; authType?: "password" | "account"; email?: string | null; displayName?: string | null };
 type InventoryItem = {
   product_id: number;
@@ -500,12 +507,13 @@ const tabs: { key: Tab; label: string }[] = [
   { key: "stockOperations", label: "库存作业" },
   { key: "pos", label: "POS 扫码" },
   { key: "posOrders", label: "POS 订单" },
+  { key: "onlineOrders", label: "在线订单" },
   { key: "posDaily", label: "POS 日报" },
   { key: "inventory", label: "库存管理" },
   { key: "labels", label: "标签打印" },
-  { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "suppliers", label: "供货商" }, { key: "skroutz", label: "Skroutz Feed" },
+  { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "suppliers", label: "供货商" },
 ];
-const defaultCommonTabKeys: Tab[] = ["stockLookup", "pos", "quickAdd", "add", "dashboard"];
+const defaultCommonTabKeys: Tab[] = ["stockLookup", "onlineOrders", "pos", "quickAdd", "dashboard"];
 const allTabKeys = tabs.map(item => item.key);
 const adminCommonTabsStorageKey = "clothing-admin-common-tabs-v1";
 const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
@@ -518,10 +526,10 @@ const tabPermissions: Partial<Record<Tab, AdminPermission>> = {
   stockOperations: "inventory:write",
   pos: "pos:checkout",
   posOrders: "pos:read",
+  onlineOrders: "online_orders:read",
   posDaily: "pos:read",
   inventory: "inventory:read",
   labels: "labels:write",
-  skroutz: "feed:read",
 };
 const tabFeatures: Partial<Record<Tab, FeatureKey>> = {
   dashboard: "product_management",
@@ -532,6 +540,7 @@ const tabFeatures: Partial<Record<Tab, FeatureKey>> = {
   quickSale: "quick_sell",
   pos: "pos_checkout",
   posOrders: "pos_orders",
+  onlineOrders: "online_orders",
   posDaily: "pos_reports",
   inventory: "inventory",
   labels: "barcode_labels",
@@ -540,7 +549,6 @@ const tabFeatures: Partial<Record<Tab, FeatureKey>> = {
   images: "product_management",
   categories: "product_management",
   suppliers: "product_management",
-  skroutz: "skroutz_feed",
 };
 
 function normalizeCommonTabKeys(value: unknown): Tab[] {
@@ -807,9 +815,6 @@ function productIssues(product: AdminProduct) {
   if (needsSizeInfo(product) && !hasText(product.sizes) && !hasSizeStock(product)) issues.push({ code: "sizes", label: "服装 / 鞋类缺尺码", level: "warn" });
   return issues;
 }
-function entersSkroutzFeed(product: AdminProduct) {
-  return product.is_active && !isTestProductSku(product.sku) && skroutzReadinessIssues(product).length === 0;
-}
 function needsAiCompletion(product: AdminProduct) {
   const hasChinese = hasText(product.name_cn) || hasText(product.description_cn);
   const missingTranslation = hasChinese && (!hasText(product.name_en) || !hasText(product.description_en) || !hasText(product.name_gr) || !hasText(product.description_gr));
@@ -820,12 +825,9 @@ function needsAiCompletion(product: AdminProduct) {
   return missingTranslation || missingMeta;
 }
 
-function ProductStatusBadges({ product, showSkroutz, showAi }: { product: AdminProduct; showSkroutz: boolean; showAi: boolean }) {
+function ProductStatusBadges({ product, showAi }: { product: AdminProduct; showAi: boolean }) {
   const raw = product as Record<string, unknown>;
-  const width = Number(raw.image_width) || 0;
-  const height = Number(raw.image_height) || 0;
   const hasImage = Boolean(product.image_url?.trim());
-  const skroutzImageIssue = showSkroutz && hasImage && width <= 1000 && height <= 1000;
 
   const hasName = Boolean(product.name_en?.trim() || product.name_gr?.trim());
   const hasPrice = Number(product.price) > 0;
@@ -847,11 +849,6 @@ function ProductStatusBadges({ product, showSkroutz, showAi }: { product: AdminP
       <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap ${product.is_active ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-500"}`}>
         {product.is_active ? "上架" : "下架"}
       </span>
-      {skroutzImageIssue ? (
-        <span className="inline-block rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700" title={`主图 ${width}×${height} 不满足 Skroutz 最低要求（至少一边 > 1000px）`}>
-          Skroutz 图片不符
-        </span>
-      ) : null}
       {showAi ? <span className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-bold whitespace-nowrap ${aiColors[aiLevel]}`}>{aiLabels[aiLevel]}</span> : null}
     </div>
   );
@@ -907,6 +904,7 @@ export function AdminDashboard({
   const [autoCompletingId, setAutoCompletingId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ open: boolean; title: string; desc: ReactNode; confirmText: string; variant: "danger"|"success"|"default"; action: () => void; prompt?: boolean; promptValue?: string }>({ open: false, title: "", desc: "", confirmText: "确认", variant: "default", action: () => {} });
   const [newMainFile, setNewMainFile] = useState<File | null>(null); const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
+  const [productImageCropRequest, setProductImageCropRequest] = useState<ProductImageCropRequest | null>(null);
   const [sizeStock, setSizeStock] = useState<Record<string, number>>({});
   const [variantMatrix, setVariantMatrix] = useState<ProductVariantMatrixRow[]>([]);
   const [variantProcurement, setVariantProcurement] = useState<Record<string, VariantProcurement>>({});
@@ -1281,35 +1279,13 @@ export function AdminDashboard({
     if (filterSub) list = list.filter(p => p.subcategory === filterSub);
     if (filterStatus === "active") list = list.filter(p => p.is_active);
     if (filterStatus === "inactive") list = list.filter(p => !p.is_active);
-    if (filterStatus === "noimg") list = list.filter(p => !p.image_url);
-    if (filterStatus === "badimage") list = list.filter(p => {
-      const issue = imageQualityIssue(p);
-      return Boolean(issue && issue !== "缺主图");
-    });
     if (filterStatus === "nostock") list = list.filter(p => effectiveStock(p) === 0);
-    if (filterStatus === "nosizestock") list = list.filter(p => p.sizes.trim() && !((p as Record<string,unknown>).size_stock && typeof (p as Record<string,unknown>).size_stock === "object" && Object.keys((p as Record<string,unknown>).size_stock as object).length > 0));
-    if (filterStatus === "nodesc") list = list.filter(p => !p.description_en?.trim() && !p.description_gr?.trim());
-    if (filterStatus === "demo") list = list.filter(p => /TEST|DEMO/i.test(p.sku));
     return list;
   }, [products, search, filterCat, filterSub, filterStatus]);
 
   useEffect(() => {
     setMobileProductLimit(12);
   }, [search, filterCat, filterSub, filterStatus]);
-
-  // Feed stats
-  const feedStats = useMemo(() => {
-    const activeRealProducts = products.filter(p => p.is_active && !isTestProductSku(p.sku));
-    const stockReady = activeRealProducts.filter(p => effectiveStock(p) > 0);
-    return {
-      total: activeRealProducts.filter(entersSkroutzFeed).length,
-      noImage: stockReady.filter(p => !isHttpUrl(p.image_url)).length,
-      noDesc: stockReady.filter(p => !p.description_en && !p.description_gr && !p.description_cn).length,
-      noStock: activeRealProducts.filter(p => effectiveStock(p) <= 0).length,
-      missingRequired: stockReady.filter(p => skroutzReadinessIssues(p).length > 0).length,
-      testHidden: products.filter(p => p.is_active && isTestProductSku(p.sku)).length,
-    };
-  }, [products]);
 
   const productsById = useMemo(() => {
     return new Map(products.map(product => [Number(product.id), product]));
@@ -1520,12 +1496,11 @@ export function AdminDashboard({
       const issues = productIssues(product);
       const blockers = issues.filter(issue => issue.level === "block");
       const warnings = issues.filter(issue => issue.level === "warn");
-      return { product, issues, blockers, warnings, feedReady: entersSkroutzFeed(product), siteReady: product.is_active && blockers.length === 0 };
+      return { product, issues, blockers, warnings, siteReady: product.is_active && blockers.length === 0 };
     });
     return {
       rows,
       siteReady: rows.filter(row => row.siteReady).length,
-      feedReady: rows.filter(row => row.feedReady).length,
       issueCount: rows.filter(row => row.issues.length > 0).length,
       blockers: rows.filter(row => row.blockers.length > 0).length,
       warnings: rows.filter(row => row.blockers.length === 0 && row.warnings.length > 0).length,
@@ -1535,16 +1510,15 @@ export function AdminDashboard({
   }, [products]);
 
   function downloadLaunchCheckReport() {
-    const headers = ["sku", "name", "category", "subcategory", "status", ...(adminFeatures.skroutz_feed ? ["feed_status"] : []), "stock", "price", "image_url", "issues"];
+    const headers = ["sku", "name", "category", "subcategory", "status", "stock", "price", "image_url", "issues"];
     const rows = launchChecks.rows
       .filter(row => row.issues.length > 0)
-      .map(({ product, issues, blockers, feedReady }) => [
+      .map(({ product, issues, blockers }) => [
         product.sku,
         product.name_cn || product.name_en || product.name_gr || "",
         product.category || "",
         product.subcategory || "",
         blockers.length > 0 ? "blocked" : "needs_review",
-        ...(adminFeatures.skroutz_feed ? [feedReady ? "feed_ready" : "not_in_feed"] : []),
         String(effectiveStock(product)),
         String(product.price ?? ""),
         product.image_url || "",
@@ -3883,7 +3857,13 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   }
 
   /* ── Image upload ──────────────────────────────────────── */
-  async function uploadImages(files: FileList | null, opts: ImageUploadOptions = {}) { setImageResults([]); if (!files || files.length === 0) return; if (opts.sku && !opts.mode) { toast("请选择上传类型。", "err"); return; } try { setLoading(true); const body = new FormData(); Array.from(files).forEach(f => body.append("images", f)); if (opts.sku) body.append("sku", opts.sku); if (opts.mode) body.append("mode", opts.mode); const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body }); const d = await readJson(r, "图片上传接口错误"); if (!r.ok) throw new Error(d.error || "图片上传失败"); setImageResults(d.results||[]); const okCount = (d.results||[]).filter((r: ApiResult) => r.ok).length; const failCount = (d.results||[]).filter((r: ApiResult) => !r.ok).length; const failReasons = (d.results||[]).filter((r: ApiResult) => !r.ok).map((r: ApiResult) => r.message).filter(Boolean); const summary = failReasons.length > 0 ? `失败原因：${failReasons.join("；")}` : ""; toast(`图片处理完成：成功 ${okCount}，失败 ${failCount}${summary ? `。${summary}` : ""}`); syncFormAfterUpload(opts, d); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "图片上传失败", "err"); } finally { setLoading(false); } }
+  function requestProductImageCrop(files: File[] | FileList | null, title: string, onComplete: (files: File[]) => void) {
+    const selected = files ? Array.from(files) : [];
+    if (selected.length === 0) return;
+    setProductImageCropRequest({ files: selected, title, onComplete });
+  }
+
+  async function uploadImages(files: FileList | File[] | null, opts: ImageUploadOptions = {}) { setImageResults([]); if (!files || files.length === 0) return; if (opts.sku && !opts.mode) { toast("请选择上传类型。", "err"); return; } try { setLoading(true); const body = new FormData(); Array.from(files).forEach(f => body.append("images", f)); if (opts.sku) body.append("sku", opts.sku); if (opts.mode) body.append("mode", opts.mode); const r = await fetch("/api/admin/images", { method: "POST", headers: adminAuthHeaders(), body }); const d = await readJson(r, "图片上传接口错误"); if (!r.ok) throw new Error(d.error || "图片上传失败"); setImageResults(d.results||[]); const okCount = (d.results||[]).filter((r: ApiResult) => r.ok).length; const failCount = (d.results||[]).filter((r: ApiResult) => !r.ok).length; const failReasons = (d.results||[]).filter((r: ApiResult) => !r.ok).map((r: ApiResult) => r.message).filter(Boolean); const summary = failReasons.length > 0 ? `失败原因：${failReasons.join("；")}` : ""; toast(`图片处理完成：成功 ${okCount}，失败 ${failCount}${summary ? `。${summary}` : ""}`); syncFormAfterUpload(opts, d); await loadProducts(); } catch (er) { toast(er instanceof Error ? er.message : "图片上传失败", "err"); } finally { setLoading(false); } }
   function syncFormAfterUpload(opts: ImageUploadOptions, d: Record<string, unknown>) { if (!editingIdRef.current || form.sku !== opts.sku) return; const results = (d.results || []) as ApiResult[]; if (opts.mode === "main" && results.length > 0 && results[0].imageUrl) { setForm(c => ({ ...c, image_url: results[0].imageUrl! })); } else if (opts.mode === "gallery" && results.length > 0) { const newUrls = results.filter(r => r.ok && r.imageUrl).map(r => r.imageUrl!); if (newUrls.length > 0) { setForm(c => { const existing = imageLines(c.image_urls); const seen = new Set([c.image_url.trim(), ...existing]); const toAdd = newUrls.filter(u => !seen.has(u)); return toAdd.length > 0 ? { ...c, image_urls: [...existing, ...toAdd].join("\n") } : c; }); } } }
   function confirmDeleteImage(opts: ImageDeleteOptions) { const label = opts.kind === "main" ? "主图" : "这张多图"; setConfirm({ open: true, title: `确定删除${label}？`, desc: "Storage 文件也会一起删除。", confirmText: "确认删除", variant: "danger", action: () => { setConfirm(c => ({ ...c, open: false })); executeDeleteImage(opts, label); } }); }
   async function executeDeleteImage(opts: ImageDeleteOptions, label: string) { setLoading(true); try { const r = await fetch("/api/admin/images", { method: "DELETE", headers: { "Content-Type": "application/json", ...adminAuthHeaders() }, body: JSON.stringify(opts) }); const d = await readJson(r, "删除图片接口错误"); if (!r.ok) throw new Error(d.error || "删除图片失败"); toast(`${label}已删除。`); await loadProducts(); if (editingIdRef.current && form.sku === opts.sku) { setForm(c => { if (opts.kind === "main") return { ...c, image_url: "" }; const next = imageLines(c.image_urls).filter((_, i) => i !== opts.index); return { ...c, image_urls: next.join("\n") }; }); } } catch (er) { toast(er instanceof Error ? er.message : "删除图片失败", "err"); } finally { setLoading(false); } }
@@ -4299,7 +4279,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <details className="hidden border-t border-stone-100 xl:block">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black text-ink hover:bg-stone-50">
                   <span>更多管理工具</span>
-                  <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-500">报表、库存、图片、CSV、Feed 等 · {visibleAdvancedTabKeys.length} 项</span>
+                  <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-500">报表、库存、图片、CSV 等 · {visibleAdvancedTabKeys.length} 项</span>
                 </summary>
                 <div className="grid grid-cols-4 gap-2 border-t border-stone-100 p-3 xl:grid-cols-6" data-admin-advanced-tabs>
                   {visibleAdvancedTabKeys.map(key => (
@@ -4698,11 +4678,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <h3 className="text-sm font-black text-ink">商品照片</h3>
                 <p className="mt-1 text-xs text-stone-500">主图必选；背面图、细节图会自动放进多图。</p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  <label className="block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">从相册选择主图<input accept="image/jpeg,image/png,image/webp" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
-                  <label className="block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">打开相机拍摄<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => setQuickMainFile(e.target.files?.[0] || null)} /></label>
+                  <label className="block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">从相册选择主图<input accept="image/jpeg,image/png,image/webp" className="hidden" type="file" onChange={e => { requestProductImageCrop(e.target.files, "裁剪拍照上新主图", files => setQuickMainFile(files[0] || null)); e.currentTarget.value = ""; }} /></label>
+                  <label className="block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">打开相机拍摄<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => { requestProductImageCrop(e.target.files, "裁剪手机拍摄主图", files => setQuickMainFile(files[0] || null)); e.currentTarget.value = ""; }} /></label>
                 </div>
                 {quickMainFile ? <p className="mt-2 truncate text-xs text-emerald-700">主图：{quickMainFile.name}</p> : <p className="mt-2 text-xs text-amber-600">还没有主图</p>}
-                <label className="mt-3 block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">选择背面 / 细节图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setQuickBackFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
+                <label className="mt-3 block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">选择背面 / 细节图<input accept="image/*" className="hidden" multiple type="file" onChange={e => { requestProductImageCrop(e.target.files, "逐张裁剪背面 / 细节图", setQuickBackFiles); e.currentTarget.value = ""; }} /></label>
                 {quickBackFiles.length > 0 ? <p className="mt-2 text-xs text-stone-500">多图：{quickBackFiles.length} 张</p> : null}
                 <button className="mt-5 w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50" disabled={quickSaving || loading} type="submit">{quickSaving ? "保存中..." : "保存并上传图片"}</button>
                 <p className="mt-3 text-[11px] leading-relaxed text-stone-400">提示：后台会自动生成 SKU；实体店售出后使用“POS 扫码”录入商品并同步库存。</p>
@@ -5792,7 +5772,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h2 className="text-lg font-black text-ink">商品上线检查</h2>
-                  <p className="mt-1 text-xs text-stone-500">只读检查，不会修改商品。用于判断商品资料、图片、价格和库存是否适合正式展示{adminFeatures.skroutz_feed ? "，并检查 Skroutz Feed" : ""}。</p>
+                  <p className="mt-1 text-xs text-stone-500">只读检查，不会修改商品。用于判断商品资料、图片、价格和库存是否适合在网店正式展示。</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50" disabled={loading} onClick={() => void loadProducts()} type="button">刷新检查</button>
@@ -5804,7 +5784,6 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 {[
                   { label: "商品总数", value: products.length, tone: "text-ink" },
                   { label: "可前台展示", value: launchChecks.siteReady, tone: "text-emerald-700" },
-                  ...(adminFeatures.skroutz_feed ? [{ label: "可进 Skroutz", value: launchChecks.feedReady, tone: "text-blue-700" }] : []),
                   { label: "图片待处理", value: launchChecks.imageIssues, tone: launchChecks.imageIssues > 0 ? "text-amber-600" : "text-emerald-700" },
                   ...(adminFeatures.ai_tools ? [{ label: "可 AI 补全", value: launchChecks.aiCompletable, tone: launchChecks.aiCompletable > 0 ? "text-violet-700" : "text-emerald-700" }] : []),
                   { label: "有阻断问题", value: launchChecks.blockers, tone: launchChecks.blockers > 0 ? "text-red-600" : "text-emerald-700" },
@@ -5819,34 +5798,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             </div>
 
             <div className="admin-panel">
-              <h3 className="text-sm font-black text-ink">常见问题快速筛选</h3>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {[
-                  { k: "noimg", l: "缺主图" },
-                  { k: "badimage", l: "图片尺寸 / 链接问题" },
-                  { k: "nostock", l: "库存为 0" },
-                  { k: "nodesc", l: "缺描述" },
-                  { k: "nosizestock", l: "缺尺码库存" },
-                  { k: "inactive", l: "已下架" },
-                  { k: "demo", l: "TEST / DEMO" },
-                ].map(button => (
-                  <button
-                    className="min-h-11 rounded-xl border border-stone-200 px-4 py-2 text-xs font-bold text-ink transition hover:bg-stone-50"
-                    key={button.k}
-                    onClick={() => { setFilterStatus(button.k); setTab("dashboard"); }}
-                    type="button"
-                  >
-                    {button.l}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="admin-panel">
               <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h3 className="text-sm font-black text-ink">问题商品清单</h3>
-                  <p className="mt-1 text-xs text-stone-500">阻断问题会影响正式上架{adminFeatures.skroutz_feed ? "或进入 Feed" : ""}；优化项不会阻断展示，但建议补齐。</p>
+                  <p className="mt-1 text-xs text-stone-500">阻断问题会影响网店正式上架；优化项不会阻断展示，但建议补齐。</p>
                 </div>
                 <p className="text-xs font-bold text-stone-400">共 {launchChecks.issueCount} 件商品需要处理</p>
               </div>
@@ -5855,7 +5810,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   .filter(row => row.issues.length > 0)
                   .sort((a, b) => b.blockers.length - a.blockers.length || b.warnings.length - a.warnings.length)
                   .slice(0, 120)
-                  .map(({ product, issues, blockers, feedReady }) => (
+                  .map(({ product, issues, blockers }) => (
                     <article className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm shadow-stone-900/5" key={product.id}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -5883,9 +5838,6 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           <button className="min-h-11 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-800 hover:bg-amber-100" onClick={() => handleIssueAction(product, "image")} type="button">重新上传主图</button>
                         ) : null}
                       </div>
-                      {adminFeatures.skroutz_feed ? <p className={`mt-3 text-[11px] font-black ${feedReady ? "text-blue-700" : "text-stone-400"}`}>
-                        {feedReady ? "当前会进入 Skroutz Feed" : "当前不会进入 Skroutz Feed"}
-                      </p> : null}
                     </article>
                   ))}
                 {launchChecks.issueCount === 0 ? <p className="py-8 text-center text-sm font-bold text-emerald-700">当前没有发现上线阻断或明显缺失项。</p> : null}
@@ -5897,7 +5849,6 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <th className="py-2.5 pr-3">商品</th>
                       <th className="py-2.5 pr-3">状态</th>
                       <th className="py-2.5 pr-3">问题</th>
-                      {adminFeatures.skroutz_feed ? <th className="py-2.5 pr-3">Feed</th> : null}
                       <th className="py-2.5 pr-3">操作</th>
                     </tr>
                   </thead>
@@ -5906,7 +5857,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       .filter(row => row.issues.length > 0)
                       .sort((a, b) => b.blockers.length - a.blockers.length || b.warnings.length - a.warnings.length)
                       .slice(0, 120)
-                      .map(({ product, issues, blockers, feedReady }) => (
+                      .map(({ product, issues, blockers }) => (
                         <tr className="border-b border-stone-50 align-top" key={product.id}>
                           <td className="py-3 pr-3">
                             <p className="font-mono text-xs font-black text-ink">{product.sku || "无 SKU"}</p>
@@ -5932,11 +5883,6 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                               <button className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-black text-amber-800 hover:bg-amber-100" onClick={() => handleIssueAction(product, "image")} type="button">重新上传主图</button>
                             ) : null}
                           </td>
-                          {adminFeatures.skroutz_feed ? <td className="py-3 pr-3">
-                            <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${feedReady ? "bg-blue-100 text-blue-700" : "bg-stone-100 text-stone-500"}`}>
-                              {feedReady ? "会进入" : "不会进入"}
-                            </span>
-                          </td> : null}
                           <td className="py-3 pr-3">
                             <div className="flex flex-wrap gap-1.5">
                               <button className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => startEdit(product)} type="button">编辑</button>
@@ -5972,7 +5918,6 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   { label: "营业时间", ok: true, hint: "在店铺设置中填写" },
                   { label: `上架商品 (${stats.active} 件)`, ok: stats.active >= 4, hint: stats.active >= 4 ? "" : "建议至少 4 件上架商品" },
                   { label: "启用分类", ok: stats.categories > 0, hint: stats.categories > 0 ? "" : "至少需要一个启用的一级分类" },
-                  ...(adminFeatures.skroutz_feed ? [{ label: "Skroutz Feed", ok: true, hint: "已按客户版本开启" }] : []),
                 ]; return items.map((it, i) => (<div key={i} className="flex items-center gap-2"><span className={it.ok ? "text-green-600" : "text-amber-600"}>{it.ok ? "✓" : "○"}</span><span className="text-stone-600">{it.label}</span>{!it.ok && it.hint ? <span className="text-amber-600">— {it.hint}</span> : null}</div>)); })()}
               </div>
             </details>
@@ -5981,14 +5926,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <input className="input sm:col-span-2 xl:col-span-2" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
               <select className="input" data-admin-category-filter value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部一级分类</option>{adminCategoryOptions.map(category => <option key={String(category.slug)} value={String(category.slug)}>{categoryOptionLabel(category)}</option>)}</select>
               <select className="input" data-admin-subcategory-filter value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat ? adminSubcategoryOptions(filterCat).map(subcategory => <option key={String(subcategory.slug)} value={String(subcategory.slug)}>{subcategoryOptionLabel(subcategory)}</option>) : null}</select>
-              <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="noimg">缺图片</option><option value="badimage">图片尺寸/链接问题</option><option value="nostock">库存为0</option><option value="nosizestock">未分配尺码</option><option value="nodesc">缺描述</option><option value="demo">测试商品</option></select>
-            </div>
-            {/* Quick filter buttons */}
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {[{k:"noimg",l:"缺图片"},{k:"badimage",l:"图片待处理"},{k:"nosizestock",l:"未分配尺码"},{k:"nostock",l:"库存为0"},{k:"demo",l:"测试商品"}].map(b => (
-                <button key={b.k} className={`rounded-full px-3.5 py-1.5 text-xs font-bold transition ${filterStatus===b.k ? "bg-ink text-white" : "border border-stone-200 bg-white text-stone-400 hover:border-stone-300 hover:text-ink"}`} onClick={() => setFilterStatus(filterStatus===b.k ? "all" : b.k)} type="button">{b.l}</button>
-              ))}
-              {filterStatus !== "all" ? <button className="rounded-full px-3.5 py-1.5 text-xs font-bold text-stone-400 hover:text-ink" onClick={() => setFilterStatus("all")} type="button">清除筛选</button> : null}
+              <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="nostock">库存为 0</option></select>
             </div>
 
             {/* Batch actions */}
@@ -6073,7 +6011,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <td className="py-2 pr-3"><span className="inline-block max-w-52 whitespace-normal rounded bg-stone-100 px-2 py-1 text-[11px] font-bold leading-4 text-stone-500">{categoryPathDisplayLabel(p.category, p.subcategory)}</span></td>
                       <td className="py-2 pr-3 text-sm font-bold">€{Number(p.price).toFixed(2)}</td>
                       <td className="py-2 pr-3 text-sm">{effectiveStock(p)}</td>
-                      <td className="py-2 pr-3"><ProductStatusBadges product={p} showAi={adminFeatures.ai_tools} showSkroutz={adminFeatures.skroutz_feed} /></td>
+                      <td className="py-2 pr-3"><ProductStatusBadges product={p} showAi={adminFeatures.ai_tools} /></td>
                       <td className="py-2 pr-3">{isOwner ? <div className="flex gap-1.5">
                         <button className="rounded-md border border-stone-200 px-3 py-1.5 text-xs font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => startEdit(p)}>编辑</button>
                         <button className="rounded-md border border-stone-200 px-3 py-1.5 text-xs font-bold whitespace-nowrap hover:bg-stone-100" onClick={() => copyProduct(p)}>复制</button>
@@ -6508,20 +6446,19 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="mb-4 rounded-lg border border-stone-200 bg-stone-50 p-4">
                   <h3 className="text-sm font-black text-ink">上传图片到当前商品</h3>
                   <p className="mt-1 text-xs text-stone-500">直接上传主图或多图，自动写入商品字段。</p>
-                  {adminFeatures.skroutz_feed ? <p className="mt-1 text-[10px] text-amber-700">Skroutz 要求图片至少一边大于 1000px，建议 1200×1200 以上。</p> : null}
                   <div className="mt-3 flex flex-wrap gap-2">
                     <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">
                       上传主图
-                      <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" disabled={loading} onChange={e => { void uploadImages(e.target.files, { sku: form.sku, mode: "main" }); e.currentTarget.value = ""; }} type="file" />
+                      <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" disabled={loading} onChange={e => { requestProductImageCrop(e.target.files, "裁剪当前商品主图", files => void uploadImages(files, { sku: form.sku, mode: "main" })); e.currentTarget.value = ""; }} type="file" />
                     </label>
                     <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">
                       上传多图
-                      <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" disabled={loading} multiple onChange={e => { void uploadImages(e.target.files, { sku: form.sku, mode: "gallery" }); e.currentTarget.value = ""; }} type="file" />
+                      <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" disabled={loading} multiple onChange={e => { requestProductImageCrop(e.target.files, "逐张裁剪当前商品多图", files => void uploadImages(files, { sku: form.sku, mode: "gallery" })); e.currentTarget.value = ""; }} type="file" />
                     </label>
                   </div>
                   {adminFeatures.ai_tools ? <div className="mt-4 hidden rounded-lg border border-amber-100 bg-amber-50/60 p-3 xl:block">
                     <p className="text-xs font-black text-ink">AI 模特穿搭图（选填）</p>
-                    <p className="mt-1 text-[11px] text-stone-500">先上传清晰的真实正面/背面图；系统最多取两张参考图，生成 1024×1536、medium 品质的 WebP 穿搭图，并校验尺寸后加入多图，不会替换主图。</p>
+                    <p className="mt-1 text-[11px] text-stone-500">先上传清晰的真实正面/背面图；系统最多取两张参考图，生成约 1024×1365 的 3:4、medium 品质 WebP 穿搭图，并校验尺寸后加入多图，不会替换主图。</p>
                     <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
                       <input className="input bg-white" value={styleImageStyle} onChange={e => setStyleImageStyle(e.target.value)} placeholder="Mediterranean boutique look" />
                       <input className="input bg-white" value={styleImageModelType} onChange={e => setStyleImageModelType(e.target.value)} placeholder="adult fashion model" />
@@ -6532,7 +6469,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <div className="mt-4 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
                     <div>
                       <p className="mb-2 text-xs font-bold text-stone-600">主图</p>
-                      {form.image_url ? <ImagePreview disabled={loading} url={form.image_url} label="主图" onDel={() => confirmDeleteImage({ sku: form.sku, kind: "main" })} /> : <div className="flex aspect-[4/5] items-center justify-center rounded-lg border border-dashed border-stone-300 bg-white text-xs text-stone-400">无主图</div>}
+                      {form.image_url ? <ImagePreview disabled={loading} url={form.image_url} label="主图" onDel={() => confirmDeleteImage({ sku: form.sku, kind: "main" })} /> : <div className="flex aspect-[3/4] items-center justify-center rounded-lg border border-dashed border-stone-300 bg-white text-xs text-stone-400">无主图</div>}
                     </div>
                     <div>
                       <p className="mb-2 text-xs font-bold text-stone-600">多图</p>
@@ -6544,9 +6481,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="mb-4 rounded-lg border border-stone-200 bg-stone-50 p-4">
                   <p className="text-xs text-stone-500 mb-2">新商品图片会在保存时自动上传。</p>
                   <div className="flex flex-wrap gap-2">
-                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">从相册选择主图<input accept="image/jpeg,image/png,image/webp" className="hidden" type="file" onChange={e => setNewMainFile(e.target.files?.[0] || null)} /></label>
-                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">打开相机拍摄<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => setNewMainFile(e.target.files?.[0] || null)} /></label>
-                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">选择多图<input accept="image/*" className="hidden" multiple type="file" onChange={e => setNewGalleryFiles(e.target.files ? Array.from(e.target.files) : [])} /></label>
+                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">从相册选择主图<input accept="image/jpeg,image/png,image/webp" className="hidden" type="file" onChange={e => { requestProductImageCrop(e.target.files, "裁剪新商品主图", files => setNewMainFile(files[0] || null)); e.currentTarget.value = ""; }} /></label>
+                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">打开相机拍摄<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => { requestProductImageCrop(e.target.files, "裁剪手机拍摄主图", files => setNewMainFile(files[0] || null)); e.currentTarget.value = ""; }} /></label>
+                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">选择多图<input accept="image/*" className="hidden" multiple type="file" onChange={e => { requestProductImageCrop(e.target.files, "逐张裁剪新商品多图", setNewGalleryFiles); e.currentTarget.value = ""; }} /></label>
                     {(newMainFile || newGalleryFiles.length > 0) ? <button className="min-h-11 rounded-xl border border-red-100 px-4 py-2.5 text-sm font-black text-red-500 hover:bg-red-50" onClick={() => { setNewMainFile(null); setNewGalleryFiles([]); }} type="button">清除</button> : null}
                   </div>
                   {newMainFile ? <p className="mt-2 text-xs text-stone-500">主图: {newMainFile.name}</p> : null}
@@ -6559,11 +6496,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="px-4 py-3 text-sm font-black text-ink">链接、条码与商品标识（选填）</div>
                 <div className="grid gap-3 border-t border-stone-100 p-4 md:grid-cols-2 lg:grid-cols-4">
                   <Field label="主图 URL"><input className="input" data-admin-field="image_url" value={form.image_url} onChange={e => updateField("image_url", e.target.value)} /></Field>
-                  {adminFeatures.skroutz_feed ? <Field label="Skroutz URL"><input className="input" placeholder="https://www.skroutz.gr/..." value={form.skroutz_url} onChange={e => updateField("skroutz_url", e.target.value)} /></Field> : null}
-                  <Field label={adminFeatures.skroutz_feed ? "品牌（一般上架选填；进入 Skroutz 必填）" : "品牌（可选）"}><input className="input" value={form.brand} onChange={e => updateField("brand", e.target.value)} placeholder={adminFeatures.skroutz_feed ? "没有真实品牌则不会进入 Feed" : "如无可留空"} /></Field>
+                  <Field label="品牌（可选）"><input className="input" value={form.brand} onChange={e => updateField("brand", e.target.value)} placeholder="如无可留空" /></Field>
                   <Field label="内部条码（可选）"><input className="input" value={form.barcode} onChange={e => updateField("barcode", e.target.value)} placeholder="门店扫码使用，不自动当作 EAN" /></Field>
-                  {adminFeatures.skroutz_feed ? <Field label="真实 EAN（进入 Skroutz 必填）"><input className="input" inputMode="numeric" value={form.ean} onChange={e => updateField("ean", e.target.value)} placeholder="8 或 13 位真实 EAN；缺失时不进入 Feed" /></Field> : null}
-                  {adminFeatures.skroutz_feed ? <Field label="制造商 MPN（进入 Skroutz 必填）"><input className="input" value={form.mpn} onChange={e => updateField("mpn", e.target.value)} placeholder="真实制造商编号；缺失时不进入 Feed" /></Field> : null}
+                  <Field label="商品 EAN（可选）"><input className="input" inputMode="numeric" value={form.ean} onChange={e => updateField("ean", e.target.value)} placeholder="有供应商或品牌 EAN 时填写" /></Field>
+                  <Field label="制造商 MPN（可选）"><input className="input" value={form.mpn} onChange={e => updateField("mpn", e.target.value)} placeholder="有制造商货号时填写" /></Field>
                   <Field label="VAT（固定）"><div><input aria-readonly="true" className="input cursor-not-allowed bg-stone-50 text-stone-500" readOnly type="text" value={`${FIXED_PRODUCT_VAT_RATE}%`} /><p className="mt-1 text-[10px] text-stone-400">服装商品固定为 24%，不可调整。</p></div></Field>
                   <div className="md:col-span-2 lg:col-span-4"><Field label="多图 URL（一行一个，可用逗号分隔）"><textarea className="input min-h-24" value={form.image_urls} onChange={e => updateField("image_urls", e.target.value)} /></Field></div>
                 </div>
@@ -6687,7 +6623,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <section className="flex flex-col gap-5">
             <div className="admin-panel">
               <h2 className="mb-1 text-lg font-black text-ink">选择商品上传</h2>
-              <p className="mb-3 text-xs text-stone-500">用分类和搜索筛选商品，再上传主图或多图。{adminFeatures.skroutz_feed ? "Skroutz 要求图片最长边大于 1000px，建议 1200-1600px。" : "建议使用清晰、比例一致的商品图片。"}</p>
+              <p className="mb-3 text-xs text-stone-500">用分类和搜索筛选商品，再上传主图或多图。图片会先在浏览器本地裁成手机竖拍常用的 3:4，再安全上传为 WebP。</p>
               <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 <input className="input" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
                 <select className="input" data-admin-category-filter value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部一级分类</option>{adminCategoryOptions.map(category => <option key={String(category.slug)} value={String(category.slug)}>{categoryOptionLabel(category)}</option>)}</select>
@@ -6695,14 +6631,14 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
               <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
                 <label className="block rounded-2xl border border-stone-200 bg-stone-50/70 p-3"><span className="text-sm font-bold text-ink">商品</span><select className="input mt-2" value={selectedImageSku} onChange={e => setSelectedImageSku(e.target.value)}><option value="">选择商品 SKU</option>{filteredProducts.map(p => <option key={p.id} value={p.sku}>{p.sku} - {p.name_cn || p.name_gr || p.name_en || "未命名"} - {categoryPathDisplayLabel(p.category, p.subcategory)}</option>)}</select></label>
-                <label className="block rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5"><span className="text-sm font-black text-ink">上传主图</span><span className="mt-1 block text-[11px] font-bold text-stone-400">会替换当前主图</span><input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input mt-2 min-h-12" disabled={!selectedImageSku || loading} onChange={e => { void uploadImages(e.target.files, { sku: selectedImageSku, mode: "main" }); e.currentTarget.value = ""; }} type="file" /></label>
-                <label className="block rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5"><span className="text-sm font-black text-ink">上传多图</span><span className="mt-1 block text-[11px] font-bold text-stone-400">背面图、细节图会追加到轮播</span><input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input mt-2 min-h-12" disabled={!selectedImageSku || loading} multiple onChange={e => { void uploadImages(e.target.files, { sku: selectedImageSku, mode: "gallery" }); e.currentTarget.value = ""; }} type="file" /></label>
+                <label className="block rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5"><span className="text-sm font-black text-ink">上传主图</span><span className="mt-1 block text-[11px] font-bold text-stone-400">裁剪确认后替换当前主图</span><input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input mt-2 min-h-12" disabled={!selectedImageSku || loading} onChange={e => { requestProductImageCrop(e.target.files, "裁剪商品主图", files => void uploadImages(files, { sku: selectedImageSku, mode: "main" })); e.currentTarget.value = ""; }} type="file" /></label>
+                <label className="block rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5"><span className="text-sm font-black text-ink">上传多图</span><span className="mt-1 block text-[11px] font-bold text-stone-400">逐张裁剪后追加到轮播</span><input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input mt-2 min-h-12" disabled={!selectedImageSku || loading} multiple onChange={e => { requestProductImageCrop(e.target.files, "逐张裁剪商品多图", files => void uploadImages(files, { sku: selectedImageSku, mode: "gallery" })); e.currentTarget.value = ""; }} type="file" /></label>
               </div>
             </div>
             <div className="admin-panel">
               <h2 className="mb-1 text-lg font-black text-ink">按文件名批量上传</h2>
               <p className="mb-3 text-xs text-stone-500">主图文件名：SKU.jpg，例如 women-shirts-001.jpg。多图文件名：SKU-1.jpg、SKU-2.jpg。上传后自动匹配 SKU 并写入商品图片字段。</p>
-              <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input min-h-12" disabled={loading} multiple onChange={e => { void uploadImages(e.target.files); e.currentTarget.value = ""; }} type="file" />
+              <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="input min-h-12" disabled={loading} multiple onChange={e => { requestProductImageCrop(e.target.files, "逐张裁剪批量商品图片", files => void uploadImages(files)); e.currentTarget.value = ""; }} type="file" />
             </div>
             {imageResults.length > 0 ? <ResultTable results={imageResults} /> : null}
           </section>
@@ -6711,75 +6647,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {/* ── TAB: Categories ─────────────────────────────── */}
         {tab === "categories" ? <CategoriesManager activePassword={activePassword} authHeaders={adminAuthHeaders} toast={toast} confirm={setConfirm} dismissConfirm={dismissConfirm} /> : null}
 
+        {tab === "onlineOrders" ? <OnlineOrdersManager authHeaders={adminAuthHeaders} toast={toast} /> : null}
+
         {tab === "suppliers" ? <SuppliersManager authHeaders={adminAuthHeaders} initialSuppliers={suppliers} onChanged={loadSuppliers} toast={toast} /> : null}
-
-        {/* ── TAB: Skroutz Feed ───────────────────────────── */}
-        {tab === "skroutz" ? (
-          <section className="flex flex-col gap-5">
-            {/* Header */}
-            <div className="admin-panel">
-              <h2 className="text-lg font-black text-ink">Skroutz Feed 状态</h2>
-              <p className="mt-1 text-xs text-stone-400">将此 Feed 链接提交给 Skroutz，用于同步商品名称、价格、库存、图片和商品链接。</p>
-              <div className="mt-4 flex items-center gap-2">
-                {feedStats.missingRequired === 0 && feedStats.noStock === 0 ? (
-                  <span className="inline-block rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">Feed 状态良好，可以提交给 Skroutz</span>
-                ) : (
-                  <span className="inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">
-                    {feedStats.missingRequired} 个有库存商品缺少 Skroutz 必填信息，{feedStats.noStock} 个商品无库存；这些商品不会进入 Feed。
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 xl:grid-cols-6">
-              {[{ label: "Feed 商品数", v: feedStats.total, color: "" }, { label: "缺 Skroutz 必填", v: feedStats.missingRequired, color: "" }, { label: "缺公网主图", v: feedStats.noImage, color: feedStats.noImage > 0 ? "" : "" }, { label: "缺描述", v: feedStats.noDesc, color: "" }, { label: "无库存", v: feedStats.noStock, color: "" }, { label: "测试商品隐藏", v: feedStats.testHidden, color: "" }].map(s => (
-                <div key={s.label} className="rounded-2xl border border-stone-100 bg-white p-3 text-center shadow-sm shadow-stone-900/5 sm:p-5">
-                  <p className={`text-2xl font-black ${(s.label === "缺公网主图"||s.label==="缺描述") && s.v > 0 ? "text-amber-600" : s.label === "无库存" && s.v > 0 ? "text-red-500" : "text-ink"}`}>{s.v}</p>
-                  <p className="mt-1 text-xs font-bold text-stone-400">{s.label}</p>
-                  {s.label === "缺 Skroutz 必填" ? <p className="mt-1 text-[10px] text-stone-400">EAN、MPN、颜色、尺码等按品类检查</p> : null}
-                  {s.label === "缺公网主图" ? <p className="mt-1 text-[10px] text-stone-400">缺公网主图不会进入 Feed</p> : null}
-                  {s.label === "缺描述" ? <p className="mt-1 text-[10px] text-stone-400">缺描述影响信息完整度</p> : null}
-                  {s.label === "无库存" ? <p className="mt-1 text-[10px] text-stone-400">无库存不会进入 Feed</p> : null}
-                  {s.label === "测试商品隐藏" ? <p className="mt-1 text-[10px] text-stone-400">TEST / DEMO 不输出</p> : null}
-                </div>
-              ))}
-            </div>
-
-            {/* Feed link card */}
-            <div className="admin-panel">
-              <h3 className="text-sm font-black text-ink">Feed 地址</h3>
-              <p className="mt-1 text-xs text-stone-400">将此链接复制到 Skroutz 商家后台，用于同步商品名称、价格、库存、图片和链接。</p>
-              <div className="mt-3 grid gap-2 rounded-2xl bg-stone-50 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
-                <code className="flex-1 text-sm font-mono font-bold text-ink break-all">{typeof window !== "undefined" ? window.location.origin : ""}/feed.xml</code>
-                <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white transition hover:bg-stone-800" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/feed.xml`); toast("Feed 链接已复制"); }} type="button">复制链接</button>
-                <a className="inline-flex min-h-11 items-center justify-center rounded-xl border border-stone-200 px-4 py-2.5 text-sm font-black text-ink transition hover:bg-stone-50" href="/feed.xml" rel="noreferrer" target="_blank">打开 Feed</a>
-              </div>
-            </div>
-
-            {/* Quick checks */}
-            <div className="admin-panel">
-              <h3 className="text-sm font-black text-ink">Feed 检查</h3>
-              <p className="mt-1 text-xs text-stone-400">快速查看需要处理的商品，点击按钮跳转到商品列表并筛选。</p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                {[{k:"noimg",l:"查看缺图片商品"},{k:"nodesc",l:"查看缺描述商品"},{k:"nosizestock",l:"查看未分尺码商品"},{k:"nostock",l:"查看库存为0商品"}].map(b => (
-                  <button key={b.k} className="min-h-11 rounded-xl border border-stone-200 px-4 py-2.5 text-sm font-black text-ink transition hover:bg-stone-50" onClick={() => { setFilterStatus(b.k); setTab("dashboard"); }} type="button">{b.l}</button>
-                ))}
-              </div>
-            </div>
-
-            {/* How to use */}
-            <div className="rounded-2xl border border-stone-100 bg-stone-50/50 p-5 shadow-sm shadow-stone-900/5">
-              <h3 className="text-sm font-black text-ink">如何使用这个 Feed？</h3>
-              <div className="mt-3 space-y-2 text-xs text-stone-600">
-                <p>1. 确认商品信息完整（图片、价格、库存、描述）。</p>
-                <p>2. 复制上方 Feed 链接。</p>
-                <p>3. 将链接提交给 Skroutz 商家后台。</p>
-                <p>4. 后续修改商品后，Skroutz 会通过 Feed 自动同步最新数据。</p>
-              </div>
-            </div>
-          </section>
-        ) : null}
 
       </div>
 
@@ -6806,6 +6676,19 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         />
       ) : null}
 
+      {productImageCropRequest ? (
+        <ProductImageCropDialog
+          files={productImageCropRequest.files}
+          title={productImageCropRequest.title}
+          onCancel={() => setProductImageCropRequest(null)}
+          onComplete={files => {
+            const complete = productImageCropRequest.onComplete;
+            setProductImageCropRequest(null);
+            complete(files);
+          }}
+        />
+      ) : null}
+
       {/* Confirm dialog for batch operations */}
       <ConfirmDialog
         open={confirm.open}
@@ -6829,7 +6712,7 @@ function Field({ children, label }: { children: ReactNode; label: string }) {
 function ImagePreview({ disabled, url, label, onDel }: { disabled: boolean; url: string; label: string; onDel: () => void }) {
   return (
     <div className="overflow-hidden rounded-lg border border-stone-200 bg-white">
-      <img alt={label} className="aspect-[4/5] w-full bg-stone-100 object-cover" src={url} />
+      <img alt={label} className="aspect-[3/4] w-full bg-white object-contain" src={url} />
       <div className="p-2"><p className="truncate text-xs font-bold text-stone-600" title={url}>{label}</p><button className="mt-1 rounded-md border border-red-200 px-3 py-1 text-xs font-bold text-red-700 disabled:opacity-50 hover:bg-red-50" disabled={disabled} onClick={onDel} type="button">删除</button></div>
     </div>
   );

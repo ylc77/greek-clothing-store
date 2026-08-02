@@ -1,4 +1,5 @@
 import { ChatLauncher } from "@/components/chat-launcher";
+import { CartProvider } from "@/components/cart-provider";
 import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
@@ -40,19 +41,21 @@ export default async function RootLayout({
   return (
     <html lang={language}>
       <body>
-        {children}
-        {featureSettings.features.ai_tools ? (
-          <Suspense fallback={null}>
-            <ChatLauncher />
-          </Suspense>
-        ) : null}
-        <CookieConsentBanner language={language} config={{
-          essentialDescription: localizedLegalText(legal.settings.localized, "essentialStorageDescription", language),
-          analyticsEnabled: legal.settings.analyticsEnabled,
-          monitoringEnabled: legal.settings.errorMonitoringEnabled,
-          advertisingEnabled: legal.settings.advertisingEnabled,
-          legalVersion: legal.currentVersion,
-        }} />
+        <CartProvider>
+          {children}
+          {featureSettings.features.ai_tools ? (
+            <Suspense fallback={null}>
+              <ChatLauncher />
+            </Suspense>
+          ) : null}
+          <CookieConsentBanner language={language} config={{
+            essentialDescription: localizedLegalText(legal.settings.localized, "essentialStorageDescription", language),
+            analyticsEnabled: legal.settings.analyticsEnabled,
+            monitoringEnabled: legal.settings.errorMonitoringEnabled,
+            advertisingEnabled: legal.settings.advertisingEnabled,
+            legalVersion: legal.currentVersion,
+          }} />
+        </CartProvider>
       </body>
     </html>
   );

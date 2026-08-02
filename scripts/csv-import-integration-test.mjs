@@ -145,7 +145,6 @@ function metadata(productSku, name = "CSV integration product", overrides = {}) 
     vat: 24,
     color: "BLACK",
     additional_image_urls: "",
-    skroutz_url: "",
     material: "",
     fit: "",
     season: "",

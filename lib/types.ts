@@ -103,6 +103,7 @@ export type Product = {
     size: string;
     color: string;
     quantity_available: number;
+    price: number | null;
   }>;
   additional_image_urls?: string | null;
   skroutz_url?: string | null;

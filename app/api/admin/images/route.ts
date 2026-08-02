@@ -25,7 +25,9 @@ export const runtime = "nodejs";
 
 const imageNamePattern = /^(.+)\.(jpe?g|png|webp)$/i;
 const galleryImageNamePattern = /^(.+)-([1-9]\d*)\.(jpe?g|png|webp)$/i;
-const SKROUTZ_MIN_PX = 1000;
+const STOREFRONT_MIN_PX = 1000;
+const PRODUCT_IMAGE_WIDTH = 1200;
+const PRODUCT_IMAGE_HEIGHT = 1600;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 50 * 1024 * 1024;
 const MAX_FILES = 20;
@@ -78,7 +80,6 @@ export async function POST(request: NextRequest) {
   const authorization = await authorizeAdminRequest(request, "products:write");
   if (!authorization.allowed) return adminAuthorizationFailure(authorization);
   if (!(await isFeatureEnabled("product_management"))) return featureDisabledResponse("product_management");
-  const skroutzEnabled = await isFeatureEnabled("skroutz_feed");
   const supabase = getSupabaseAdminClient();
   if (!supabase) return unavailable();
 
@@ -146,7 +147,7 @@ export async function POST(request: NextRequest) {
         maxPixels: MAX_PIXELS,
         maxWidth: MAX_DIMENSION,
         maxHeight: MAX_DIMENSION,
-        resize: { width: 1600, height: 1600, fit: "inside" },
+        resize: { width: PRODUCT_IMAGE_WIDTH, height: PRODUCT_IMAGE_HEIGHT, fit: "cover" },
         quality: 82,
       });
       const operationId = randomUUID();
@@ -202,8 +203,8 @@ export async function POST(request: NextRequest) {
       }
 
       changedSkus.add(sku);
-      const sizeWarning = skroutzEnabled && optimized.sourceWidth < SKROUTZ_MIN_PX && optimized.sourceHeight < SKROUTZ_MIN_PX
-        ? `Skroutz recommends at least one side of ${SKROUTZ_MIN_PX}px.`
+      const sizeWarning = optimized.sourceWidth < STOREFRONT_MIN_PX && optimized.sourceHeight < STOREFRONT_MIN_PX
+        ? `For a clear storefront zoom, use an image with at least one side of ${STOREFRONT_MIN_PX}px.`
         : "";
       results.push({
         fileName,

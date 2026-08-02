@@ -185,6 +185,7 @@ async function getProductBySkuRaw(sku: string): Promise<{ product: Product | nul
       size: variant.size,
       color: variant.color,
       quantity_available: variant.quantityAvailable,
+      price: variant.unitPrice,
     }));
   }
   return { product, error: null };

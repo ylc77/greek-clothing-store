@@ -328,11 +328,11 @@ async function main() {
     await scrollBy(page, 420, 3);
   });
 
-  await scene(page, "skroutz-feed", "系统自动生成 Skroutz XML Feed，方便商品进入比价平台", async () => {
-    await gotoPage(page, "/feed.xml");
+  await scene(page, "online-shopping", "顾客可以使用购物车，并选择货到付款或到店自取", async () => {
+    await gotoPage(page, "/cart");
   }, 3000);
 
-  await scene(page, "ending", "商品展示网站 · 后台管理 · AI 客服 · Skroutz Feed", async () => {
+  await scene(page, "ending", "在线商店 · 后台管理 · 库存 · AI 客服", async () => {
     await page.goto("about:blank");
     await page.setContent(`
       <html>
@@ -356,12 +356,12 @@ async function main() {
         <body>
           <div class="wrap">
             <h1>服装店数字化展示系统</h1>
-            <p>商品展示网站 · 后台管理 · AI 客服 · Skroutz Feed</p>
+            <p>在线商店 · 后台管理 · 库存 · AI 客服</p>
           </div>
         </body>
       </html>
     `);
-    await addSubtitle(page, "让商品展示、客户咨询和平台导流更简单");
+    await addSubtitle(page, "让商品展示、在线下单、客户咨询和库存管理更简单");
   }, 4200);
 
   await context.close();

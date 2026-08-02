@@ -26,7 +26,6 @@ export const PRODUCT_CSV_FIELDS = [
   "mpn",
   "vat",
   "color",
-  "skroutz_url",
   "is_active",
   "material",
   "fiber_composition_gr",

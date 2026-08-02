@@ -20,6 +20,7 @@ export type PublicProductVariant = {
   size: string;
   color: string;
   quantityAvailable: number;
+  unitPrice: number | null;
 };
 
 function finiteNonNegativeInteger(value: unknown) {
@@ -166,6 +167,9 @@ export function publicVariantOptions(value: unknown): PublicProductVariant[] {
       size,
       color,
       quantityAvailable: finiteNonNegativeInteger(record.quantity_available ?? record.quantityAvailable),
+      unitPrice: Number.isFinite(Number(record.price ?? record.unitPrice))
+        ? Math.max(0, Math.round(Number(record.price ?? record.unitPrice) * 100) / 100)
+        : null,
     });
   }
   return rows;
