@@ -236,7 +236,7 @@ export default async function ProductPage({
           </div>
 
           {/* Right: info */}
-          <div className="flex min-w-0 flex-col rounded-3xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5 sm:p-7 lg:sticky lg:top-28 lg:min-h-[720px] lg:self-start xl:min-h-[800px]">
+          <div className="flex min-w-0 flex-col rounded-3xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5 sm:p-7 lg:sticky lg:top-28 lg:min-h-[880px] lg:self-start xl:min-h-[960px]">
             {/* SKU */}
             <p className="break-all text-xs font-bold uppercase tracking-[0.15em] text-olive">
               {product.sku}
