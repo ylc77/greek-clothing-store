@@ -165,7 +165,6 @@ export default async function ProductPage({
   );
 
   const detailItems = [
-    { label: t.stock, value: stockQty > 0 ? `${t.inStockLabel} (${stockQty})` : t.outOfStockLabel },
     { label: t.category, value: categoryLabel },
     product.subcategory
       ? { label: t.subcategory, value: subcategoryLabel || product.subcategory }
