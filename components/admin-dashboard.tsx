@@ -50,7 +50,13 @@ import {
 } from "@/lib/barcode-label-selection";
 import { MAX_BULK_BARCODE_VARIANTS } from "@/lib/barcode-bulk-request";
 import { CategoryCatalogInputError, parseCategoryCatalogMutation } from "@/lib/category-catalog";
-import { getStockOperationBarcodePlan } from "@/lib/stock-receiving";
+import {
+  barcodeForIncomingVariant,
+  getStockOperationBarcodePlan,
+  incomingVariantKey,
+  normalizeIncomingBarcode,
+  resolveIncomingBarcodeTarget,
+} from "@/lib/stock-receiving";
 import { FIXED_PRODUCT_VAT_RATE } from "@/lib/product-policy";
 import { ColorSizeInventoryEditor } from "@/components/color-size-inventory-editor";
 import { OnlineOrdersManager } from "@/components/online-orders-manager";
@@ -315,6 +321,7 @@ type InventoryAdjustState = {
   message: string;
 };
 type StockOperationMode = "stocktake" | "receiving" | "return";
+type ReceivingProductFlow = "quickAdd" | "add" | null;
 type InventoryStatusFilter = "all" | "normal" | "low_stock" | "out_of_stock" | "inactive" | "mismatch";
 type InventorySort = "stock_asc" | "stock_desc" | "sku" | "updated";
 type PosPaymentMethod = "cash" | "card" | "other";
@@ -697,8 +704,8 @@ const stockOperationOptions: Array<{
   {
     key: "receiving",
     label: "到货扫码",
-    shortDescription: "有条码直接扫，无条码先选规格并生成",
-    guidance: "有条码的商品直接扫描；没有条码时输入商品名、商品 SKU、供货商 SKU 或款号，选择正确颜色和尺码。缺少内部 Barcode 的规格会先按 Variant SKU 安全生成，再增加库存。",
+    shortDescription: "已建档直接入库，未知自带条码可立即上新",
+    guidance: "有条码的已建档商品直接扫描入库；库存系统没有该条码时，可进入拍照上新或新增商品，上传正面与背面图片并补齐分类、售价和规格库存，保存后沿用商品自带条码。已有商品但缺少内部 Barcode 时，仍按 Variant SKU 安全生成后再增加库存。",
     quantityLabel: "本次到货数量",
     quantityPlaceholder: "填写本次增加件数",
     reason: "扫码到货入库",
@@ -713,6 +720,56 @@ const stockOperationOptions: Array<{
     reason: "退换货库存加回",
   },
 ];
+
+function IncomingBarcodeAssignment({
+  barcode,
+  rows,
+  selectedKey,
+  mainImageReady,
+  secondaryImageCount,
+  onChange,
+  onCancel,
+}: {
+  barcode: string;
+  rows: ProductVariantMatrixRow[];
+  selectedKey: string;
+  mainImageReady: boolean;
+  secondaryImageCount: number;
+  onChange: (key: string) => void;
+  onCancel: () => void;
+}) {
+  const options = rows.filter(row => row.active !== false);
+  const resolvedTarget = resolveIncomingBarcodeTarget(rows, selectedKey) || "";
+  return (
+    <section className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4" data-incoming-barcode-assignment>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-black text-emerald-900">从到货扫码创建新商品</p>
+          <p className="mt-1 text-xs leading-5 text-emerald-800">系统没有找到该商品。保存时会沿用商品自带条码，不会为对应规格重新生成内部条码。</p>
+          <p className="mt-2 break-all rounded-lg bg-white/80 px-3 py-2 font-mono text-xs font-black text-emerald-950">{barcode}</p>
+        </div>
+        <button className="min-h-10 shrink-0 rounded-xl border border-emerald-200 bg-white px-3 text-xs font-black text-emerald-800 hover:bg-emerald-100" onClick={onCancel} type="button">取消到货上新</button>
+      </div>
+
+      <div className="mt-3 grid gap-2 text-xs font-bold sm:grid-cols-2">
+        <p className={`rounded-lg px-3 py-2 ${mainImageReady ? "bg-white text-emerald-800" : "bg-amber-50 text-amber-800"}`}>1. 商品正面 / 主图：{mainImageReady ? "已选择" : "必须上传"}</p>
+        <p className={`rounded-lg px-3 py-2 ${secondaryImageCount > 0 ? "bg-white text-emerald-800" : "bg-amber-50 text-amber-800"}`}>2. 背面 / 细节图：{secondaryImageCount > 0 ? `已选择 ${secondaryImageCount} 张` : "至少上传 1 张"}</p>
+      </div>
+
+      <label className="mt-3 block text-xs font-black text-emerald-950">
+        自带条码对应的颜色 / 尺码规格
+        <select className="input mt-1 bg-white" onChange={event => onChange(event.target.value)} value={resolvedTarget}>
+          <option value="">{options.length === 0 ? "请先选择尺码并填写库存" : "请选择条码对应的规格"}</option>
+          {options.map(row => {
+            const key = incomingVariantKey(row.size, row.color);
+            return <option key={key} value={key}>{row.color ? `${row.color} · ` : ""}{normalizeVariantSize(row.size)} · 初始库存 {Math.max(0, Math.trunc(Number(row.quantity) || 0))}</option>;
+          })}
+        </select>
+      </label>
+      <p className="mt-2 text-[11px] leading-5 text-emerald-800">如果同款有多个颜色或尺码，请明确选择这次扫描条码对应的规格；其他规格仍使用各自稳定的内部条码。</p>
+    </section>
+  );
+}
 
 /* ── Utilities ───────────────────────────────────────────── */
 function downloadCsv(filename: string, fields: string[], sample: Array<string | number | boolean>) {
@@ -954,6 +1011,9 @@ export function AdminDashboard({
   const [stockOperationSubmitting, setStockOperationSubmitting] = useState(false);
   const [stockOperationError, setStockOperationError] = useState("");
   const [stockOperationMessage, setStockOperationMessage] = useState("");
+  const [receivingNewProductBarcode, setReceivingNewProductBarcode] = useState("");
+  const [receivingProductFlow, setReceivingProductFlow] = useState<ReceivingProductFlow>(null);
+  const [receivingBarcodeVariantKey, setReceivingBarcodeVariantKey] = useState("");
   const [movementVariantId, setMovementVariantId] = useState("");
   const [movementQ, setMovementQ] = useState("");
   const [movementType, setMovementType] = useState("");
@@ -2292,6 +2352,49 @@ export function AdminDashboard({
       setStockLookupLoading(false);
     }
   }
+  function clearReceivingNewProductContext() {
+    const barcode = receivingNewProductBarcode;
+    if (receivingProductFlow === "add" && !editingId) {
+      setForm(current => current.barcode === barcode ? { ...current, barcode: "" } : current);
+    }
+    setReceivingNewProductBarcode("");
+    setReceivingProductFlow(null);
+    setReceivingBarcodeVariantKey("");
+  }
+  function navigateAdminTab(nextTab: Tab) {
+    if (receivingProductFlow && nextTab !== receivingProductFlow) clearReceivingNewProductContext();
+    setTab(nextTab);
+  }
+  function startReceivingProductCreation(flow: Exclude<ReceivingProductFlow, null>) {
+    const barcode = normalizeIncomingBarcode(receivingNewProductBarcode || stockOperationQuery);
+    if (!barcode) {
+      setStockOperationError("当前扫码内容不能作为商品条码，请重新扫描。");
+      return;
+    }
+
+    setReceivingNewProductBarcode(barcode);
+    setReceivingProductFlow(flow);
+    setReceivingBarcodeVariantKey("");
+    setStockOperationResults([]);
+    setStockOperationItem(null);
+    setStockOperationQuantity("");
+    setStockOperationReference("");
+    setStockOperationError("");
+    setStockOperationMessage("");
+
+    if (flow === "quickAdd") {
+      setQuickAdd(emptyQuickAdd);
+      setQuickSizeStock({});
+      setQuickVariantMatrix([]);
+      setQuickMainFile(null);
+      setQuickBackFiles([]);
+    } else {
+      resetProductEditor();
+      setForm({ ...emptyProduct, barcode });
+    }
+    setTab(flow);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
   function selectStockOperationItem(item: InventoryItem) {
     setStockOperationItem(item);
     setStockOperationQuantity(stockOperationMode === "stocktake" ? "" : "1");
@@ -2312,6 +2415,7 @@ export function AdminDashboard({
     setStockOperationMessage("");
     setStockOperationItem(null);
     setStockOperationQuantity("");
+    if (!receivingProductFlow) setReceivingNewProductBarcode("");
     try {
       const params = new URLSearchParams({ q: query, limit: "100" });
       const data = await api(`/api/admin/inventory?${params.toString()}`);
@@ -2323,10 +2427,18 @@ export function AdminDashboard({
       const selected = exact || (items.length === 1 ? items[0] : null);
 
       if (selected) {
+        setReceivingNewProductBarcode("");
         selectStockOperationItem(selected);
       } else if (items.length === 0) {
-        setStockOperationError("未找到匹配的库存记录，请检查条码或 SKU。");
+        const incomingBarcode = stockOperationMode === "receiving" ? normalizeIncomingBarcode(query) : null;
+        if (incomingBarcode) {
+          setReceivingNewProductBarcode(incomingBarcode);
+          setStockOperationMessage("库存系统中没有这个条码。若这是新商品，可直接进入拍照上新或新增商品，保存后沿用原条码入库。");
+        } else {
+          setStockOperationError("未找到匹配的库存记录，请检查条码或 SKU。");
+        }
       } else {
+        setReceivingNewProductBarcode("");
         setStockOperationMessage(`找到 ${items.length} 个 Variant，请选择正确尺码。`);
       }
     } catch (error) {
@@ -3050,6 +3162,12 @@ export function AdminDashboard({
 
   function buildProductVariantPayloads(productBasePriceChanged = false) {
     const originalVariants = editingProductSnapshot?.variants || [];
+    const incomingBarcode = receivingProductFlow === "add" && !editingId
+      ? normalizeIncomingBarcode(receivingNewProductBarcode)
+      : null;
+    const incomingTargetKey = incomingBarcode
+      ? resolveIncomingBarcodeTarget(variantMatrix, receivingBarcodeVariantKey)
+      : null;
     const colors = matrixColors(variantMatrix);
     const sizes = sortSizeKeys(matrixSizes(variantMatrix));
     const orderedRows = [...variantMatrix].sort((left, right) => {
@@ -3071,7 +3189,13 @@ export function AdminDashboard({
       return {
         ...(original?.id ? { id: original.id } : {}),
         variant_sku: variantSku,
-        barcode: original?.barcode || row.barcode || variantSku,
+        barcode: barcodeForIncomingVariant({
+          incomingBarcode,
+          incomingTargetKey,
+          size: normalizedSize,
+          color: normalizedColor,
+          fallbackBarcode: original?.barcode || row.barcode || variantSku,
+        }),
         size: normalizedSize,
         color: normalizedColor,
         quantity: Math.max(0, Math.trunc(Number(row.quantity) || 0)),
@@ -3337,8 +3461,50 @@ export function AdminDashboard({
   }
 
   /* ── Submit / Delete ──────────────────────────────────── */
-  async function submitProduct(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!form.sku.trim()) { toast("请填写 SKU", "err"); return; } if (!form.name_cn.trim() && !form.name_en.trim() && !form.name_gr.trim()) { toast("请至少填写一个语言的商品名", "err"); return; } if (form.size_chart.trim()) { try { JSON.parse(form.size_chart.trim()); } catch { toast("尺码表 JSON 格式不正确，请检查", "err"); return; } }
-if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品没有图片", desc: "该商品没有主图，是否继续保存？", confirmText: "继续保存", variant: "default", action: () => { setConfirm(c => ({ ...c, open: false })); doSubmit(); } }); return; } doSubmit(); }
+  async function submitProduct(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!form.sku.trim()) {
+      toast("请填写 SKU", "err");
+      return;
+    }
+    if (!form.name_cn.trim() && !form.name_en.trim() && !form.name_gr.trim()) {
+      toast("请至少填写一个语言的商品名", "err");
+      return;
+    }
+    if (form.size_chart.trim()) {
+      try {
+        JSON.parse(form.size_chart.trim());
+      } catch {
+        toast("尺码表 JSON 格式不正确，请检查", "err");
+        return;
+      }
+    }
+    if (receivingProductFlow === "add" && !editingId) {
+      if (!newMainFile || newGalleryFiles.length === 0) {
+        toast("到货新商品需要上传主图和至少一张背面 / 细节图", "err");
+        return;
+      }
+      if (!resolveIncomingBarcodeTarget(variantMatrix, receivingBarcodeVariantKey)) {
+        toast("请选择商品自带条码对应的颜色 / 尺码规格", "err");
+        return;
+      }
+    }
+    if (!form.image_url && !newMainFile) {
+      setConfirm({
+        open: true,
+        title: "商品没有图片",
+        desc: "该商品没有主图，是否继续保存？",
+        confirmText: "继续保存",
+        variant: "default",
+        action: () => {
+          setConfirm(current => ({ ...current, open: false }));
+          void doSubmit();
+        },
+      });
+      return;
+    }
+    await doSubmit();
+  }
   async function doSubmit() {
     setLoading(true);
     const p = normalizeProduct(form);
@@ -3351,6 +3517,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     const catalogKeys = variantMatrix.map(row => variantCatalogKey(row.size, row.color));
     if (new Set(catalogKeys).size !== catalogKeys.length) {
       toast("存在重复的颜色与尺码组合，请检查后再保存。", "err");
+      setLoading(false);
+      return;
+    }
+    if (receivingProductFlow === "add" && !editingId && !resolveIncomingBarcodeTarget(variantMatrix, receivingBarcodeVariantKey)) {
+      toast("请选择商品自带条码对应的颜色 / 尺码规格", "err");
       setLoading(false);
       return;
     }
@@ -3458,6 +3629,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       }
 
       resetProductEditor();
+      clearReceivingNewProductContext();
       setTab("dashboard");
       await loadProducts();
     } catch (error) {
@@ -3871,6 +4043,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   async function submitQuickAdd(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!quickMainFile) { toast("请先拍摄或选择一张主图", "err"); return; }
+    if (receivingProductFlow === "quickAdd" && quickBackFiles.length === 0) { toast("到货新商品还需要至少一张背面 / 细节图", "err"); return; }
     if (!Number.isFinite(Number(quickAdd.price)) || Number(quickAdd.price) <= 0) { toast("请填写正确价格", "err"); return; }
     const sku = quickSku();
     const parsedSizeStock = parseSizeStockText(quickAdd.size_stock);
@@ -3881,6 +4054,13 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     if (matrix.length === 0 || sizeKeys.length === 0) { toast("请先选择尺码并填写库存", "err"); return; }
     const catalogKeys = matrix.map(row => variantCatalogKey(row.size, row.color));
     if (new Set(catalogKeys).size !== catalogKeys.length) { toast("存在重复的颜色与尺码组合，请检查后再保存。", "err"); return; }
+    const incomingBarcode = receivingProductFlow === "quickAdd"
+      ? normalizeIncomingBarcode(receivingNewProductBarcode)
+      : null;
+    const incomingTargetKey = incomingBarcode
+      ? resolveIncomingBarcodeTarget(matrix, receivingBarcodeVariantKey)
+      : null;
+    if (incomingBarcode && !incomingTargetKey) { toast("请选择商品自带条码对应的颜色 / 尺码规格", "err"); return; }
     const colors = matrixColors(matrix);
     const variants = [...matrix]
       .sort((left, right) => {
@@ -3893,7 +4073,13 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         const variantSku = buildVariantSku(sku, row.size, row.color);
         return {
           variant_sku: variantSku,
-          barcode: variantSku,
+          barcode: barcodeForIncomingVariant({
+            incomingBarcode,
+            incomingTargetKey,
+            size: row.size,
+            color: row.color,
+            fallbackBarcode: variantSku,
+          }),
           size: normalizeVariantSize(row.size),
           color: normalizeVariantColor(row.color),
           quantity: Math.max(0, Math.trunc(Number(row.quantity) || 0)),
@@ -3924,6 +4110,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       description_en: quickAdd.description_en.trim(),
       description_gr: quickAdd.description_gr.trim(),
       brand: quickAdd.brand.trim(),
+      barcode: incomingBarcode || "",
       color: colors.find(Boolean) || quickAdd.color.trim(),
       vat: FIXED_PRODUCT_VAT_RATE,
       image_url: "",
@@ -4004,6 +4191,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       setQuickVariantMatrix([]);
       setQuickMainFile(null);
       setQuickBackFiles([]);
+      clearReceivingNewProductContext();
       await loadProducts();
       setSearch(savedSku);
       setTab("dashboard");
@@ -4234,7 +4422,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   data-admin-tab={key}
                   key={key}
                   className={`${desktopOnlyTabs.has(key) ? "hidden xl:flex" : "flex"} min-h-12 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-black transition sm:min-h-14 sm:px-4 sm:py-3 ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
-                  onClick={() => { setTab(key); setCustomizingCommonTabs(false); }}
+                  onClick={() => { navigateAdminTab(key); setCustomizingCommonTabs(false); }}
                   type="button"
                 >
                   {tabLabelByKey.get(key) || key}
@@ -4287,7 +4475,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       data-admin-tab={key}
                       key={key}
                       className={`flex min-h-12 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-bold transition ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50 hover:text-ink"}`}
-                      onClick={() => { setTab(key); setCustomizingCommonTabs(false); }}
+                      onClick={() => { navigateAdminTab(key); setCustomizingCommonTabs(false); }}
                       type="button"
                     >
                       {tabLabelByKey.get(key) || key}
@@ -4451,6 +4639,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     setStockOperationReference("");
                     setStockOperationError("");
                     setStockOperationMessage("");
+                    setReceivingNewProductBarcode("");
+                    setReceivingProductFlow(null);
+                    setReceivingBarcodeVariantKey("");
                     window.setTimeout(() => (stockOperationItem ? stockOperationQuantityRef : stockOperationInputRef).current?.focus(), 30);
                   }}
                   type="button"
@@ -4478,6 +4669,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   onChange={event => {
                     setStockOperationQuery(event.target.value);
                     setStockOperationError("");
+                    setStockOperationMessage("");
+                    setReceivingNewProductBarcode("");
                   }}
                   placeholder={stockOperationMode === "receiving" ? "扫描条码，或输入商品 SKU / 供货商 SKU / 款号 / 商品名" : "扫描条码，或输入 Variant SKU / 供货商 SKU / 商品名"}
                   ref={stockOperationInputRef}
@@ -4497,6 +4690,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   setStockOperationReference("");
                   setStockOperationError("");
                   setStockOperationMessage("");
+                  clearReceivingNewProductContext();
                   window.setTimeout(() => stockOperationInputRef.current?.focus(), 30);
                 }}
                 type="button"
@@ -4507,6 +4701,18 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
             {stockOperationError ? <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700" role="alert">{stockOperationError}</p> : null}
             {stockOperationMessage ? <p className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800" role="status">{stockOperationMessage}</p> : null}
+
+            {stockOperationMode === "receiving" && receivingNewProductBarcode && !stockOperationItem && stockOperationResults.length === 0 ? (
+              <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4" data-unknown-receiving-barcode>
+                <p className="text-sm font-black text-amber-950">这是库存系统中没有的新商品条码</p>
+                <p className="mt-1 break-all rounded-lg bg-white px-3 py-2 font-mono text-xs font-black text-amber-900">{receivingNewProductBarcode}</p>
+                <p className="mt-2 text-xs leading-5 text-amber-800">请选择一种上新方式。需要上传主图和至少一张背面 / 细节图，填写一级分类、二级分类、售价及颜色尺码库存；保存后会沿用这个自带条码，并按填写数量直接建立初始库存。</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <button className="min-h-12 rounded-xl bg-ink px-4 py-3 text-sm font-black text-white hover:bg-stone-800" onClick={() => startReceivingProductCreation("quickAdd")} type="button">进入拍照上新</button>
+                  <button className="min-h-12 rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-black text-ink hover:bg-stone-50" onClick={() => startReceivingProductCreation("add")} type="button">进入新增 / 编辑</button>
+                </div>
+              </section>
+            ) : null}
 
             {stockOperationItem ? (
               <div className="mt-5 grid gap-4 rounded-2xl border border-stone-200 bg-stone-50/70 p-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:p-5">
@@ -4617,6 +4823,17 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
               <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">下一件 SKU：{quickSku()}</span>
             </div>
+            {receivingProductFlow === "quickAdd" && receivingNewProductBarcode ? (
+              <IncomingBarcodeAssignment
+                barcode={receivingNewProductBarcode}
+                mainImageReady={Boolean(quickMainFile)}
+                onCancel={clearReceivingNewProductContext}
+                onChange={setReceivingBarcodeVariantKey}
+                rows={quickVariantMatrix}
+                secondaryImageCount={quickBackFiles.length}
+                selectedKey={receivingBarcodeVariantKey}
+              />
+            ) : null}
             <form className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]" onSubmit={submitQuickAdd}>
               <div className="order-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3 lg:order-1">
                 <Field label="一级分类"><select className="input" data-admin-field="quick-category" value={quickAdd.category} onChange={e => updateQuickAdd("category", e.target.value as ProductCategory)}>{adminCategoryOptions.map(category => <option key={String(category.slug)} value={String(category.slug)}>{categoryOptionLabel(category)}</option>)}</select></Field>
@@ -4676,13 +4893,13 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
               <div className="order-1 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm shadow-stone-900/5 lg:sticky lg:top-4 lg:order-2 lg:self-start">
                 <h3 className="text-sm font-black text-ink">商品照片</h3>
-                <p className="mt-1 text-xs text-stone-500">主图必选；背面图、细节图会自动放进多图。</p>
+                <p className="mt-1 text-xs text-stone-500">{receivingProductFlow === "quickAdd" ? "到货新商品必须上传主图和至少一张背面 / 细节图。" : "主图必选；背面图、细节图会自动放进多图。"}</p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   <label className="block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">从相册选择主图<input accept="image/jpeg,image/png,image/webp" className="hidden" type="file" onChange={e => { requestProductImageCrop(e.target.files, "裁剪拍照上新主图", files => setQuickMainFile(files[0] || null)); e.currentTarget.value = ""; }} /></label>
                   <label className="block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">打开相机拍摄<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => { requestProductImageCrop(e.target.files, "裁剪手机拍摄主图", files => setQuickMainFile(files[0] || null)); e.currentTarget.value = ""; }} /></label>
                 </div>
                 {quickMainFile ? <p className="mt-2 truncate text-xs text-emerald-700">主图：{quickMainFile.name}</p> : <p className="mt-2 text-xs text-amber-600">还没有主图</p>}
-                <label className="mt-3 block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">选择背面 / 细节图<input accept="image/*" className="hidden" multiple type="file" onChange={e => { requestProductImageCrop(e.target.files, "逐张裁剪背面 / 细节图", setQuickBackFiles); e.currentTarget.value = ""; }} /></label>
+                <label className="mt-3 block min-h-12 cursor-pointer rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-center text-base font-black text-ink hover:bg-stone-100 sm:text-sm">选择背面 / 细节图{receivingProductFlow === "quickAdd" ? "（必选）" : ""}<input accept="image/*" className="hidden" multiple type="file" onChange={e => { requestProductImageCrop(e.target.files, "逐张裁剪背面 / 细节图", setQuickBackFiles); e.currentTarget.value = ""; }} /></label>
                 {quickBackFiles.length > 0 ? <p className="mt-2 text-xs text-stone-500">多图：{quickBackFiles.length} 张</p> : null}
                 <button className="mt-5 w-full rounded-full bg-ink px-4 py-3 text-sm font-black text-white shadow-sm shadow-stone-900/10 hover:bg-stone-800 disabled:opacity-50" disabled={quickSaving || loading} type="submit">{quickSaving ? "保存中..." : "保存并上传图片"}</button>
                 <p className="mt-3 text-[11px] leading-relaxed text-stone-400">提示：后台会自动生成 SKU；实体店售出后使用“POS 扫码”录入商品并同步库存。</p>
@@ -6284,6 +6501,17 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
         {tab === "add" ? (
           <form className="flex flex-col gap-5" onSubmit={submitProduct}>
+            {receivingProductFlow === "add" && receivingNewProductBarcode && !editingId ? (
+              <IncomingBarcodeAssignment
+                barcode={receivingNewProductBarcode}
+                mainImageReady={Boolean(newMainFile)}
+                onCancel={clearReceivingNewProductContext}
+                onChange={setReceivingBarcodeVariantKey}
+                rows={variantMatrix}
+                secondaryImageCount={newGalleryFiles.length}
+                selectedKey={receivingBarcodeVariantKey}
+              />
+            ) : null}
             <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-bold leading-5 text-blue-800 xl:hidden">
               手机 / 平板编辑模式只显示基础信息、尺码库存、多语言和图片上传。供货资料、AI 高级字段、欧盟追溯资料和图片 URL 请在桌面端维护。
             </div>
@@ -6334,7 +6562,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             {/* Size-Stock card */}
             <section className="admin-panel">
               <h2 className="mb-1 text-base font-black text-ink">颜色（选填）× 尺码库存</h2>
-              <p className="mb-3 text-xs text-stone-500">先选择尺码并填写库存；单一款式颜色留空。只有同款存在多个颜色时才添加颜色，每个颜色与尺码组合会生成独立 Variant SKU 和内部 Barcode。</p>
+              <p className="mb-3 text-xs text-stone-500">先选择尺码并填写库存；单一款式颜色留空。只有同款存在多个颜色时才添加颜色，每个颜色与尺码组合都有独立 Variant SKU 和 Barcode；从到货扫码进入时，选中的规格沿用商品自带条码。</p>
               {editingId && variantMatrix.length === 0 && form.sizes.trim() ? <p className="mb-3 rounded-lg bg-amber-50 p-2 text-xs text-amber-700">该商品还没有规格库存。旧总库存为 <b>{form.stock}</b>，sizes 为 “{form.sizes}”。请手动分配后保存。</p> : null}
               <ColorSizeInventoryEditor
                 availableSizes={sizeOptionsForSystem(form.size_system, form.category)}
@@ -6479,11 +6707,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
               ) : (
                 <div className="mb-4 rounded-lg border border-stone-200 bg-stone-50 p-4">
-                  <p className="text-xs text-stone-500 mb-2">新商品图片会在保存时自动上传。</p>
+                  <p className="text-xs text-stone-500 mb-2">{receivingProductFlow === "add" ? "到货新商品必须选择主图和至少一张背面 / 细节图，保存后自动上传。" : "新商品图片会在保存时自动上传。"}</p>
                   <div className="flex flex-wrap gap-2">
                     <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">从相册选择主图<input accept="image/jpeg,image/png,image/webp" className="hidden" type="file" onChange={e => { requestProductImageCrop(e.target.files, "裁剪新商品主图", files => setNewMainFile(files[0] || null)); e.currentTarget.value = ""; }} /></label>
                     <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">打开相机拍摄<input accept="image/*" capture="environment" className="hidden" type="file" onChange={e => { requestProductImageCrop(e.target.files, "裁剪手机拍摄主图", files => setNewMainFile(files[0] || null)); e.currentTarget.value = ""; }} /></label>
-                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">选择多图<input accept="image/*" className="hidden" multiple type="file" onChange={e => { requestProductImageCrop(e.target.files, "逐张裁剪新商品多图", setNewGalleryFiles); e.currentTarget.value = ""; }} /></label>
+                    <label className="min-h-11 cursor-pointer rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-black hover:bg-stone-50">选择背面 / 细节图{receivingProductFlow === "add" ? "（必选）" : ""}<input accept="image/*" className="hidden" multiple type="file" onChange={e => { requestProductImageCrop(e.target.files, "逐张裁剪新商品多图", setNewGalleryFiles); e.currentTarget.value = ""; }} /></label>
                     {(newMainFile || newGalleryFiles.length > 0) ? <button className="min-h-11 rounded-xl border border-red-100 px-4 py-2.5 text-sm font-black text-red-500 hover:bg-red-50" onClick={() => { setNewMainFile(null); setNewGalleryFiles([]); }} type="button">清除</button> : null}
                   </div>
                   {newMainFile ? <p className="mt-2 text-xs text-stone-500">主图: {newMainFile.name}</p> : null}
@@ -6497,7 +6725,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="grid gap-3 border-t border-stone-100 p-4 md:grid-cols-2 lg:grid-cols-4">
                   <Field label="主图 URL"><input className="input" data-admin-field="image_url" value={form.image_url} onChange={e => updateField("image_url", e.target.value)} /></Field>
                   <Field label="品牌（可选）"><input className="input" value={form.brand} onChange={e => updateField("brand", e.target.value)} placeholder="如无可留空" /></Field>
-                  <Field label="内部条码（可选）"><input className="input" value={form.barcode} onChange={e => updateField("barcode", e.target.value)} placeholder="门店扫码使用，不自动当作 EAN" /></Field>
+                  <Field label={receivingProductFlow === "add" ? "商品自带条码（到货扫码）" : "内部条码（可选）"}><input className={`input ${receivingProductFlow === "add" ? "cursor-not-allowed bg-stone-50 text-stone-500" : ""}`} readOnly={receivingProductFlow === "add"} value={form.barcode} onChange={e => updateField("barcode", e.target.value)} placeholder="门店扫码使用，不自动当作 EAN" /></Field>
                   <Field label="商品 EAN（可选）"><input className="input" inputMode="numeric" value={form.ean} onChange={e => updateField("ean", e.target.value)} placeholder="有供应商或品牌 EAN 时填写" /></Field>
                   <Field label="制造商 MPN（可选）"><input className="input" value={form.mpn} onChange={e => updateField("mpn", e.target.value)} placeholder="有制造商货号时填写" /></Field>
                   <Field label="VAT（固定）"><div><input aria-readonly="true" className="input cursor-not-allowed bg-stone-50 text-stone-500" readOnly type="text" value={`${FIXED_PRODUCT_VAT_RATE}%`} /><p className="mt-1 text-[10px] text-stone-400">服装商品固定为 24%，不可调整。</p></div></Field>
@@ -6514,7 +6742,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
               <div className="flex flex-wrap gap-3">
                 {!form.sku.trim() ? <p className="text-xs text-amber-600">请填写 SKU</p> : null}
-                {!form.image_url && !newMainFile ? <p className="text-xs text-stone-400">商品暂无图片</p> : null}
+                {receivingProductFlow === "add" && !newMainFile ? <p className="text-xs text-amber-600">到货上新还缺主图</p> : null}
+                {receivingProductFlow === "add" && newGalleryFiles.length === 0 ? <p className="text-xs text-amber-600">到货上新还缺背面 / 细节图</p> : null}
+                {receivingProductFlow === "add" && !resolveIncomingBarcodeTarget(variantMatrix, receivingBarcodeVariantKey) ? <p className="text-xs text-amber-600">请选择自带条码对应规格</p> : null}
+                {!receivingProductFlow && !form.image_url && !newMainFile ? <p className="text-xs text-stone-400">商品暂无图片</p> : null}
                 {Object.keys(sizeStock).length === 0 && form.sizes.trim() ? <p className="text-xs text-amber-600">未分配尺码库存</p> : null}
               </div>
             </div>
