@@ -59,7 +59,7 @@
     "test:developer": "npm run test:developer-credentials && npm run test:developer-integration && npm run test:developer-secrets",
     "test:feature-catalog": "node --experimental-strip-types --test tests/feature-catalog.test.ts",
     "test:feature-gates": "node scripts/feature-gate-integration-test.mjs",
-    "test:online-orders-unit": "node --experimental-strip-types --test tests/cart.test.ts tests/online-order.test.ts tests/checkout-operation.test.ts",
+    "test:online-orders-unit": "node --experimental-strip-types --test tests/cart.test.ts tests/cart-availability.test.ts tests/online-order.test.ts tests/checkout-operation.test.ts",
     "test:online-orders-integration": "node scripts/online-order-integration-test.mjs",
     "test:online-orders": "npm run test:online-orders-unit && npm run test:online-orders-integration",
     "test:p1-unit": "npm run test:pos-operation-ids && npm run test:inventory-operation-ids && npm run test:developer-credentials && npm run test:feature-catalog",
