@@ -55,10 +55,11 @@ test("compact product category labels retain accessible small-text contrast", ()
   assert.doesNotMatch(source, /bg-stone-100[^"\n]*text-\[10px\][^"\n]*text-stone-500/);
 });
 
-test("product purchase note and detail labels retain accessible text contrast", () => {
+test("product details retain accessible text contrast without duplicating checkout fulfillment copy", () => {
   const source = fs.readFileSync(path.join(process.cwd(), "app", "product", "[sku]", "page.tsx"), "utf8");
-  assert.match(source, /mt-4 text-xs leading-relaxed text-stone-600/);
   assert.match(source, /shrink-0 text-stone-600/);
-  assert.doesNotMatch(source, /mt-4 text-xs leading-relaxed text-stone-400/);
   assert.doesNotMatch(source, /shrink-0 text-stone-400/);
+  assert.doesNotMatch(source, /Current size and color availability/);
+  assert.doesNotMatch(source, /Cash on delivery/);
+  assert.doesNotMatch(source, /Store pickup/);
 });

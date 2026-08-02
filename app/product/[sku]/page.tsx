@@ -236,7 +236,7 @@ export default async function ProductPage({
           </div>
 
           {/* Right: info */}
-          <div className="flex min-w-0 flex-col rounded-3xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5 sm:p-7 lg:sticky lg:top-28 lg:self-start">
+          <div className="flex min-w-0 flex-col rounded-3xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5 sm:p-7 lg:sticky lg:top-28 lg:min-h-[720px] lg:self-start xl:min-h-[800px]">
             {/* SKU */}
             <p className="break-all text-xs font-bold uppercase tracking-[0.15em] text-olive">
               {product.sku}
@@ -259,8 +259,23 @@ export default async function ProductPage({
               </p>
             ) : null}
 
-            {/* Size selector + buttons */}
-            <div className="mt-6">
+            {/* Product facts stay with the introduction. */}
+            {detailItems.length > 0 ? (
+              <details className="mt-6 rounded-2xl border border-stone-200/70 bg-stone-50/70 p-4" open>
+                <summary className="cursor-pointer list-none text-sm font-black text-ink">{t.details}</summary>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 sm:gap-x-4">
+                  {detailItems.map((d) => (
+                    <p key={d.label} className="flex items-start justify-between gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs sm:bg-transparent sm:px-0 sm:py-0 sm:text-sm">
+                      <span className="shrink-0 text-stone-600">{d.label}</span>
+                      <span className="min-w-0 [overflow-wrap:anywhere] text-right font-bold text-stone-700">{d.value}</span>
+                    </p>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+
+            {/* The purchase controls stay aligned at the bottom on desktop. */}
+            <div className="mt-10 border-t border-stone-200/70 pt-6 lg:mt-auto lg:pt-8">
               <ProductActions
                 productName={productName(product, language)}
                 productNameEn={product.name_en || product.name_gr || product.sku}
@@ -283,37 +298,6 @@ export default async function ProductPage({
                 whatsappUrl={settings.whatsapp || undefined}
               />
             </div>
-
-            {/* Purchase note */}
-            <p className="mt-4 text-xs leading-relaxed text-stone-600">
-              {settings.online_store_enabled
-                ? language === "en"
-                  ? "Current size and color availability is checked again when you place the order. Payment is made on delivery or collection."
-                  : "Η διαθεσιμότητα μεγέθους και χρώματος ελέγχεται ξανά κατά την παραγγελία. Η πληρωμή γίνεται κατά την παράδοση ή την παραλαβή."
-                : t.purchaseContactNote}
-            </p>
-
-            {settings.online_store_enabled ? (
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                {settings.delivery_enabled ? <div className="rounded-2xl border border-stone-200 bg-white p-4"><p className="text-sm font-black text-ink">{language === "en" ? "Cash on delivery" : "Αντικαταβολή"}</p><p className="mt-1 text-xs leading-5 text-stone-500">{language === "en" ? settings.delivery_instructions_en : settings.delivery_instructions_gr}</p></div> : null}
-                {settings.pickup_enabled ? <div className="rounded-2xl border border-stone-200 bg-white p-4"><p className="text-sm font-black text-ink">{language === "en" ? "Store pickup" : "Παραλαβή από το κατάστημα"}</p><p className="mt-1 text-xs leading-5 text-stone-500">{language === "en" ? settings.pickup_instructions_en : settings.pickup_instructions_gr}</p></div> : null}
-              </div>
-            ) : null}
-
-            {/* Details (collapsible or always shown) */}
-            {detailItems.length > 0 ? (
-              <details className="mt-6 rounded-2xl border border-stone-200/70 bg-stone-50/70 p-4" open>
-                <summary className="cursor-pointer list-none text-sm font-black text-ink">{t.details}</summary>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2 sm:gap-x-4">
-                  {detailItems.map((d) => (
-                    <p key={d.label} className="flex items-start justify-between gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs sm:bg-transparent sm:px-0 sm:py-0 sm:text-sm">
-                      <span className="shrink-0 text-stone-600">{d.label}</span>
-                      <span className="min-w-0 [overflow-wrap:anywhere] text-right font-bold text-stone-700">{d.value}</span>
-                    </p>
-                  ))}
-                </div>
-              </details>
-            ) : null}
           </div>
         </div>
       </section>
