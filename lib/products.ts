@@ -7,7 +7,7 @@ import {
 } from "@/lib/product-data-boundary";
 import { getSupabaseClient } from "./supabase";
 import { isProductSubcategory, type Product, type ProductCategory } from "./types";
-import { publicVariantOptions } from "./product-variant-matrix";
+import { publicVariantOptions, type PublicProductVariant } from "./product-variant-matrix";
 
 export type ProductsResult = {
   products: Product[];
@@ -199,6 +199,23 @@ const getProductBySkuCached = unstable_cache(
 
 export async function getProductBySku(sku: string): Promise<{ product: Product | null; error: string | null }> {
   return getProductBySkuCached(sku);
+}
+
+/**
+ * Inventory availability is intentionally uncached. Product metadata may use
+ * the five-minute catalog cache, but a shopper's size/color choices must be
+ * based on the current MAIN_STORE balance minus active reservations.
+ */
+export async function getCurrentPublicVariantsBySku(
+  sku: string,
+): Promise<{ variants: PublicProductVariant[]; error: string | null }> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { variants: [], error: "Inventory availability is not configured." };
+  const { data, error } = await (supabase as any).rpc("product_public_variants_rpc", {
+    p_product_sku: sku,
+  });
+  if (error) return { variants: [], error: error.message };
+  return { variants: publicVariantOptions(data), error: null };
 }
 
 /** Static category cover images — independent of product uploads. */

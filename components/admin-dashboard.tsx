@@ -18,6 +18,19 @@ import { PosReceiptPreview } from "@/components/pos-receipt-preview";
 import { LabelPrintPreview, type LabelSize, type PrintableVariantLabel } from "@/components/label-print-preview";
 import type { AdminPermission, AdminRole } from "@/lib/admin-auth";
 import { featurePlanPresets, type FeatureFlags, type FeatureKey } from "@/lib/feature-catalog";
+import {
+  adminCommonNavigationLabelByKey,
+  adminCommonTabsStorageKey,
+  adminDesktopOnlyTabKeys,
+  adminNavigableTabKeys,
+  adminNavigationGroups,
+  adminNavigationLabelByKey,
+  getDefaultAdminCommonTabs,
+  isAdminTabVisibleInViewport,
+  moveAdminCommonTab,
+  normalizeAdminCommonTabs,
+  type AdminNavigationTab,
+} from "@/lib/admin-navigation";
 import { getSupabaseBrowserAuthClient } from "@/lib/supabase";
 import { tokenUpdateForSupabaseAuthEvent } from "@/lib/admin-session-lifecycle";
 import { PosOperationIdStore } from "@/lib/pos-operation-id";
@@ -218,7 +231,7 @@ type ProductCopyResult = TranslationResult & {
 };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = "dashboard" | "check" | "quickAdd" | "quickSale" | "stockLookup" | "stockOperations" | "pos" | "posOrders" | "onlineOrders" | "posDaily" | "inventory" | "labels" | "add" | "csv" | "images" | "categories" | "suppliers";
+type Tab = AdminNavigationTab;
 type AdminSession = { role: AdminRole; permissions: AdminPermission[]; authType?: "password" | "account"; email?: string | null; displayName?: string | null };
 type InventoryItem = {
   product_id: number;
@@ -502,23 +515,10 @@ const fallbackSubcategoryNamesCn: Record<string, string> = {
   sneakers: "运动鞋", boots: "靴子", sandals: "凉鞋", heels: "高跟鞋", handbags: "手提包", backpacks: "双肩包", wallets: "钱包", suitcases: "行李箱", travel_bags: "旅行包",
   caps: "鸭舌帽", beanies: "针织帽", necklaces: "项链", bracelets: "手链", earrings: "耳环", rings: "戒指", accessories: "配饰",
 };
-const tabs: { key: Tab; label: string }[] = [
-  { key: "stockLookup", label: "库存快查" },
-  { key: "stockOperations", label: "库存作业" },
-  { key: "pos", label: "POS 扫码" },
-  { key: "posOrders", label: "POS 订单" },
-  { key: "onlineOrders", label: "在线订单" },
-  { key: "posDaily", label: "POS 日报" },
-  { key: "inventory", label: "库存管理" },
-  { key: "labels", label: "标签打印" },
-  { key: "dashboard", label: "商品列表" }, { key: "quickAdd", label: "拍照上新" }, { key: "quickSale", label: "快速售出" }, { key: "check", label: "上线检查" }, { key: "add", label: "新增/编辑" }, { key: "csv", label: "CSV 导入" }, { key: "images", label: "图片上传" }, { key: "categories", label: "分类管理" }, { key: "suppliers", label: "供货商" },
-];
-const defaultCommonTabKeys: Tab[] = ["stockLookup", "onlineOrders", "pos", "quickAdd", "dashboard"];
-const allTabKeys = tabs.map(item => item.key);
-const adminCommonTabsStorageKey = "clothing-admin-common-tabs-v1";
-const tabLabelByKey = new Map(tabs.map(item => [item.key, item.label]));
+const tabLabelByKey = adminNavigationLabelByKey;
+const commonTabLabelByKey = adminCommonNavigationLabelByKey;
 const ownerOnlyTabs = new Set<Tab>(["quickAdd", "quickSale", "add", "csv", "images", "categories", "suppliers"]);
-const desktopOnlyTabs = new Set<Tab>(["pos"]);
+const desktopOnlyTabs = new Set<Tab>(adminDesktopOnlyTabKeys);
 const tabPermissions: Partial<Record<Tab, AdminPermission>> = {
   dashboard: "products:read",
   check: "products:read",
@@ -551,11 +551,6 @@ const tabFeatures: Partial<Record<Tab, FeatureKey>> = {
   suppliers: "product_management",
 };
 
-function normalizeCommonTabKeys(value: unknown): Tab[] {
-  if (!Array.isArray(value)) return defaultCommonTabKeys;
-  const normalized = Array.from(new Set(value.filter((key): key is Tab => typeof key === "string" && allTabKeys.includes(key as Tab))));
-  return normalized.length > 0 ? normalized : defaultCommonTabKeys;
-}
 const defaultAdminFeatures: FeatureFlags = { ...featurePlanPresets.basic };
 const clothingSizeOptions = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
 const womenEuSizeOptions = Array.from({ length: 12 }, (_, index) => `EU ${32 + index * 2}`);
@@ -872,9 +867,10 @@ export function AdminDashboard({
   const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
   const [adminFeatures, setAdminFeatures] = useState<FeatureFlags>(initialFeatures);
   const [featureSettingsFallback, setFeatureSettingsFallback] = useState(!initialFeatureSettingsConfigured);
-  const [commonTabKeys, setCommonTabKeys] = useState<Tab[]>(defaultCommonTabKeys);
+  const [commonTabKeys, setCommonTabKeys] = useState<Tab[]>(() => getDefaultAdminCommonTabs("owner"));
   const [commonTabsReady, setCommonTabsReady] = useState(false);
   const [customizingCommonTabs, setCustomizingCommonTabs] = useState(false);
+  const [isCompactAdminViewport, setIsCompactAdminViewport] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [products, setProducts] = useState<AdminProduct[]>([]);
@@ -1014,23 +1010,30 @@ export function AdminDashboard({
   const [posDailyLoading, setPosDailyLoading] = useState(false);
   const [posDailyMessage, setPosDailyMessage] = useState("");
   useEffect(() => {
+    const role = adminSession?.role;
+    if (!role) {
+      setCommonTabsReady(false);
+      return;
+    }
+    const fallback = getDefaultAdminCommonTabs(role);
+    setCommonTabsReady(false);
     try {
-      const saved = window.localStorage.getItem(adminCommonTabsStorageKey);
-      if (saved) setCommonTabKeys(normalizeCommonTabKeys(JSON.parse(saved)));
+      const saved = window.localStorage.getItem(adminCommonTabsStorageKey(role));
+      setCommonTabKeys(saved ? normalizeAdminCommonTabs(JSON.parse(saved), fallback) : fallback);
     } catch {
-      setCommonTabKeys(defaultCommonTabKeys);
+      setCommonTabKeys(fallback);
     } finally {
       setCommonTabsReady(true);
     }
-  }, []);
+  }, [adminSession?.role]);
   useEffect(() => {
-    if (!commonTabsReady) return;
+    if (!commonTabsReady || !adminSession?.role) return;
     try {
-      window.localStorage.setItem(adminCommonTabsStorageKey, JSON.stringify(commonTabKeys));
+      window.localStorage.setItem(adminCommonTabsStorageKey(adminSession.role), JSON.stringify(commonTabKeys));
     } catch {
       // Browsers with blocked storage can still use the customization for the current page session.
     }
-  }, [commonTabKeys, commonTabsReady]);
+  }, [adminSession?.role, commonTabKeys, commonTabsReady]);
   useEffect(() => {
     const supabase = getSupabaseBrowserAuthClient();
     if (!supabase) return;
@@ -1158,29 +1161,31 @@ export function AdminDashboard({
     return permission ? hasPermission(permission) : isOwner;
   };
   const commonTabKeySet = new Set(commonTabKeys);
-  const visibleCommonTabKeys = commonTabKeys.filter(canUseTab);
-  const visibleAdvancedTabKeys = allTabKeys.filter(key => !commonTabKeySet.has(key) && canUseTab(key));
+  const visibleCommonTabKeys = commonTabKeys.filter(key => canUseTab(key) && isAdminTabVisibleInViewport(key, isCompactAdminViewport));
+  const visibleAdvancedTabKeys = adminNavigableTabKeys.filter(key => !commonTabKeySet.has(key) && canUseTab(key) && isAdminTabVisibleInViewport(key, isCompactAdminViewport));
+  const canUseMaintenanceExport = Boolean(isOwner && adminFeatures.backup_tools && !isCompactAdminViewport);
+  const visibleManagementGroups = adminNavigationGroups
+    .map(group => ({
+      ...group,
+      tabKeys: group.tabKeys.filter(key => !commonTabKeySet.has(key) && canUseTab(key) && isAdminTabVisibleInViewport(key, isCompactAdminViewport)),
+    }))
+    .filter(group => group.tabKeys.length > 0 || (group.key === "batch" && canUseMaintenanceExport));
   const addCommonTab = (key: Tab) => setCommonTabKeys(current => current.includes(key) ? current : [...current, key]);
   const removeCommonTab = (key: Tab) => {
-    if (visibleCommonTabKeys.length <= 1 && canUseTab(key)) {
+    const usableCompactTabs = commonTabKeys.filter(candidate => canUseTab(candidate) && isAdminTabVisibleInViewport(candidate, true));
+    if (isAdminTabVisibleInViewport(key, true) && usableCompactTabs.length <= 1) {
       toast("常用操作至少保留一项", "err");
       return;
     }
     setCommonTabKeys(current => current.filter(item => item !== key));
   };
-  const moveCommonTab = (key: Tab, direction: -1 | 1) => {
-    setCommonTabKeys(current => {
-      const index = current.indexOf(key);
-      if (index < 0) return current;
-      let target = index + direction;
-      while (target >= 0 && target < current.length && !canUseTab(current[target])) target += direction;
-      if (target < 0 || target >= current.length) return current;
-      const next = [...current];
-      [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
+  const moveCommonTab = (key: Tab, direction: -1 | 1) => setCommonTabKeys(current => moveAdminCommonTab(current, key, direction, visibleCommonTabKeys));
+  const resetCommonTabs = () => setCommonTabKeys(getDefaultAdminCommonTabs(adminSession?.role || "owner"));
+  const activateAdminTab = (key: Tab, source: "common" | "management" = "management") => {
+    if (key === "stockOperations") setStockOperationMode(source === "common" ? "receiving" : "stocktake");
+    setTab(key);
+    setCustomizingCommonTabs(false);
   };
-  const resetCommonTabs = () => setCommonTabKeys(defaultCommonTabKeys);
   const activeStockOperation = stockOperationOptions.find(option => option.key === stockOperationMode)!;
   useEffect(() => {
     if (!adminSession) return;
@@ -1189,19 +1194,16 @@ export function AdminDashboard({
     setTab(nextTab);
   }, [adminSession, adminFeatures, tab, visibleCommonTabKeys, visibleAdvancedTabKeys]);
   useEffect(() => {
-    if (tab !== "pos") return;
     const compactViewport = window.matchMedia("(max-width: 1279px)");
-    const leaveDesktopOnlyPos = () => {
-      if (!compactViewport.matches) return;
-      const nextTab = visibleCommonTabKeys.find(key => !desktopOnlyTabs.has(key))
-        || visibleAdvancedTabKeys.find(key => !desktopOnlyTabs.has(key))
-        || "dashboard";
-      setTab(nextTab);
-    };
-    leaveDesktopOnlyPos();
-    compactViewport.addEventListener("change", leaveDesktopOnlyPos);
-    return () => compactViewport.removeEventListener("change", leaveDesktopOnlyPos);
-  }, [tab, visibleCommonTabKeys, visibleAdvancedTabKeys]);
+    const syncCompactViewport = () => setIsCompactAdminViewport(compactViewport.matches);
+    syncCompactViewport();
+    compactViewport.addEventListener("change", syncCompactViewport);
+    return () => compactViewport.removeEventListener("change", syncCompactViewport);
+  }, []);
+  useEffect(() => {
+    if (isAdminTabVisibleInViewport(tab, isCompactAdminViewport)) return;
+    setTab(visibleCommonTabKeys[0] || visibleAdvancedTabKeys[0] || "dashboard");
+  }, [isCompactAdminViewport, tab, visibleCommonTabKeys, visibleAdvancedTabKeys]);
 
   const csvSummary = useMemo(() => {
     if (!csvPreview) return { valid: 0, invalid: 0, needsTranslation: 0 };
@@ -4177,8 +4179,6 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">{adminSession.displayName || adminSession.email || adminSession.role} · {adminSession.authType === "account" ? "员工账号" : "应急密码"}</span>
-            {isOwner ? <a className="hidden rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50 xl:inline-flex" href="/admin/settings">店铺设置</a> : null}
-            {isOwner && adminFeatures.backup_tools ? <button className="hidden rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50 xl:inline-flex" onClick={() => void downloadProductBackup()} title="仅用于维护数据交换，不是数据库与图片灾备" type="button">维护 CSV 导出</button> : null}
             <button className="rounded-lg border border-stone-300 px-3 py-2 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => void logoutAdmin()} type="button">退出</button>
           </div>
         </header>
@@ -4234,10 +4234,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   data-admin-tab={key}
                   key={key}
                   className={`${desktopOnlyTabs.has(key) ? "hidden xl:flex" : "flex"} min-h-12 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-black transition sm:min-h-14 sm:px-4 sm:py-3 ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
-                  onClick={() => { setTab(key); setCustomizingCommonTabs(false); }}
+                  onClick={() => activateAdminTab(key, "common")}
                   type="button"
                 >
-                  {tabLabelByKey.get(key) || key}
+                  {commonTabLabelByKey.get(key) || key}
                 </button>
               ))}
             </div>
@@ -4246,18 +4246,18 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-sm font-black text-ink">调整常用操作</p>
-                    <p className="mt-1 text-xs leading-5 text-stone-500">使用左右按钮调整顺序；从下方工具中选择“加入常用”。设置只保存在当前电脑或平板浏览器。</p>
+                    <p className="mt-1 text-xs leading-5 text-stone-500">使用左右按钮调整顺序；从下方分组中选择“加入常用”。每种角色的设置分别保存在当前浏览器。</p>
                   </div>
                   <button className="min-h-9 w-fit rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-600 hover:bg-stone-100" onClick={resetCommonTabs} type="button">恢复默认</button>
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                   {visibleCommonTabKeys.map((key, index) => (
                     <div className={`${desktopOnlyTabs.has(key) ? "hidden xl:block" : "block"} rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5`} key={`${key}-custom`}>
-                      <p className="text-sm font-black text-ink">{tabLabelByKey.get(key) || key}</p>
+                      <p className="text-sm font-black text-ink">{commonTabLabelByKey.get(key) || key}</p>
                       <div className="mt-3 grid grid-cols-3 gap-1.5">
-                        <button aria-label={`将${tabLabelByKey.get(key) || key}向前移动`} className="min-h-9 rounded-lg border border-stone-200 text-sm font-black text-stone-600 disabled:opacity-30" disabled={index === 0} onClick={() => moveCommonTab(key, -1)} type="button">←</button>
-                        <button aria-label={`将${tabLabelByKey.get(key) || key}向后移动`} className="min-h-9 rounded-lg border border-stone-200 text-sm font-black text-stone-600 disabled:opacity-30" disabled={index === visibleCommonTabKeys.length - 1} onClick={() => moveCommonTab(key, 1)} type="button">→</button>
-                        <button aria-label={`从常用操作移除${tabLabelByKey.get(key) || key}`} className="min-h-9 rounded-lg border border-red-100 text-xs font-black text-red-500 hover:bg-red-50" onClick={() => removeCommonTab(key)} type="button">移除</button>
+                        <button aria-label={`将${commonTabLabelByKey.get(key) || key}向前移动`} className="min-h-9 rounded-lg border border-stone-200 text-sm font-black text-stone-600 disabled:opacity-30" disabled={index === 0} onClick={() => moveCommonTab(key, -1)} type="button">←</button>
+                        <button aria-label={`将${commonTabLabelByKey.get(key) || key}向后移动`} className="min-h-9 rounded-lg border border-stone-200 text-sm font-black text-stone-600 disabled:opacity-30" disabled={index === visibleCommonTabKeys.length - 1} onClick={() => moveCommonTab(key, 1)} type="button">→</button>
+                        <button aria-label={`从常用操作移除${commonTabLabelByKey.get(key) || key}`} className="min-h-9 rounded-lg border border-red-100 text-xs font-black text-red-500 hover:bg-red-50" onClick={() => removeCommonTab(key)} type="button">移除</button>
                       </div>
                     </div>
                   ))}
@@ -4265,33 +4265,59 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 {visibleAdvancedTabKeys.length > 0 ? (
                   <div className="mt-4 border-t border-stone-200 pt-4">
                     <p className="text-xs font-black text-stone-500">可加入的管理工具</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {visibleAdvancedTabKeys.map(key => (
-                        <button className={`${desktopOnlyTabs.has(key) ? "hidden xl:inline-flex" : "inline-flex"} min-h-10 items-center rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-600 hover:border-stone-400 hover:text-ink`} data-admin-add-tab={key} key={`${key}-available`} onClick={() => addCommonTab(key)} type="button">＋ {tabLabelByKey.get(key) || key}</button>
+                    <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {visibleManagementGroups.filter(group => group.tabKeys.length > 0).map(group => (
+                        <div className={`${group.desktopOnly ? "hidden xl:block" : "block"} rounded-xl border border-stone-200 bg-white p-3`} key={`${group.key}-custom-group`}>
+                          <p className="text-xs font-black text-ink">{group.label}</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {group.tabKeys.map(key => (
+                              <button className={`${desktopOnlyTabs.has(key) ? "hidden xl:inline-flex" : "inline-flex"} min-h-10 items-center rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-600 hover:border-stone-400 hover:text-ink`} data-admin-add-tab={key} key={`${key}-available`} onClick={() => addCommonTab(key)} type="button">＋ {commonTabLabelByKey.get(key) || key}</button>
+                            ))}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>
                 ) : null}
               </div>
             ) : null}
-            <p className="border-t border-stone-100 px-3 py-2.5 text-[11px] font-bold leading-5 text-stone-400 xl:hidden">手机 / 平板显示你选择的常用操作；POS 扫码仅在桌面端显示。</p>
-            {visibleAdvancedTabKeys.length > 0 ? (
-              <details className="hidden border-t border-stone-100 xl:block">
+            <p className="border-t border-stone-100 px-3 py-2.5 text-[11px] font-bold leading-5 text-stone-400 xl:hidden">更多管理默认折叠；POS 扫码和批量工具仅在桌面端显示。</p>
+            {visibleManagementGroups.length > 0 ? (
+              <details className="border-t border-stone-100" data-admin-management-tools>
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black text-ink hover:bg-stone-50">
-                  <span>更多管理工具</span>
-                  <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-500">报表、库存、图片、CSV 等 · {visibleAdvancedTabKeys.length} 项</span>
+                  <span>更多管理</span>
+                  <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-500">
+                    <span className="xl:hidden">库存、销售与商品资料</span>
+                    <span className="hidden xl:inline">{visibleManagementGroups.length} 组 · {visibleAdvancedTabKeys.length + (canUseMaintenanceExport ? 1 : 0)} 项</span>
+                  </span>
                 </summary>
-                <div className="grid grid-cols-4 gap-2 border-t border-stone-100 p-3 xl:grid-cols-6" data-admin-advanced-tabs>
-                  {visibleAdvancedTabKeys.map(key => (
-                    <button
-                      data-admin-tab={key}
-                      key={key}
-                      className={`flex min-h-12 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-bold transition ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50 hover:text-ink"}`}
-                      onClick={() => { setTab(key); setCustomizingCommonTabs(false); }}
-                      type="button"
-                    >
-                      {tabLabelByKey.get(key) || key}
-                    </button>
+                <div className="grid gap-3 border-t border-stone-100 bg-stone-50/50 p-3 md:grid-cols-2 xl:grid-cols-4" data-admin-advanced-tabs>
+                  {visibleManagementGroups.map(group => (
+                    <section className={`${group.desktopOnly ? "hidden xl:block" : "block"} rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5`} data-admin-management-group={group.key} key={group.key}>
+                      <div className="mb-3 flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-black text-ink">{group.label}</p>
+                          <p className="mt-1 text-[11px] font-bold leading-4 text-stone-400">{group.description}</p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-stone-100 px-2 py-1 text-[10px] font-black text-stone-500">{group.tabKeys.length + (group.key === "batch" && canUseMaintenanceExport ? 1 : 0)} 项</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {group.tabKeys.map(key => (
+                          <button
+                            data-admin-tab={key}
+                            key={key}
+                            className={`${desktopOnlyTabs.has(key) ? "hidden xl:flex" : "flex"} min-h-11 items-center justify-center rounded-xl px-3 py-2 text-center text-xs font-black transition ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-stone-600 hover:bg-stone-100 hover:text-ink"}`}
+                            onClick={() => activateAdminTab(key)}
+                            type="button"
+                          >
+                            {tabLabelByKey.get(key) || key}
+                          </button>
+                        ))}
+                        {group.key === "batch" && canUseMaintenanceExport ? (
+                          <button className="hidden min-h-11 items-center justify-center rounded-xl bg-stone-50 px-3 py-2 text-center text-xs font-black text-stone-600 hover:bg-stone-100 hover:text-ink xl:flex" onClick={() => void downloadProductBackup()} title="商品资料交换用途，不是数据库与图片灾备" type="button">商品资料导出</button>
+                        ) : null}
+                      </div>
+                    </section>
                   ))}
                 </div>
               </details>
@@ -4415,7 +4441,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                             </div>
                             <div className="mt-3 flex items-center justify-between gap-2">
                               <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${unavailable ? "bg-red-100 text-red-700" : low ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{!item.active ? "已停用" : item.quantity_available <= 0 ? "无货" : low ? "低库存" : "有货"}</span>
-                              {canUseTab("pos") ? <button className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-black text-ink hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={unavailable} onClick={() => moveStockLookupItemToPos(item)} type="button">带入 POS</button> : null}
+                              {canUseTab("pos") ? <button className="hidden rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-black text-ink hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-40 xl:inline-flex" disabled={unavailable} onClick={() => moveStockLookupItemToPos(item)} type="button">带入 POS</button> : null}
                             </div>
                           </div>
                         );
@@ -4985,6 +5011,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
         {tab === "posDaily" ? (
           <section className="flex flex-col gap-5">
+            <div className="inline-flex w-fit rounded-xl border border-stone-200 bg-white p-1 shadow-sm" data-admin-sales-record-tabs>
+              <button className="rounded-lg px-4 py-2 text-xs font-black text-stone-600 hover:bg-stone-50" onClick={() => setTab("posOrders")} type="button">POS 订单</button>
+              <button className="rounded-lg bg-ink px-4 py-2 text-xs font-black text-white" type="button">POS 日报</button>
+            </div>
             <div className="admin-panel">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
@@ -5123,6 +5153,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
         {tab === "posOrders" ? (
           <section className="flex flex-col gap-5">
+            <div className="inline-flex w-fit rounded-xl border border-stone-200 bg-white p-1 shadow-sm" data-admin-sales-record-tabs>
+              <button className="rounded-lg bg-ink px-4 py-2 text-xs font-black text-white" type="button">POS 订单</button>
+              {canUseTab("posDaily") ? <button className="rounded-lg px-4 py-2 text-xs font-black text-stone-600 hover:bg-stone-50" onClick={() => setTab("posDaily")} type="button">POS 日报</button> : null}
+            </div>
             <div className="admin-panel">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
@@ -5409,9 +5443,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">ERP Inventory</p>
                   <h2 className="mt-1 text-xl font-black text-ink">库存管理</h2>
-                  <p className="mt-1 text-xs text-stone-500">只管理 ERP 库存记录；前台和已启用的渠道 Feed 仍继续读取兼容库存字段。</p>
+                  <p className="mt-1 text-xs text-stone-500">查看规格库存、流水与对账状态；手工调整只向有库存写入权限的角色显示。</p>
                 </div>
-                <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={inventoryLoading} onClick={() => void loadInventoryData()} type="button">刷新库存</button>
+                <div className="flex flex-wrap gap-2">
+                  {isOwner && adminFeatures.quick_sell ? <button className="min-h-11 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-black text-amber-800 hover:bg-amber-100" onClick={() => setTab("quickSale")} title="只扣库存，不创建 POS 订单或付款" type="button">快速售出（无订单）</button> : null}
+                  <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={inventoryLoading} onClick={() => void loadInventoryData()} type="button">刷新库存</button>
+                </div>
               </div>
               {inventoryError ? <p className="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{inventoryError}</p> : null}
               <div className={`mt-4 rounded-2xl border px-4 py-3 ${inventoryIssueCount(inventoryReconciliation) === 0 ? "border-emerald-100 bg-emerald-50 text-emerald-800" : "border-red-100 bg-red-50 text-red-700"}`}>
@@ -5611,7 +5648,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           </td>
                           <td className="px-4 py-4 text-right">
                             <div className="flex flex-col items-stretch gap-2">
-                              <button className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white hover:bg-stone-800" onClick={() => openInventoryAdjust(item)} type="button">调整库存</button>
+                              {hasPermission("inventory:write") ? <button className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white hover:bg-stone-800" onClick={() => openInventoryAdjust(item)} type="button">调整库存</button> : null}
                               <button className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => { setMovementVariantId(item.variant_id); void loadInventoryMovements(item.variant_id); }} type="button">查看流水</button>
                             </div>
                           </td>
@@ -5655,8 +5692,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           <p>{canReadProcurementCost ? <><span className="font-black text-stone-700">成本：</span>{item.cost_price == null ? "未填写" : formatEuro(item.cost_price)} · </> : null}<span className="font-black text-stone-700">补货线：</span>≤ {item.reorder_level ?? lowStockThreshold}</p>
                         </div>
                       ) : null}
-                      <div className="mt-4 grid grid-cols-2 gap-2">
-                        <button className="min-h-11 rounded-xl bg-ink px-3 py-2 text-sm font-black text-white hover:bg-stone-800" onClick={() => openInventoryAdjust(item)} type="button">调整库存</button>
+                      <div className={`mt-4 grid gap-2 ${hasPermission("inventory:write") ? "grid-cols-2" : "grid-cols-1"}`}>
+                        {hasPermission("inventory:write") ? <button className="min-h-11 rounded-xl bg-ink px-3 py-2 text-sm font-black text-white hover:bg-stone-800" onClick={() => openInventoryAdjust(item)} type="button">调整库存</button> : null}
                         <button className="min-h-11 rounded-xl border border-stone-300 px-3 py-2 text-sm font-black text-ink hover:bg-stone-50" onClick={() => { setMovementVariantId(item.variant_id); void loadInventoryMovements(item.variant_id); }} type="button">查看流水</button>
                       </div>
                     </article>
@@ -5776,7 +5813,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50" disabled={loading} onClick={() => void loadProducts()} type="button">刷新检查</button>
-                  {adminFeatures.ai_tools ? <button className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={loading || launchChecks.aiCompletable === 0} onClick={confirmBatchAiComplete} type="button">批量 AI 补全</button> : null}
+                  {isOwner && adminFeatures.ai_tools ? <button className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={loading || launchChecks.aiCompletable === 0} onClick={confirmBatchAiComplete} type="button">批量 AI 补全</button> : null}
                   <button className="rounded-lg bg-ink px-4 py-2 text-xs font-bold text-white hover:bg-stone-800 disabled:opacity-50" disabled={launchChecks.issueCount === 0} onClick={downloadLaunchCheckReport} type="button">导出检查报告</button>
                 </div>
               </div>
@@ -5824,20 +5861,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       </div>
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         {issues.map(issue => (
-                          <button className={`rounded-full px-2.5 py-1.5 text-[11px] font-bold ${issue.level === "block" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`} key={`${product.id}-mobile-${issue.code}`} onClick={() => handleIssueAction(product, issue.code)} type="button">
-                            {issue.label}
-                          </button>
+                          isOwner && issue.code !== "image" && issue.code !== "image-quality" ? <button className={`rounded-full px-2.5 py-1.5 text-[11px] font-bold ${issue.level === "block" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`} key={`${product.id}-mobile-${issue.code}`} onClick={() => handleIssueAction(product, issue.code)} type="button">{issue.label}</button>
+                            : <span className={`rounded-full px-2.5 py-1.5 text-[11px] font-bold ${issue.level === "block" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`} key={`${product.id}-mobile-${issue.code}`}>{issue.label}</span>
                         ))}
                       </div>
-                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      {isOwner ? <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                         <button className="min-h-11 rounded-xl border border-stone-200 px-3 py-2 text-xs font-black text-ink hover:bg-stone-50" onClick={() => startEdit(product)} type="button">编辑商品</button>
                         {adminFeatures.ai_tools ? <button className="min-h-11 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={autoCompletingId === product.id} onClick={() => void startAiComplete(product)} type="button">
                           {autoCompletingId === product.id ? "补全中..." : "AI 补全"}
                         </button> : null}
-                        {issues.some(issue => issue.code === "image" || issue.code === "image-quality") ? (
-                          <button className="min-h-11 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-800 hover:bg-amber-100" onClick={() => handleIssueAction(product, "image")} type="button">重新上传主图</button>
-                        ) : null}
-                      </div>
+                      </div> : null}
                     </article>
                   ))}
                 {launchChecks.issueCount === 0 ? <p className="py-8 text-center text-sm font-bold text-emerald-700">当前没有发现上线阻断或明显缺失项。</p> : null}
@@ -5874,22 +5907,21 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           <td className="py-3 pr-3">
                             <div className="flex max-w-xl flex-wrap gap-1.5">
                               {issues.map(issue => (
-                                <button className={`rounded-full px-2 py-1 text-[11px] font-bold transition hover:ring-2 hover:ring-stone-200 ${issue.level === "block" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`} key={`${product.id}-${issue.code}`} onClick={() => handleIssueAction(product, issue.code)} title={issue.code === "image" || issue.code === "image-quality" ? "点击去重新上传主图" : "点击定位到对应字段"} type="button">
-                                  {issue.label}
-                                </button>
+                                isOwner ? <button className={`rounded-full px-2 py-1 text-[11px] font-bold transition hover:ring-2 hover:ring-stone-200 ${issue.level === "block" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`} key={`${product.id}-${issue.code}`} onClick={() => handleIssueAction(product, issue.code)} title={issue.code === "image" || issue.code === "image-quality" ? "点击去重新上传主图" : "点击定位到对应字段"} type="button">{issue.label}</button>
+                                  : <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${issue.level === "block" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`} key={`${product.id}-${issue.code}`}>{issue.label}</span>
                               ))}
                             </div>
-                            {issues.some(issue => issue.code === "image" || issue.code === "image-quality") ? (
+                            {isOwner && issues.some(issue => issue.code === "image" || issue.code === "image-quality") ? (
                               <button className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-black text-amber-800 hover:bg-amber-100" onClick={() => handleIssueAction(product, "image")} type="button">重新上传主图</button>
                             ) : null}
                           </td>
                           <td className="py-3 pr-3">
-                            <div className="flex flex-wrap gap-1.5">
+                            {isOwner ? <div className="flex flex-wrap gap-1.5">
                               <button className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-bold text-ink hover:bg-stone-50" onClick={() => startEdit(product)} type="button">编辑</button>
                               {adminFeatures.ai_tools ? <button className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={autoCompletingId === product.id} onClick={() => void startAiComplete(product)} type="button">
                                 {autoCompletingId === product.id ? "补全中..." : "AI 补全"}
                               </button> : null}
-                            </div>
+                            </div> : <span className="text-xs font-bold text-stone-400">只读</span>}
                           </td>
                         </tr>
                       ))}
@@ -5904,23 +5936,19 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {/* ── TAB: Dashboard ──────────────────────────────── */}
         {tab === "dashboard" ? (
           <section className="admin-panel">
-            {/* Health check */}
-            <details className="mb-4 hidden group xl:block">
-              <summary className="cursor-pointer text-sm font-black text-ink hover:text-stone-600 select-none">商用上线检查</summary>
-              <div className="mt-3 grid gap-2 text-xs">
-                {(() => { const items: Array<{label:string;ok:boolean;hint:string}> = [
-                  { label: "店铺名称", ok: true, hint: "在店铺设置中配置" },
-                  { label: "Logo 图片", ok: true, hint: "在店铺设置中上传" },
-                  { label: "首页大图", ok: true, hint: "在店铺设置中上传" },
-                  { label: "WhatsApp 链接", ok: true, hint: "在店铺设置中填写" },
-                  { label: "Instagram 链接", ok: true, hint: "在店铺设置中填写" },
-                  { label: "地址", ok: true, hint: "在店铺设置中填写" },
-                  { label: "营业时间", ok: true, hint: "在店铺设置中填写" },
-                  { label: `上架商品 (${stats.active} 件)`, ok: stats.active >= 4, hint: stats.active >= 4 ? "" : "建议至少 4 件上架商品" },
-                  { label: "启用分类", ok: stats.categories > 0, hint: stats.categories > 0 ? "" : "至少需要一个启用的一级分类" },
-                ]; return items.map((it, i) => (<div key={i} className="flex items-center gap-2"><span className={it.ok ? "text-green-600" : "text-amber-600"}>{it.ok ? "✓" : "○"}</span><span className="text-stone-600">{it.label}</span>{!it.ok && it.hint ? <span className="text-amber-600">— {it.hint}</span> : null}</div>)); })()}
+            <div className="mb-4 flex flex-col gap-3 border-b border-stone-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Product management</p>
+                <h2 className="mt-1 text-xl font-black text-ink">商品管理</h2>
+                <p className="mt-1 text-xs leading-5 text-stone-500">查询、上下架和编辑商品；新增完整商品和问题检查从这里进入。</p>
               </div>
-            </details>
+              <div className="flex flex-wrap gap-2">
+                {isOwner ? (
+                  <button className="min-h-10 rounded-xl bg-ink px-4 py-2 text-xs font-black text-white hover:bg-stone-800" onClick={() => { resetProductEditor(); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button">新增完整商品</button>
+                ) : null}
+                <button className="min-h-10 rounded-xl border border-stone-200 bg-white px-4 py-2 text-xs font-black text-stone-600 hover:bg-stone-50 hover:text-ink" onClick={() => { setTab("check"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button">问题商品检查</button>
+              </div>
+            </div>
             {/* Search bar */}
             <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <input className="input sm:col-span-2 xl:col-span-2" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />

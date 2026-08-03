@@ -76,5 +76,6 @@ test("the browser CSV endpoint is explicitly a maintenance export, not disaster 
   const dashboard = source("components/admin-dashboard.tsx");
   assert.match(route, /X-Export-Purpose.*maintenance-csv/i);
   assert.match(route, /X-Disaster-Recovery.*false/i);
-  assert.match(dashboard, /维护 CSV 导出/);
+  assert.match(dashboard, /商品资料导出/);
+  assert.match(dashboard, /不是数据库与图片灾备/);
 });

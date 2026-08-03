@@ -15,7 +15,7 @@ import {
   withLanguage,
 } from "@/lib/i18n";
 import { loadCategories } from "@/lib/categories-data";
-import { getLatestProducts, getProductBySku, getProductsByCategory } from "@/lib/products";
+import { getCurrentPublicVariantsBySku, getLatestProducts, getProductBySku, getProductsByCategory } from "@/lib/products";
 import { getTotalStock } from "@/lib/product-stock";
 import { getFeatureSettings } from "@/lib/features";
 import { getBusinessSettings } from "@/lib/settings";
@@ -96,11 +96,13 @@ export default async function ProductPage({
   const [{ sku }, resolvedSearchParams] = await Promise.all([params, searchParams]);
   const language = getLanguage(resolvedSearchParams.lang);
   const t = text[language];
-  const [settings, productResult, featureSettings, categoryData] = await Promise.all([
+  const decodedSku = decodeURIComponent(sku);
+  const [settings, productResult, featureSettings, categoryData, currentVariantsResult] = await Promise.all([
     getBusinessSettings(),
-    getProductBySku(decodeURIComponent(sku)),
+    getProductBySku(decodedSku),
     getFeatureSettings(),
     loadCategories(),
+    getCurrentPublicVariantsBySku(decodedSku),
   ]);
   const { product, error } = productResult;
 
@@ -140,7 +142,9 @@ export default async function ProductPage({
     sizeChartRaw && typeof sizeChartRaw === "object" && !Array.isArray(sizeChartRaw)
       ? JSON.parse(JSON.stringify(sizeChartRaw))
       : null;
-  const safeVariants = publicVariantOptions(product.public_variants);
+  const safeVariants = currentVariantsResult.error
+    ? publicVariantOptions(product.public_variants)
+    : currentVariantsResult.variants;
   const backHref = categoryBackHref(product, language);
   const categoryEntry = getStorefrontCategoryNavigation(categoryData, language)
     .find((item) => item.slug === product.category);
