@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ProductCard } from "@/components/product-card";
+import { CategoryProductGrid } from "@/components/category-product-grid";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { text, withLanguage } from "@/lib/i18n";
@@ -56,8 +56,8 @@ export async function CategoryPage({
     <main className="min-h-screen bg-paper">
       <SiteHeader language={language} settings={settings} />
 
-      <section className="ui-container py-6 sm:py-8">
-        <div className="mb-6 rounded-3xl border border-stone-200/70 bg-white p-5 shadow-sm shadow-stone-900/5 sm:mb-7 sm:p-7">
+      <section className="mx-auto w-full max-w-[1760px] px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+        <div className="mb-4 rounded-3xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5 sm:p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <Link
@@ -67,8 +67,8 @@ export async function CategoryPage({
                 <span aria-hidden="true">←</span>
                 {t.backHome}
               </Link>
-              <p className="ui-kicker mt-5">{t.categories}</p>
-              <h1 className="mt-2 text-3xl font-black tracking-tight text-ink sm:text-5xl">{title}</h1>
+              <p className="ui-kicker mt-4">{t.categories}</p>
+              <h1 className="mt-1 text-3xl font-black tracking-tight text-ink sm:text-4xl">{title}</h1>
             </div>
             <p className="w-fit rounded-full bg-stone-100 px-4 py-2 text-sm font-black text-stone-600">
               {total} {t.items}
@@ -76,8 +76,8 @@ export async function CategoryPage({
           </div>
         </div>
 
-        <div className="relative mb-6 sm:mb-7">
-          <nav className="scrollbar-none flex snap-x gap-2 overflow-x-auto pb-2 pr-8">
+        <div className="relative mb-4">
+          <nav className="scrollbar-none flex snap-x gap-2 overflow-x-auto pb-2 pr-8 lg:flex-wrap lg:overflow-visible lg:pr-0">
             <Link
               className={`min-h-11 shrink-0 snap-start rounded-full border px-4 py-2.5 text-sm font-black shadow-sm transition ${
                 !activeSubcategory ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink hover:border-stone-300"
@@ -103,7 +103,7 @@ export async function CategoryPage({
           {subcategories.length > 3 ? (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute right-0 top-0 h-12 w-12 bg-gradient-to-l from-paper via-paper/85 to-transparent"
+              className="pointer-events-none absolute right-0 top-0 h-12 w-12 bg-gradient-to-l from-paper via-paper/85 to-transparent lg:hidden"
             />
           ) : null}
         </div>
@@ -119,11 +119,7 @@ export async function CategoryPage({
           </div>
         ) : (
           <>
-            <div className={products.length === 1 ? "grid max-w-sm grid-cols-1 gap-4 sm:gap-5" : "grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4"}>
-              {products.map((product) => (
-                <ProductCard key={product.sku} product={product} language={language} />
-              ))}
-            </div>
+            <CategoryProductGrid products={products} language={language} />
             {hasPreviousPage || hasNextPage ? (
               <nav aria-label={language === "el" ? "Σελίδες προϊόντων" : "Product pages"} className="mt-8 flex items-center justify-center gap-3">
                 {hasPreviousPage ? (

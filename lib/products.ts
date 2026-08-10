@@ -26,18 +26,6 @@ function normalizeSlug(value: string) {
   return value.trim().toLowerCase();
 }
 
-function isClearlyTestProduct(product: Product) {
-  const sku = product.sku.trim().toUpperCase();
-  return (
-    sku === "TEST" ||
-    sku.startsWith("TEST-") ||
-    sku.startsWith("TEST_") ||
-    sku === "DEMO" ||
-    sku.startsWith("DEMO-") ||
-    sku.startsWith("DEMO_")
-  );
-}
-
 function mapProduct(product: Product): Product {
   return {
     ...product,
@@ -61,18 +49,18 @@ async function getLatestProductsRaw(limit = 8): Promise<ProductsResult> {
     .from("products")
     .select(PUBLIC_PRODUCT_LIST_SELECT)
     .or("is_active.is.null,is_active.eq.true")
+    .not("sku", "ilike", "TEST%")
+    .not("sku", "ilike", "DEMO%")
     .gte("stock", 0)
     .order("created_at", { ascending: false })
-    .limit(limit * 2); // fetch extra to account for test product filtering
+    .limit(limit);
 
   if (error) {
     return { products: [], error: error.message };
   }
 
   const rows = (data || []) as unknown as Product[];
-  const filtered = rows.filter((p) => !isClearlyTestProduct(p));
-
-  return { products: filtered.slice(0, limit).map(mapProduct), error: null };
+  return { products: rows.map(mapProduct), error: null };
 }
 
 const getLatestProductsCached = unstable_cache(
@@ -110,6 +98,8 @@ async function getProductsByCategoryRaw(
     .select(PUBLIC_PRODUCT_LIST_SELECT, { count: "exact" })
     .ilike("category", normalizedCategory)
     .or("is_active.is.null,is_active.eq.true")
+    .not("sku", "ilike", "TEST%")
+    .not("sku", "ilike", "DEMO%")
     .gte("stock", 0)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
@@ -125,11 +115,10 @@ async function getProductsByCategoryRaw(
   }
 
   const rows = (data || []) as unknown as Product[];
-  const filtered = rows.filter((p) => !isClearlyTestProduct(p));
 
   const total = Number(count || 0);
   return {
-    products: filtered.map(mapProduct),
+    products: rows.map(mapProduct),
     error: null,
     total,
     page: normalizedPage,

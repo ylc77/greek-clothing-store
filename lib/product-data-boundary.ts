@@ -70,6 +70,8 @@ export const PUBLIC_PRODUCT_LIST_COLUMNS = [
   "size_stock",
   "image_url",
   "image_urls",
+  "brand",
+  "color",
   "is_active",
   "created_at",
 ] as const;
