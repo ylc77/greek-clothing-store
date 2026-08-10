@@ -2,12 +2,22 @@ import Link from "next/link";
 import { OptimizedImage } from "@/components/optimized-image";
 import { productName, text, withLanguage, type Language } from "@/lib/i18n";
 import { getTotalStock as effectiveStock } from "@/lib/product-stock";
+import { productSizeLabels } from "@/lib/category-product-filters";
 import type { Product } from "@/lib/types";
 
-export function ProductCard({ product, language }: { product: Product; language: Language }) {
+export function ProductCard({
+  product,
+  language,
+  displayMode = "default",
+}: {
+  product: Product;
+  language: Language;
+  displayMode?: "default" | "catalog";
+}) {
   const t = text[language];
   const name = productName(product, language);
   const stock = effectiveStock(product);
+  const sizes = displayMode === "catalog" ? productSizeLabels(product).slice(0, 5) : [];
 
   return (
     <Link
@@ -21,7 +31,7 @@ export function ProductCard({ product, language }: { product: Product; language:
           className="absolute inset-0"
           fill
           imageClassName="object-cover object-center transition duration-500 group-hover:scale-[1.04]"
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1536px) 25vw, 20vw"
           src={product.image_url}
         />
         <span
@@ -37,13 +47,22 @@ export function ProductCard({ product, language }: { product: Product; language:
         <p className="line-clamp-2 min-h-10 text-sm font-black leading-5 text-ink sm:text-[15px]">
           {name}
         </p>
-        <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between">
+        {sizes.length > 0 ? (
+          <div className="flex min-h-6 flex-wrap gap-1.5" aria-label={language === "el" ? "Διαθέσιμα μεγέθη" : "Available sizes"}>
+            {sizes.map((size) => (
+              <span className="rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-[10px] font-black text-stone-600" key={size}>{size}</span>
+            ))}
+          </div>
+        ) : null}
+        <div className="flex min-w-0 items-end justify-between gap-2">
           <p className="text-lg font-black leading-none text-[#a14b2f] sm:text-xl sm:text-terracotta">
             €{Number(product.price).toFixed(2)}
           </p>
-          <span className="max-w-full truncate rounded-full bg-stone-100 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-stone-600 sm:max-w-[45%]">
-            {product.category}
-          </span>
+          {displayMode === "default" ? (
+            <span className="max-w-[45%] truncate rounded-full bg-stone-100 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-stone-600">
+              {product.category}
+            </span>
+          ) : null}
         </div>
       </div>
     </Link>
