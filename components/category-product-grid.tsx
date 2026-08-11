@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
 import { ProductCard } from "@/components/product-card";
 import {
   categoryProductFilterOptions,
@@ -22,6 +23,7 @@ const copy = {
     color: "Χρώμα",
     current: "Στην τρέχουσα σελίδα",
     empty: "Δεν υπάρχουν προϊόντα με αυτά τα φίλτρα.",
+    filters: "Φίλτρα",
     newest: "Νεότερα πρώτα",
     price: "Τιμή",
     priceAsc: "Τιμή: χαμηλή προς υψηλή",
@@ -44,6 +46,7 @@ const copy = {
     color: "Color",
     current: "On this page",
     empty: "No products match these filters.",
+    filters: "Filters",
     newest: "Newest first",
     price: "Price",
     priceAsc: "Price: low to high",
@@ -69,9 +72,9 @@ const initialFilters = {
 function FilterMenu({ label, activeCount = 0, children }: { label: string; activeCount?: number; children: ReactNode }) {
   return (
     <details className="group static sm:relative" name="catalog-filter">
-      <summary className={`flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-full border px-4 py-2 text-sm font-black shadow-sm transition [&::-webkit-details-marker]:hidden ${activeCount > 0 ? "border-[#b7d2e8] bg-[#e2f0fb] text-[#285d83]" : "border-stone-200 bg-white text-ink hover:border-stone-300"}`}>
+      <summary className={`flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-full border px-4 py-2 text-sm font-black shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/30 [&::-webkit-details-marker]:hidden ${activeCount > 0 ? "border-[#dcae9d] bg-[#fff1eb] text-[#8f3f28]" : "border-stone-200 bg-white text-ink hover:border-stone-300 hover:shadow"}`}>
         {label}{activeCount > 0 ? ` (${activeCount})` : ""}
-        <span aria-hidden="true" className="text-xs transition group-open:rotate-180">⌄</span>
+        <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0 transition-transform duration-200 group-open:rotate-180" strokeWidth={2.25} />
       </summary>
       <div className="absolute left-3 right-3 top-[4.4rem] z-30 w-auto rounded-2xl border border-stone-200 bg-white p-4 shadow-xl shadow-stone-900/15 sm:left-0 sm:right-auto sm:top-[calc(100%+0.5rem)] sm:w-[min(31rem,calc(100vw-2rem))] sm:p-5">
         {children}
@@ -80,44 +83,34 @@ function FilterMenu({ label, activeCount = 0, children }: { label: string; activ
   );
 }
 
-function ChoiceButton({ active, count, label, onClick }: { active: boolean; count: number; label: string; onClick: () => void }) {
+function ChoiceButton({
+  active,
+  count,
+  label,
+  onClick,
+  closeMenuOnSelect = false,
+}: {
+  active: boolean;
+  count?: number;
+  label: string;
+  onClick: () => void;
+  closeMenuOnSelect?: boolean;
+}) {
   return (
     <button
       aria-pressed={active}
       className={`min-h-9 rounded-lg border px-3 py-1.5 text-sm font-bold transition ${active ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink hover:border-stone-400"}`}
-      onClick={onClick}
+      onClick={(event) => {
+        onClick();
+        if (closeMenuOnSelect) {
+          event.currentTarget.closest("details")?.removeAttribute("open");
+        }
+      }}
       type="button"
     >
-      {label} <span className={active ? "text-white/75" : "text-stone-400"}>({count})</span>
+      {label}
+      {typeof count === "number" ? <span className={active ? "text-white/75" : "text-stone-400"}> ({count})</span> : null}
     </button>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  onChange,
-  children,
-  wide = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  children: ReactNode;
-  wide?: boolean;
-}) {
-  return (
-    <label className={wide ? "w-full sm:w-auto sm:min-w-48" : "min-w-0 flex-1 sm:min-w-40 sm:flex-none"}>
-      <span className="sr-only">{label}</span>
-      <select
-        aria-label={label}
-        className="min-h-11 w-full rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-bold text-ink shadow-sm outline-none transition hover:border-stone-300 focus:border-ink focus:ring-2 focus:ring-ink/10"
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
-      >
-        {children}
-      </select>
-    </label>
   );
 }
 
@@ -134,13 +127,32 @@ export function CategoryProductGrid({ products, language }: { products: Product[
     { value: "25-50" as const, label: t.between25And50, count: products.filter((product) => Number(product.price) >= 25 && Number(product.price) <= 50).length },
     { value: "over-50" as const, label: t.over50, count: products.filter((product) => Number(product.price) > 50).length },
   ], [products, t.between25And50, t.over50, t.under25]);
+  const sortOptions = [
+    { value: "newest" as const, label: t.newest },
+    { value: "price-asc" as const, label: t.priceAsc },
+    { value: "price-desc" as const, label: t.priceDesc },
+    { value: "name" as const, label: t.sortName },
+  ];
+  const selectedSortLabel = sortOptions.find((option) => option.value === filters.sort)?.label || t.newest;
   const hasFilters = filters.brand || filters.color || filters.price !== "all" || filters.sizes.length > 0;
 
   return (
     <>
-      <div className="relative mb-5 rounded-2xl border border-stone-200/80 bg-white p-3 shadow-sm shadow-stone-900/5 sm:p-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex min-w-0 flex-wrap gap-2">
+      <div className="relative mb-5 rounded-2xl border border-stone-200/80 bg-[#f6f2ec] p-3 sm:p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-stone-600">{t.filters}</p>
+            {hasFilters ? (
+              <span className="rounded-full bg-terracotta px-2 py-0.5 text-[10px] font-black text-white">
+                {filters.sizes.length + (filters.color ? 1 : 0) + (filters.brand ? 1 : 0) + (filters.price === "all" ? 0 : 1)}
+              </span>
+            ) : null}
+          </div>
+          <p aria-live="polite" className="shrink-0 text-xs font-bold text-stone-500 sm:text-sm">
+            <span className="hidden sm:inline">{t.current}: </span><span className="text-ink">{visibleProducts.length} {t.products}</span>
+          </p>
+        </div>
+        <div className="flex min-w-0 flex-wrap gap-2">
             {options.sizes.length > 1 ? (
               <FilterMenu activeCount={filters.sizes.length} label={t.size}>
                 <div className="flex flex-wrap gap-2">
@@ -187,21 +199,24 @@ export function CategoryProductGrid({ products, language }: { products: Product[
                 ))}
               </div>
             </FilterMenu>
-            <SelectField label={t.sort} value={filters.sort} wide onChange={(sort) => setFilters((current) => ({ ...current, sort: sort as CategorySort }))}>
-              <option value="newest">{t.newest}</option>
-              <option value="price-asc">{t.priceAsc}</option>
-              <option value="price-desc">{t.priceDesc}</option>
-              <option value="name">{t.sortName}</option>
-            </SelectField>
+            <FilterMenu label={selectedSortLabel}>
+              <div aria-label={t.sort} className="grid gap-2">
+                {sortOptions.map((option) => (
+                  <ChoiceButton
+                    active={filters.sort === option.value}
+                    closeMenuOnSelect
+                    key={option.value}
+                    label={option.label}
+                    onClick={() => setFilters((current) => ({ ...current, sort: option.value }))}
+                  />
+                ))}
+              </div>
+            </FilterMenu>
             {hasFilters ? (
               <button className="min-h-11 rounded-full border border-stone-200 bg-stone-50 px-4 py-2 text-sm font-black text-stone-700 transition hover:bg-stone-100" onClick={() => setFilters(initialFilters)} type="button">
                 {t.clear}
               </button>
             ) : null}
-          </div>
-          <p aria-live="polite" className="shrink-0 text-sm font-bold text-stone-500">
-            {t.current}: <span className="text-ink">{visibleProducts.length} {t.products}</span>
-          </p>
         </div>
       </div>
 
