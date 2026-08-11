@@ -56,31 +56,31 @@ export async function CategoryPage({
     <main className="min-h-screen bg-paper">
       <SiteHeader language={language} settings={settings} />
 
-      <section className="mx-auto w-full max-w-[1760px] px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
-        <div className="mb-4 rounded-3xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5 sm:p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
+      <section className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+        <div className="mb-3 rounded-3xl border border-stone-200/70 bg-white p-4 shadow-sm shadow-stone-900/5 sm:mb-4 sm:p-5">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
               <Link
-                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-4 py-2 text-sm font-black text-ink shadow-sm transition hover:border-stone-300 hover:bg-white hover:shadow active:scale-[0.98]"
+                className="inline-flex min-h-10 items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-4 py-2 text-sm font-black text-ink transition hover:border-stone-300 hover:bg-white active:scale-[0.98] sm:min-h-11"
                 href={withLanguage("/", language)}
               >
                 <span aria-hidden="true">←</span>
                 {t.backHome}
               </Link>
-              <p className="ui-kicker mt-4">{t.categories}</p>
-              <h1 className="mt-1 text-3xl font-black tracking-tight text-ink sm:text-4xl">{title}</h1>
+              <p className="ui-kicker mt-3 sm:mt-4">{t.categories}</p>
+              <h1 className="mt-1 break-words text-2xl font-black tracking-tight text-ink sm:text-4xl">{title}</h1>
             </div>
-            <p className="w-fit rounded-full bg-stone-100 px-4 py-2 text-sm font-black text-stone-600">
+            <p className="mb-0.5 w-fit shrink-0 rounded-full bg-stone-100 px-3 py-1.5 text-xs font-black text-stone-600 sm:px-4 sm:py-2 sm:text-sm">
               {total} {t.items}
             </p>
           </div>
         </div>
 
-        <div className="relative mb-4">
-          <nav className="scrollbar-none flex snap-x gap-2 overflow-x-auto pb-2 pr-8 lg:flex-wrap lg:overflow-visible lg:pr-0">
+        <div className="relative mb-3 border-b border-stone-200 sm:mb-4">
+          <nav className="scrollbar-none flex snap-x gap-1 overflow-x-auto pr-8 lg:flex-wrap lg:overflow-visible lg:pr-0">
             <Link
-              className={`min-h-11 shrink-0 snap-start rounded-full border px-4 py-2.5 text-sm font-black shadow-sm transition ${
-                !activeSubcategory ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-ink hover:border-stone-300"
+              className={`min-h-10 shrink-0 snap-start border-b-2 px-3 py-2.5 text-sm font-black transition sm:px-4 ${
+                !activeSubcategory ? "border-terracotta text-ink" : "border-transparent text-stone-500 hover:border-stone-300 hover:text-ink"
               }`}
               href={categoryHref(category, language)}
             >
@@ -88,10 +88,10 @@ export async function CategoryPage({
             </Link>
             {subcategories.map((subcategory) => (
               <Link
-                className={`min-h-11 shrink-0 snap-start rounded-full border px-4 py-2.5 text-sm font-black shadow-sm transition ${
+                className={`min-h-10 shrink-0 snap-start border-b-2 px-3 py-2.5 text-sm font-black transition sm:px-4 ${
                   activeSubcategory === subcategory.slug
-                    ? "border-ink bg-ink text-white"
-                    : "border-stone-200 bg-white text-ink hover:border-stone-300"
+                    ? "border-terracotta text-ink"
+                    : "border-transparent text-stone-500 hover:border-stone-300 hover:text-ink"
                 }`}
                 href={categoryHref(category, language, subcategory.slug)}
                 key={subcategory.slug}
@@ -103,7 +103,7 @@ export async function CategoryPage({
           {subcategories.length > 3 ? (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute right-0 top-0 h-12 w-12 bg-gradient-to-l from-paper via-paper/85 to-transparent lg:hidden"
+              className="pointer-events-none absolute right-0 top-0 h-10 w-12 bg-gradient-to-l from-paper via-paper/90 to-transparent lg:hidden"
             />
           ) : null}
         </div>
