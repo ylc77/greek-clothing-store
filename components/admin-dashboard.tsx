@@ -4224,7 +4224,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#fbfaf6] via-white to-[#f6f1ea]">
       <AdminShell items={primaryItems} active={activeSection} onSelect={selectSection}>
-        {canUseTab("labels") ? <OperationLabelQueue entries={operationLabels.entries} total={operationLabels.total} dispatch={operationLabels.dispatch} onPrint={() => {
+        {canUseTab("labels") ? <OperationLabelQueue entries={operationLabels.entries} total={operationLabels.total} revision={operationLabels.revision} confirmedPrinted={operationLabels.confirmedPrinted} dispatch={operationLabels.dispatch} onPrint={() => {
           if (!initialPrintSettings.business_name.trim()) { toast("请先配置打印店名", "err"); return; }
           if (operationLabels.total > 1000) { toast("单次最多预览 1000 张，请减少份数后分次打印。", "err"); return; }
           setLabelPreviewItems(operationLabels.entries.flatMap(entry => Array.from({ length: entry.copies }, (_, index) => ({ ...entry.label, print_key: `${entry.label.variant_id}-${index}` }))));

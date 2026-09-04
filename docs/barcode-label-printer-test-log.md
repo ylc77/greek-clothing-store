@@ -2,6 +2,13 @@
 
 This document is for real thermal label printer acceptance testing.
 
+## 方案补齐：人工确认与设备偏好（硬件仍待验收）
+
+- 浏览器自动化已验证关闭预览不会清队列、取消确认保留队列、人工确认三张后记录三张且不新增库存请求。
+- 设备设置支持店名/售价开关、±3 mm 水平/垂直偏移；它们是浏览器偏好，不是打印机连接探测。
+- 真机待测：默认零偏移尺寸、偏移后的条码静区与裁切、缺纸/取消打印后继续补打、核对全部实物后才确认。
+- 即使人工点击“确认实物已打印”，也不能自动将本文件的硬件验收标为通过。
+
 Scope:
 - Browser label printing only
 - No database changes

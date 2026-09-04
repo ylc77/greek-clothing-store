@@ -6,7 +6,7 @@
 - 原工作目录存在未提交的支付/配送及导航改动，因此使用独立 worktree，未重置或覆盖原文件。只迁入与本阶段相关的导航壳层，未包含 Viva/BOX NOW 改动。
 - 已读取 agents.md、后台、导航、颜色尺码编辑器、标签预览、到货策略、库存/条码/POS Routes、认证及用户/打印指南。
 - 初始 `npm ci`、typecheck、build 通过。最初 inventory / POS / barcode / operations 的单元部分通过，数据库部分因 Docker 引擎未运行失败，未跳过断言。
-- npm ci 的依赖审计报告已有 2 项：browserslist high、postcss-selector-parser low。此次不做依赖升级，不能据此宣称发布安全审计全绿。
+- 初次 npm ci 的依赖审计报告有 2 项：browserslist high、postcss-selector-parser low。后续方案补齐时定向更新锁文件至 browserslist 4.28.9、postcss-selector-parser 6.1.4 及其兼容传递依赖；重新 npm ci / audit 为 0 漏洞。保留原失败基线，不把历史 CI 改写为通过。
 - Docker 恢复后仅启动原有 `clothing_web` 本地容器（API 55321 / DB 55322），没有 reset、没有清空数据库、没有连接远程客户库。集成测试使用原脚本的隔离测试记录、故障注入及清理机制。
 
 ## 调用关系（未改事务/权限）
@@ -92,7 +92,7 @@ owner 默认工作台，staff 默认 POS，inventory 默认到货，readonly 默
 - 标签队列为内存状态；刷新/退出可能丢失，未引入入库批次数据库或打印历史。
 - 新建商品的图片仍是原独立上传流程；失败按原提示补传，不重新创建商品。
 - 未增加新退换货事务、ESC/POS、本地桥、myDATA、支付终端或商城重构。
-- 尚存依赖审计提示，不能把本阶段通过等同于所有发布门禁通过。
+- 依赖审计已在后续补齐中修复；新的云端 CI 与 Preview 仍需对应新 HEAD，不能把旧提交通过等同于新版本发布通过。
 - 远程 Preview 必须另行确认环境身份；不得把构建成功或登录页面视为真实员工业务验收。
 
 ## 硬件验收步骤

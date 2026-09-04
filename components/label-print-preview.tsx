@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { LabelDeviceSettings } from "@/components/label-device-settings";
+import { defaultPrintProfile, normalizePrintProfile, printProfileStorageKey, type PrintProfile } from "@/lib/print-profile";
 import {
   formatEuroForPrint,
   localizedPrintCopy,
@@ -52,6 +54,20 @@ export function LabelPrintPreview({
   const [barcodeError, setBarcodeError] = useState("");
   const [ready, setReady] = useState(false);
   const [calibration, setCalibration] = useState(false);
+  const [profile, setProfile] = useState(defaultPrintProfile);
+  const [storageAvailable, setStorageAvailable] = useState(true);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(printProfileStorageKey);
+      if (saved) setProfile(normalizePrintProfile(JSON.parse(saved)));
+    } catch { setStorageAvailable(false); }
+  }, []);
+  function updateProfile(value: PrintProfile) {
+    const next = normalizePrintProfile(value);
+    setProfile(next);
+    try { window.localStorage.setItem(printProfileStorageKey, JSON.stringify(next)); setStorageAvailable(true); }
+    catch { setStorageAvailable(false); }
+  }
   const labelSizeText = useMemo(() => labelSize.replace("x", " x "), [labelSize]);
   const copy = localizedPrintCopy(language);
   const pageSize = labelSize === "40x30" ? "40mm 30mm" : labelSize === "50x30" ? "50mm 30mm" : "60mm 40mm";
@@ -124,6 +140,7 @@ export function LabelPrintPreview({
             page-break-after: always;
           }
           .label-page:last-child { page-break-after: auto; }
+          .label-content { transform: translate(${profile.offsetX}mm, ${profile.offsetY}mm); }
           @page {
             margin: 0;
             size: ${pageSize};
@@ -162,13 +179,16 @@ export function LabelPrintPreview({
           </div>
         </div>
 
+        <LabelDeviceSettings profile={profile} onChange={updateProfile} storageAvailable={storageAvailable} />
         <div className="overflow-x-auto rounded-2xl bg-stone-100/70 p-4">
           <div ref={rootRef} className="label-print-root flex flex-col items-start gap-[2mm]">
             {calibration ? <article className={`label-page ${labelSizeClass[labelSize]} bg-white p-[2mm] text-[8px]`}>
+              <div className="label-content">
               <p>PT-1509 · {labelSizeText} mm · 100%</p>
               <div className="my-[2mm] h-[5mm] w-[20mm] border border-black">20 mm × 5 mm</div>
               <svg className="max-w-full" data-barcode="PT1509-TEST" />
               <p>PT1509-TEST · calibration only</p>
+              </div>
             </article> : labels.map((label) => {
               const barcode = label.barcode || label.variant_sku;
               return (
@@ -176,9 +196,10 @@ export function LabelPrintPreview({
                   className={`label-page ${labelSizeClass[labelSize]} overflow-hidden bg-white px-[2.5mm] py-[2mm] font-sans text-[9px] leading-tight text-stone-950 shadow-sm`}
                   key={label.print_key || label.variant_id}
                 >
+                  <div className="label-content">
                   <div className="flex items-start justify-between gap-1">
-                    <p className="truncate text-[8px] font-black uppercase tracking-wide">{storeName}</p>
-                    <p className="shrink-0 text-[9px] font-black">{formatEuroForPrint(label.price, language)}</p>
+                    {profile.showStoreName ? <p data-label-store-name className="truncate text-[8px] font-black uppercase tracking-wide">{storeName}</p> : null}
+                    {profile.showPrice ? <p data-label-price className="ml-auto shrink-0 text-[9px] font-black">{formatEuroForPrint(label.price, language)}</p> : null}
                   </div>
                   <p className="mt-1 line-clamp-2 min-h-[18px] text-[10px] font-black">
                     {localizedPrintProductName({
@@ -199,6 +220,7 @@ export function LabelPrintPreview({
                   <div className="mt-1 flex items-center justify-between gap-2 text-[8px] font-bold">
                     <span>{copy.size}: {label.size || "-"}</span>
                     <span className="truncate text-right">{label.color ? `${copy.color}: ${label.color}` : ""}</span>
+                  </div>
                   </div>
                 </article>
               );

@@ -205,11 +205,28 @@ async function verifyContextLabels(browser) {
     expect(writes[1].quantity === 3 && writes[1].mode === "adjust_by","receiving changed the inventory request contract");
     await page.locator(".label-print-root .label-page").first().waitFor();
     expect(await page.locator(".label-print-root .label-page").count() === 3, "receiving preview used total stock instead of increment");
+    await page.getByText("设备与打印设置", {exact:true}).click();
+    await page.getByLabel("显示售价", {exact:true}).uncheck();
+    expect(await page.locator("[data-label-price]").count() === 0, "hidden prices remain on printed labels");
+    await page.getByRole("spinbutton", {name:"水平偏移",exact:true}).fill("1.5");
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("clothing.label-print-profile.v1")).offsetX) === 1.5, "print preference was not stored locally");
+    await page.getByLabel("显示售价", {exact:true}).check();
+    await page.getByRole("button", {name:"校准页",exact:true}).click();
+    expect(await page.locator('svg[data-barcode="PT1509-TEST"]').count() === 1, "calibration barcode missing");
+    await page.getByRole("button", {name:"返回商品标签",exact:true}).click();
+    expect(await page.locator(".label-print-root .label-page").count() === 3, "calibration altered queued copies");
     await page.locator(".label-no-print").getByRole("button", {name:"关闭",exact:true}).click();
+    expect(await page.getByRole("button",{name:"打印本次标签",exact:true}).count() === 1,"closing preview marked labels printed");
+    page.once("dialog", dialog => dialog.dismiss());
+    await page.getByRole("button",{name:"确认实物已打印",exact:true}).click();
+    expect(await page.getByRole("button",{name:"打印本次标签",exact:true}).count() === 1,"cancelled confirmation lost queued labels");
     page.once("dialog", dialog => dialog.accept());
-    await page.getByRole("button",{name:"清空队列",exact:true}).click();
-    expect(await page.getByRole("button",{name:"打印本次标签",exact:true}).count() === 0,"batch clear kept old labels");
-    console.log("PASS contextual product labels / receiving labels / failed result / retry ID");
+    await page.getByRole("button",{name:"确认实物已打印",exact:true}).click();
+    await page.locator("[data-label-print-confirmation]").waitFor();
+    expect((await page.locator("[data-label-print-confirmation]").innerText()).includes("3 张"),"physical confirmation did not record actual queue count");
+    expect(await page.getByRole("button",{name:"打印本次标签",exact:true}).count() === 0,"confirmed print kept pending labels");
+    expect(writes.length === 2,"print confirmation unexpectedly wrote inventory");
+    console.log("PASS contextual product labels / receiving labels / failed result / retry ID / physical confirmation");
   } finally { await context.close(); }
 }
 async function verifyScanner(browser) {
