@@ -145,29 +145,20 @@ async function login(page) {
 }
 
 async function selectAdminTab(page, key) {
-  const visibleTab = page.locator(`[data-admin-tab="${key}"]:visible`).first();
-  if (await visibleTab.count()) {
-    await visibleTab.click();
+  const compact = page.viewportSize().width < 1280;
+  if (compact) await page.getByRole("button", { name: /^菜单 ·/ }).click();
+  if (key === "labels") {
+    await page.locator('[data-admin-section="more"]:visible').click();
+    await page.locator('[data-admin-management-group="store"] summary').click();
+    await page.locator('[data-admin-tool="labels"]').click();
     return;
   }
-  const addTab = page.locator(`[data-admin-add-tab="${key}"]:visible`).first();
-  if (!(await addTab.count())) {
-    const customize = page.locator("[data-admin-customize-toggle]");
-    if (await customize.count()) await customize.click();
-  }
-  const visibleAddTab = page.locator(`[data-admin-add-tab="${key}"]:visible`).first();
-  if (await visibleAddTab.count()) {
-    await visibleAddTab.click();
-    await page.locator(`[data-admin-tab="${key}"]:visible`).first().click();
+  if (key === "posOrders") {
+    await page.locator('[data-admin-section="orders"]:visible').click();
+    await page.getByLabel("订单来源", { exact: true }).selectOption("store");
     return;
   }
-  const details = page.locator("nav details");
-  if (await details.count()) {
-    await details.locator("summary").click();
-    await page.locator(`[data-admin-tab="${key}"]:visible`).first().click();
-    return;
-  }
-  throw new Error(`admin tab ${key} is not reachable`);
+  throw new Error(`unmapped test view ${key}`);
 }
 
 async function openLabels(page) {

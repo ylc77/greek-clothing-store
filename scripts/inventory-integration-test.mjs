@@ -365,6 +365,7 @@ async function startApp() {
     cwd: ROOT,
     env: {
       ...process.env,
+      ADMIN_INVENTORY_TEST_ISOLATED: "1",
       NEXT_PUBLIC_SITE_URL: APP_URL,
       NEXT_PUBLIC_SUPABASE_URL: local.API_URL,
       NEXT_PUBLIC_SUPABASE_ANON_KEY: local.ANON_KEY,
@@ -578,7 +579,8 @@ try {
 
   await runCase("inventory role may adjust stock but not quick sell", async () => {
     const fixture = await createFixture("INVENTORY-ROLE", [1], { oneSize: true });
-    assert.equal((await adjust(fixture, auditId("INVENTORY-WRITE"), { quantity: 1 }, "inventory")).status, 200);
+    const response = await adjust(fixture, auditId("INVENTORY-WRITE"), { quantity: 1 }, "inventory");
+    assert.equal(response.status, 200, `inventory adjustment rejected: ${response.data.code || "unknown"} ${response.data.error || ""}`);
     assert.equal((await quickSell(fixture, auditId("INVENTORY-SELL"), {}, { role: "inventory" })).status, 403);
   });
 

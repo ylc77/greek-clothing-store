@@ -18,19 +18,13 @@ import { PosReceiptPreview } from "@/components/pos-receipt-preview";
 import { LabelPrintPreview, type LabelSize, type PrintableVariantLabel } from "@/components/label-print-preview";
 import type { AdminPermission, AdminRole } from "@/lib/admin-auth";
 import { featurePlanPresets, type FeatureFlags, type FeatureKey } from "@/lib/feature-catalog";
-import {
-  adminCommonNavigationLabelByKey,
-  adminCommonTabsStorageKey,
-  adminDesktopOnlyTabKeys,
-  adminNavigableTabKeys,
-  adminNavigationGroups,
-  adminNavigationLabelByKey,
-  getDefaultAdminCommonTabs,
-  isAdminTabVisibleInViewport,
-  moveAdminCommonTab,
-  normalizeAdminCommonTabs,
-  type AdminNavigationTab,
-} from "@/lib/admin-navigation";
+import { adminSectionForView, getAdminPrimaryNavigation, getAdminDefaultView, adminWorkspaceActions, adminVisibleMessage, type AdminView, type AdminPrimaryKey } from "@/lib/admin-navigation";
+import { AdminShell } from "@/components/admin-shell";
+import { WorkspacePage } from "@/components/workspace-page";
+import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
+import { useOperationLabelQueue } from "@/hooks/use-operation-label-queue";
+import { OperationLabelQueue } from "@/components/operation-label-queue";
+import { AdminMorePage } from "@/components/admin-more-page";
 import { getSupabaseBrowserAuthClient } from "@/lib/supabase";
 import { tokenUpdateForSupabaseAuthEvent } from "@/lib/admin-session-lifecycle";
 import { PosOperationIdStore } from "@/lib/pos-operation-id";
@@ -231,7 +225,7 @@ type ProductCopyResult = TranslationResult & {
 };
 type ImageUploadOptions = { sku?: string; mode?: "main" | "gallery" };
 type ImageDeleteOptions = { sku: string; kind: "main" | "gallery"; index?: number };
-type Tab = AdminNavigationTab;
+type Tab = AdminView;
 type AdminSession = { role: AdminRole; permissions: AdminPermission[]; authType?: "password" | "account"; email?: string | null; displayName?: string | null };
 type InventoryItem = {
   product_id: number;
@@ -515,10 +509,7 @@ const fallbackSubcategoryNamesCn: Record<string, string> = {
   sneakers: "运动鞋", boots: "靴子", sandals: "凉鞋", heels: "高跟鞋", handbags: "手提包", backpacks: "双肩包", wallets: "钱包", suitcases: "行李箱", travel_bags: "旅行包",
   caps: "鸭舌帽", beanies: "针织帽", necklaces: "项链", bracelets: "手链", earrings: "耳环", rings: "戒指", accessories: "配饰",
 };
-const tabLabelByKey = adminNavigationLabelByKey;
-const commonTabLabelByKey = adminCommonNavigationLabelByKey;
 const ownerOnlyTabs = new Set<Tab>(["quickAdd", "quickSale", "add", "csv", "images", "categories", "suppliers"]);
-const desktopOnlyTabs = new Set<Tab>(adminDesktopOnlyTabKeys);
 const tabPermissions: Partial<Record<Tab, AdminPermission>> = {
   dashboard: "products:read",
   check: "products:read",
@@ -625,7 +616,7 @@ function movementTypeLabel(value: string) {
 function sourceTypeLabel(value: string | null) {
   if (!value) return "-";
   const labels: Record<string, string> = {
-    quick_sell: "快速售出",
+    quick_sell: "库存紧急扣减",
     admin_create: "后台新增",
     admin_edit: "后台编辑",
     csv_import: "CSV 导入",
@@ -867,9 +858,8 @@ export function AdminDashboard({
   const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
   const [adminFeatures, setAdminFeatures] = useState<FeatureFlags>(initialFeatures);
   const [featureSettingsFallback, setFeatureSettingsFallback] = useState(!initialFeatureSettingsConfigured);
-  const [commonTabKeys, setCommonTabKeys] = useState<Tab[]>(() => getDefaultAdminCommonTabs("owner"));
-  const [commonTabsReady, setCommonTabsReady] = useState(false);
-  const [customizingCommonTabs, setCustomizingCommonTabs] = useState(false);
+  const [navigationReady, setNavigationReady] = useState<AdminRole | null>(null);
+  const initialHomeRole = useRef<string | null>(null);
   const [isCompactAdminViewport, setIsCompactAdminViewport] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
@@ -895,7 +885,9 @@ export function AdminDashboard({
   const csvFileInputRef = useRef<HTMLInputElement | null>(null);
   const csvPreviewSequenceRef = useRef(0);
   const [imageResults, setImageResults] = useState<ApiResult[]>([]); const [selectedImageSku, setSelectedImageSku] = useState("");
-  const [tab, setTab] = useState<Tab>("stockLookup");
+  const [tab, setTab] = useState<Tab>("workspace");
+  const [orderSource, setOrderSource] = useState<"all" | "store" | "online">("all");
+  const operationLabels = useOperationLabelQueue();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [autoCompletingId, setAutoCompletingId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ open: boolean; title: string; desc: ReactNode; confirmText: string; variant: "danger"|"success"|"default"; action: () => void; prompt?: boolean; promptValue?: string }>({ open: false, title: "", desc: "", confirmText: "确认", variant: "default", action: () => {} });
@@ -1010,30 +1002,17 @@ export function AdminDashboard({
   const [posDailyLoading, setPosDailyLoading] = useState(false);
   const [posDailyMessage, setPosDailyMessage] = useState("");
   useEffect(() => {
-    const role = adminSession?.role;
-    if (!role) {
-      setCommonTabsReady(false);
-      return;
-    }
-    const fallback = getDefaultAdminCommonTabs(role);
-    setCommonTabsReady(false);
-    try {
-      const saved = window.localStorage.getItem(adminCommonTabsStorageKey(role));
-      setCommonTabKeys(saved ? normalizeAdminCommonTabs(JSON.parse(saved), fallback) : fallback);
-    } catch {
-      setCommonTabKeys(fallback);
-    } finally {
-      setCommonTabsReady(true);
-    }
+    setTab("workspace");
+    initialHomeRole.current = null;
+    if (adminSession?.role === "inventory") setStockOperationMode("receiving");
+    setOrderSource("all");
+    operationLabels.dispatch({ type: "reset" });
   }, [adminSession?.role]);
   useEffect(() => {
-    if (!commonTabsReady || !adminSession?.role) return;
-    try {
-      window.localStorage.setItem(adminCommonTabsStorageKey(adminSession.role), JSON.stringify(commonTabKeys));
-    } catch {
-      // Browsers with blocked storage can still use the customization for the current page session.
-    }
-  }, [adminSession?.role, commonTabKeys, commonTabsReady]);
+    if (!adminSession || navigationReady !== adminSession.role || initialHomeRole.current === adminSession.role) return;
+    initialHomeRole.current = adminSession.role;
+    setTab(getAdminDefaultView(adminSession.role));
+  }, [adminSession?.role, navigationReady]);
   useEffect(() => {
     const supabase = getSupabaseBrowserAuthClient();
     if (!supabase) return;
@@ -1089,10 +1068,12 @@ export function AdminDashboard({
       .then((data) => {
         const configured = data.settings?.configured === true;
         setAdminFeatures(configured ? (data.settings?.features || defaultAdminFeatures) : defaultAdminFeatures);
+        setNavigationReady(adminSession.role);
         setFeatureSettingsFallback(!configured);
       })
       .catch(() => {
         setAdminFeatures(defaultAdminFeatures);
+        setNavigationReady(adminSession.role);
         setFeatureSettingsFallback(true);
       });
   }, [adminSession, adminAuthToken, activePassword]);
@@ -1154,56 +1135,57 @@ export function AdminDashboard({
   const categoryPathDisplayLabel = (categorySlug: string, subcategorySlug: string) => `${categoryDisplayLabel(categorySlug)} / ${subcategoryDisplayLabel(categorySlug, subcategorySlug)}`;
   const canUseTab = (key: Tab) => {
     if (!adminSession) return false;
+    if (key === "workspace") return true;
+    if (key === "more") return isOwner || hasPermission("labels:write") && adminFeatures.barcode_labels;
+    if (key === "ordersAll") return hasPermission("pos:read") && adminFeatures.pos_orders || hasPermission("online_orders:read") && adminFeatures.online_orders;
+    if (key === "returns") return hasPermission("inventory:write") && adminFeatures.inventory || hasPermission("pos:read") && adminFeatures.pos_orders || hasPermission("online_orders:read") && adminFeatures.online_orders;
+    if (key === "diagnostics") return isOwner;
+    if (key === "printing") return hasPermission("labels:write") && adminFeatures.barcode_labels;
+    if (key === "staff") return isOwner && adminFeatures.staff_accounts;
+    if (key === "backup") return isOwner && adminFeatures.backup_tools && hasPermission("backup:read");
     const feature = tabFeatures[key];
     if (feature && !adminFeatures[feature]) return false;
     if (ownerOnlyTabs.has(key)) return isOwner;
     const permission = tabPermissions[key];
     return permission ? hasPermission(permission) : isOwner;
   };
-  const commonTabKeySet = new Set(commonTabKeys);
-  const visibleCommonTabKeys = commonTabKeys.filter(key => canUseTab(key) && isAdminTabVisibleInViewport(key, isCompactAdminViewport));
-  const visibleAdvancedTabKeys = adminNavigableTabKeys.filter(key => !commonTabKeySet.has(key) && canUseTab(key) && isAdminTabVisibleInViewport(key, isCompactAdminViewport));
-  const canUseMaintenanceExport = Boolean(isOwner && adminFeatures.backup_tools && !isCompactAdminViewport);
-  const visibleManagementGroups = adminNavigationGroups
-    .map(group => ({
-      ...group,
-      tabKeys: group.tabKeys.filter(key => !commonTabKeySet.has(key) && canUseTab(key) && isAdminTabVisibleInViewport(key, isCompactAdminViewport)),
-    }))
-    .filter(group => group.tabKeys.length > 0 || (group.key === "batch" && canUseMaintenanceExport));
-  const addCommonTab = (key: Tab) => setCommonTabKeys(current => current.includes(key) ? current : [...current, key]);
-  const removeCommonTab = (key: Tab) => {
-    const usableCompactTabs = commonTabKeys.filter(candidate => canUseTab(candidate) && isAdminTabVisibleInViewport(candidate, true));
-    if (isAdminTabVisibleInViewport(key, true) && usableCompactTabs.length <= 1) {
-      toast("常用操作至少保留一项", "err");
-      return;
-    }
-    setCommonTabKeys(current => current.filter(item => item !== key));
-  };
-  const moveCommonTab = (key: Tab, direction: -1 | 1) => setCommonTabKeys(current => moveAdminCommonTab(current, key, direction, visibleCommonTabKeys));
-  const resetCommonTabs = () => setCommonTabKeys(getDefaultAdminCommonTabs(adminSession?.role || "owner"));
-  const activateAdminTab = (key: Tab, source: "common" | "management" = "management") => {
-    if (key === "stockOperations") setStockOperationMode(source === "common" ? "receiving" : "stocktake");
+  const available = (key: Tab) => canUseTab(key) && (!["pos", "csv", "images"].includes(key) || !isCompactAdminViewport);
+  const primaryItems = getAdminPrimaryNavigation(canUseTab, isCompactAdminViewport);
+  const activeSection = adminSectionForView(tab, stockOperationMode);
+  const workspaceActions = adminWorkspaceActions[adminSession?.role || "readonly"].filter(action => available(action.view));
+  const activateAdminTab = (key: Tab) => {
+    if (!available(key)) return;
+    if (key === "check") { setFilterStatus("incomplete"); setTab("dashboard"); return; }
+    if (key === "stockLookup") { setTab("inventory"); return; }
     setTab(key);
-    setCustomizingCommonTabs(false);
   };
+  const openStockMode = (mode: StockOperationMode) => {
+    if (!canUseTab("stockOperations") || stockOperationSubmitting) return;
+    if (stockOperationMode !== mode) {
+      setStockOperationMode(mode);
+      setStockOperationItem(null); setStockOperationQuantity(""); setStockOperationReference("");
+      setStockOperationError(""); setStockOperationMessage(""); setStockOperationResults([]); setStockOperationQuery("");
+    }
+    setTab("stockOperations");
+  };
+  const selectSection = (key: AdminPrimaryKey) => {
+    if (key === "receiving") { openStockMode("receiving"); return; }
+    if (key === "catalog") { activateAdminTab(canUseTab("dashboard") ? "dashboard" : canUseTab("inventory") ? "inventory" : "labels"); return; }
+    if (key === "orders") { activateAdminTab(canUseTab("ordersAll") ? "ordersAll" : "returns"); return; }
+    activateAdminTab(key);
+  };
+  const showStoreOrders = canUseTab("posOrders") && (tab === "posOrders" || tab === "ordersAll" && orderSource !== "online");
+  const showOnlineOrders = canUseTab("onlineOrders") && (tab === "onlineOrders" || tab === "ordersAll" && orderSource !== "store");
   const activeStockOperation = stockOperationOptions.find(option => option.key === stockOperationMode)!;
   useEffect(() => {
-    if (!adminSession) return;
-    if (canUseTab(tab)) return;
-    const nextTab = visibleCommonTabKeys[0] || visibleAdvancedTabKeys[0] || "dashboard";
-    setTab(nextTab);
-  }, [adminSession, adminFeatures, tab, visibleCommonTabKeys, visibleAdvancedTabKeys]);
+    if (adminSession && !available(tab)) setTab("workspace");
+  }, [adminSession, adminFeatures, tab, isCompactAdminViewport]);
   useEffect(() => {
-    const compactViewport = window.matchMedia("(max-width: 1279px)");
-    const syncCompactViewport = () => setIsCompactAdminViewport(compactViewport.matches);
-    syncCompactViewport();
-    compactViewport.addEventListener("change", syncCompactViewport);
-    return () => compactViewport.removeEventListener("change", syncCompactViewport);
+    const viewport = window.matchMedia("(max-width: 1279px)");
+    const sync = () => setIsCompactAdminViewport(viewport.matches);
+    sync(); viewport.addEventListener("change", sync);
+    return () => viewport.removeEventListener("change", sync);
   }, []);
-  useEffect(() => {
-    if (isAdminTabVisibleInViewport(tab, isCompactAdminViewport)) return;
-    setTab(visibleCommonTabKeys[0] || visibleAdvancedTabKeys[0] || "dashboard");
-  }, [isCompactAdminViewport, tab, visibleCommonTabKeys, visibleAdvancedTabKeys]);
 
   const csvSummary = useMemo(() => {
     if (!csvPreview) return { valid: 0, invalid: 0, needsTranslation: 0 };
@@ -1282,6 +1264,9 @@ export function AdminDashboard({
     if (filterStatus === "active") list = list.filter(p => p.is_active);
     if (filterStatus === "inactive") list = list.filter(p => !p.is_active);
     if (filterStatus === "nostock") list = list.filter(p => effectiveStock(p) === 0);
+    if (filterStatus === "noimg") list = list.filter(p => !p.image_url);
+    if (filterStatus === "untranslated") list = list.filter(p => !p.name_en?.trim() || !p.name_gr?.trim() || !p.description_en?.trim() || !p.description_gr?.trim());
+    if (filterStatus === "incomplete") list = list.filter(p => !p.image_url || !p.category || !p.subcategory || !p.name_en?.trim() || !p.name_gr?.trim() || !p.description_en?.trim() || !p.description_gr?.trim() || !(Number(p.price) > 0));
     return list;
   }, [products, search, filterCat, filterSub, filterStatus]);
 
@@ -1602,7 +1587,7 @@ export function AdminDashboard({
     const r = await fetch(path, { ...init, headers: { "Content-Type": "application/json", ...adminAuthHeaders(), ...(init.headers || {}) } });
     const d = (await r.json().catch(() => ({}))) as Record<string, unknown>;
     if (r.status === 401 && adminSession?.authType === "account") void logoutAdmin();
-    if (!r.ok) throw new AdminApiError(typeof d.error === "string" ? d.error : "Request failed", r.status, d);
+    if (!r.ok) throw new AdminApiError(adminVisibleMessage(typeof d.error === "string" ? d.error : "请求失败", isOwner), r.status, d);
     return d;
   }
   async function readJson(r: Response, fallback: string) { const ct = r.headers.get("Content-Type")||""; if (ct.includes("json")) return r.json(); const t = await r.text(); throw new Error(t ? `${fallback}: ${t.slice(0, 160)}` : fallback); }
@@ -1628,7 +1613,7 @@ export function AdminDashboard({
     if (data.sku || data.variant_sku) {
       return `${data.error || fallback} ${data.sku || ""} ${data.variant_sku || ""}`.trim();
     }
-    return String(data.error || fallback);
+    return adminVisibleMessage(String(data.error || fallback), isOwner);
   }
 
   async function posApi(path: string, init: RequestInit = {}) {
@@ -1915,13 +1900,16 @@ export function AdminDashboard({
     setPosPreview(null);
   }
 
-  async function searchPosProducts(autoAdd = false) {
+  async function searchPosProducts(autoAdd = false, scannedBarcode?: string, signal?: AbortSignal) {
     setPosLoading(true);
     setPosMessage("");
     try {
       const params = new URLSearchParams();
-      if (posQuery.trim()) params.set("q", posQuery.trim());
-      const data = await posApi(`/api/admin/pos/search?${params.toString()}`);
+      const query = (scannedBarcode ?? posQuery).trim();
+      if (!query) return;
+      params.set("q", query);
+      const data = await posApi(`/api/admin/pos/search?${params.toString()}`, { signal });
+      if (signal?.aborted) return;
       const items = (Array.isArray(data.items) ? data.items : []) as PosSearchItem[];
       setPosResults(items);
       if (items.length === 0) {
@@ -1929,25 +1917,22 @@ export function AdminDashboard({
         return;
       }
       if (autoAdd) {
-        const q = posQuery.trim().toLowerCase();
-        const exact = items.find(item =>
-          item.barcode?.toLowerCase() === q ||
-          item.variant_sku.toLowerCase() === q ||
-          item.product_sku.toLowerCase() === q
-        );
-        if (exact || items.length === 1) {
-          addPosItem(exact || items[0]);
+        const exact = items.filter(item => item.barcode === query);
+        if (exact.length === 1 || !scannedBarcode && items.length === 1) {
+          addPosItem(exact[0] || items[0]);
           setPosQuery("");
         } else {
-          setPosMessage(`找到 ${items.length} 个结果，请选择要加入购物车的商品。`);
+          setPosMessage(scannedBarcode && exact.length === 0 ? "未找到精确条码，请核对商品后从搜索结果选择。" : `找到 ${items.length} 个结果，请选择要加入购物车的商品。`);
         }
       }
     } catch (error) {
+      if (signal?.aborted) return;
       const message = error instanceof Error ? error.message : "POS 搜索失败";
       setPosMessage(message);
       toast(message, "err");
     } finally {
       setPosLoading(false);
+      if (!signal?.aborted) posSearchInputRef.current?.focus({ preventScroll: true });
     }
   }
 
@@ -2218,7 +2203,7 @@ export function AdminDashboard({
       setInventoryLoading(false);
     }
   }
-  async function loadLabelInventoryData() {
+  async function loadLabelInventoryData(): Promise<InventoryItem[] | null> {
     setInventoryLoading(true);
     setInventoryError("");
     try {
@@ -2233,13 +2218,70 @@ export function AdminDashboard({
         if (page.length < pageSize || offset >= Number(d.total || 0)) break;
       }
       setInventoryItems(rows);
+      return rows;
     } catch (error) {
       const message = error instanceof Error ? error.message : "标签商品加载失败";
       setInventoryError(message);
       toast(message, "err");
+      return null;
     } finally {
       setInventoryLoading(false);
     }
+  }
+  async function openContextLabels(productId?: number) {
+    if (!canUseTab("labels")) return;
+    const rows = await loadLabelInventoryData();
+    if (!rows) return;
+    const selected = rows.filter(item => productId !== undefined && item.product_id === productId);
+    setLabelCategory(""); setLabelSubcategory(""); setLabelSearch(""); setLabelSizeFilter(""); setLabelStockFilter("all"); setLabelOnlyMissingBarcode(false);
+    setLabelProductId(productId === undefined ? "" : String(productId));
+    setSelectedLabelVariantIds(new Set(selected.map(item => item.variant_id)));
+    setLabelCopyCounts(Object.fromEntries(selected.map(item => [item.variant_id, 1])));
+    setLabelMessage(productId === undefined ? "已选择本次会话成功入库的规格，打印数量为本次入库件数，可在打印前修改。" : "已选择该商品规格，每个规格默认一张，可修改打印数量。");
+    setTab("labels");
+  }
+  async function queueSavedProductLabels(productId: number, operationId: string, rows: Array<{ size: string; color: string; quantity: number }>, creating: boolean, snapshot?: AdminProduct) {
+    if (!canUseTab("labels")) return;
+    try {
+      if (!Number.isSafeInteger(productId) || productId <= 0) throw new Error("商品已保存，但没有返回商品 ID；请从商品列表补打，不要重复创建商品。");
+      const authoritative = snapshot && Number(snapshot.id) === productId && snapshot.variants?.length ? snapshot : null;
+      const all = authoritative ? null : await loadLabelInventoryData();
+      if (!authoritative && !all) throw new Error("商品已保存，但标签数据读取失败；请从商品列表补打。");
+      const final = authoritative ? authoritative.variants!.map(variant => ({
+        variant_id: variant.id, variant_sku: variant.variant_sku, barcode: variant.barcode,
+        product_name: authoritative.name_cn || authoritative.name_en || authoritative.sku,
+        product_name_en: authoritative.name_en, product_name_gr: authoritative.name_gr,
+        product_sku: authoritative.sku, size: variant.size, color: variant.color,
+        price: Number(variant.price ?? authoritative.price), quantity_on_hand: variant.quantity_on_hand, active: variant.active,
+      })) : all!.filter(item => item.product_id === productId);
+      const missing = final.filter(item => !item.barcode?.trim());
+      for (let offset = 0; offset < missing.length; offset += 100) {
+        const batch = missing.slice(offset, offset + 100);
+        const result = await api("/api/admin/variants/generate-barcodes", {
+          method: "POST",
+          body: JSON.stringify({ variantIds: batch.map(item => item.variant_id), mode: "variant_sku", clientRequestId: `product-labels:${operationId}:${offset}` }),
+        });
+        for (const item of batch) {
+          const resolved = (Array.isArray(result.items) ? result.items : []).find((entry: { variantId: string }) => entry.variantId === item.variant_id);
+          if (!resolved || resolved.status === "failed" || typeof resolved.barcode !== "string" || !resolved.barcode.trim()) throw new Error("商品已保存，部分条码生成未确认；请在标签补打中核对缺失条码。");
+          item.barcode = resolved.barcode;
+        }
+      }
+      const labels = rows.filter(row => !creating || row.quantity > 0).map(row => {
+        const matches = final.filter(item => variantCatalogKey(item.size, item.color) === variantCatalogKey(row.size, row.color));
+        if (matches.length !== 1 || !matches[0].barcode?.trim()) throw new Error("商品已保存，但规格或最终条码未能确认；请刷新商品后补打，不能使用推测条码。");
+        return { label: matches[0], copies: creating ? row.quantity : 1 };
+      });
+      operationLabels.dispatch({ type: "enqueue", operationId, source: creating ? "首次入库" : "商品编辑补打", labels });
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "商品已保存，标签准备失败；请从商品列表补打。", "err");
+    }
+  }
+  function productContextActions(product: AdminProduct) {
+    return <div className="mt-2 flex flex-wrap gap-2">
+      {canUseTab("inventory") && hasPermission("inventory:write") ? <button type="button" className="admin-button-secondary" onClick={() => { setInventoryQ(product.sku); setInventoryCategory(""); setInventorySubcategory(""); setTab("inventory"); }}>调整库存</button> : null}
+      {canUseTab("labels") ? <button type="button" className="admin-button-secondary" onClick={() => void openContextLabels(Number(product.id))}>打印标签</button> : null}
+    </div>;
   }
   async function loadStockLookup() {
     const query = stockLookupQuery.trim();
@@ -2377,9 +2419,8 @@ export function AdminDashboard({
         throw new Error(typeof variantResult?.message === "string" ? variantResult.message : "内部 Barcode 生成失败，库存尚未入库。");
       }
 
-      const barcode = typeof variantResult?.barcode === "string" && variantResult.barcode.trim()
-        ? variantResult.barcode.trim()
-        : item.variant_sku.trim();
+      const barcode = typeof variantResult?.barcode === "string" ? variantResult.barcode.trim() : "";
+      if (!barcode) throw new Error("服务端未返回最终 Barcode，请刷新核对后重试；不会猜测条码。");
       const updatedItem = { ...item, barcode };
       const updateBarcode = (candidate: InventoryItem) => candidate.variant_id === item.variant_id
         ? { ...candidate, barcode }
@@ -2436,6 +2477,9 @@ export function AdminDashboard({
       const barcodeMessage = barcodeResult.generated ? `已生成内部 Barcode ${item.barcode}；` : "";
       const warning = result.legacySyncWarning ? ` 旧库存同步需要检查：${result.legacySyncWarning}` : "";
       setStockOperationMessage(`${barcodeMessage}${actionMessage}${warning}`);
+      if (stockOperationMode === "receiving" && !result.noChange && operationId) {
+        operationLabels.dispatch({ type: "enqueue", operationId, source: "到货入库", labels: [{ label: item, copies: quantity }] });
+      }
       toast(`${barcodeMessage}${actionMessage}${warning}`, result.legacySyncWarning ? "err" : "ok");
 
       const updateQuantity = (candidate: InventoryItem) => {
@@ -2529,7 +2573,7 @@ export function AdminDashboard({
     setInventoryLoading(true);
     setInventoryError("");
     try {
-      await Promise.all([loadInventoryOverview(), loadInventoryMovements(nextVariantId), loadInventoryReconciliation()]);
+      await Promise.all([loadInventoryOverview(), loadInventoryMovements(nextVariantId), ...(isOwner ? [loadInventoryReconciliation()] : [])]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "库存数据加载失败";
       setInventoryError(message);
@@ -2544,7 +2588,7 @@ export function AdminDashboard({
     if (tab === "labels") void loadLabelInventoryData();
   }, [adminSession, adminAuthToken, activePassword, tab]);
   useEffect(() => {
-    if (!adminSession || tab !== "stockLookup") return;
+    if (!adminSession || (tab !== "stockLookup" && tab !== "inventory")) return;
     window.setTimeout(() => stockLookupInputRef.current?.focus(), 50);
   }, [adminSession, tab]);
   useEffect(() => {
@@ -2757,10 +2801,10 @@ export function AdminDashboard({
     }
   }, [tab]);
   useEffect(() => {
-    if (adminSession && tab === "posOrders") {
+    if (adminSession && showStoreOrders) {
       void loadPosOrders();
     }
-  }, [adminSession, adminAuthToken, activePassword, tab, posOrderStatus, posOrderPaymentMethod, posOrderDateRange]);
+  }, [adminSession, adminAuthToken, activePassword, tab, showStoreOrders, posOrderStatus, posOrderPaymentMethod, posOrderDateRange]);
   useEffect(() => {
     if (adminSession && tab === "posDaily") {
       void loadPosDailyReport();
@@ -3405,6 +3449,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         toast(storageError instanceof Error ? storageError.message : "商品已保存，但本地业务 ID 清理失败。", "err");
       }
       toast(editingId ? "商品已更新" : "商品已新增");
+      await queueSavedProductLabels(Number(saved?.product?.id ?? editingId), operationId, variants, !editingId, saved?.product);
       if (saved?.cacheWarning) toast(String(saved.cacheWarning), "err");
 
       if (!editingId && (newMainFile || newGalleryFiles.length > 0)) {
@@ -3964,6 +4009,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         toast(storageError instanceof Error ? storageError.message : "商品已新增，但本地业务 ID 清理失败。", "err");
       }
       const savedSku = saved?.product?.sku || sku;
+      await queueSavedProductLabels(Number(saved?.product?.id), operationId, variants, true, saved?.product);
       let imageFailure = "";
       try {
         const main = new FormData();
@@ -4123,6 +4169,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   }
 
   async function logoutAdmin() {
+    operationLabels.dispatch({ type: "reset" }); setSelectedLabelVariantIds(new Set()); setLabelCopyCounts({});
     const supabase = getSupabaseBrowserAuthClient();
     if (supabase) await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
     setAdminSession(null);
@@ -4133,6 +4180,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   }
 
   /* ── Login gate ─────────────────────────────────────────── */
+  useBarcodeScanner({
+    active: tab === "pos" && Boolean(adminSession) && canUseTab("pos") && !posCheckoutLoading && !confirm.open,
+    inputRef: posSearchInputRef,
+    onScan: (code, signal) => searchPosProducts(true, code, signal),
+  });
+
   if (!adminSession) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-[#fbfaf6] via-white to-stone-100 flex items-center justify-center px-4 py-10">
@@ -4170,7 +4223,12 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
   /* ── Logged-in UI ────────────────────────────────────────── */
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#fbfaf6] via-white to-[#f6f1ea]">
-      <div className="mx-auto max-w-[96rem] px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <AdminShell items={primaryItems} active={activeSection} onSelect={selectSection}>
+        {canUseTab("labels") ? <OperationLabelQueue entries={operationLabels.entries} total={operationLabels.total} revision={operationLabels.revision} confirmedPrinted={operationLabels.confirmedPrinted} dispatch={operationLabels.dispatch} onPrint={() => {
+          if (!initialPrintSettings.business_name.trim()) { toast("请先配置打印店名", "err"); return; }
+          if (operationLabels.total > 1000) { toast("单次最多预览 1000 张，请减少份数后分次打印。", "err"); return; }
+          setLabelPreviewItems(operationLabels.entries.flatMap(entry => Array.from({ length: entry.copies }, (_, index) => ({ ...entry.label, print_key: `${entry.label.variant_id}-${index}` }))));
+        }} /> : null}
         {/* ── Top bar ────────────────────────────────────── */}
         <header className="mb-4 flex flex-col gap-3 rounded-2xl border border-stone-200/80 bg-white/95 p-4 shadow-sm shadow-stone-900/5 backdrop-blur sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:rounded-3xl sm:p-5">
           <div>
@@ -4183,150 +4241,40 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           </div>
         </header>
 
-        {posRuntimeIssue ? (
-          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700 sm:mb-6" role="alert">
-            POS 安全配置未完成：{posRuntimeIssue}
-          </div>
-        ) : null}
-
-        {featureSettingsFallback ? (
-          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800 sm:mb-6" role="status">
-            功能配置尚未完成或暂时无法读取，当前已安全回退到基础版（Basic）；高级功能保持关闭。
-          </div>
-        ) : null}
-
-        {/* ── Stats cards ────────────────────────────────── */}
-        <div className={`${tab === "dashboard" ? "grid" : "hidden"} mb-4 grid-cols-2 gap-2 sm:mb-6 sm:grid-cols-4 sm:gap-3 xl:grid-cols-6`}>
-          {[{ label: "商品总数", v: stats.total, color: "bg-stone-500" }, { label: "已上架", v: stats.active, color: "bg-emerald-500" }, { label: "缺图片", v: stats.noImage, color: "bg-amber-400" }, { label: "库存为0", v: stats.noStock, color: "bg-rose-400" }, { label: "未分尺码", v: stats.noSizeStock, color: "bg-violet-400", desktopOnly: true }, { label: "分类数", v: stats.categories, color: "bg-sky-400", desktopOnly: true }].map(s => (
-            <div key={s.label} className={`relative overflow-hidden rounded-2xl border border-stone-200/70 bg-white p-3 shadow-sm shadow-stone-900/5 sm:p-4 ${s.desktopOnly ? "hidden xl:block" : "block"}`}>
-              <div className={`absolute top-0 left-0 w-1 h-full ${s.color} rounded-l-full`} />
-              <p className="text-2xl font-black text-ink">{s.v}</p>
-              <p className="mt-0.5 text-[11px] font-bold text-stone-400">{s.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* ── Tab bar ─────────────────────────────────────── */}
-        <nav className="mb-4 sm:mb-6">
-          <div className="overflow-hidden rounded-2xl border border-stone-200/70 bg-white/95 shadow-sm shadow-stone-900/5">
-            <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-3 py-2.5 sm:px-4 sm:py-3">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Daily workflow</p>
-                <p className="mt-0.5 text-sm font-black text-ink">常用操作</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="hidden rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-500 md:inline-flex">
-                  当前：{tabLabelByKey.get(tab) || tab}
-                </span>
-                <button
-                  data-admin-customize-toggle
-                  className={`min-h-9 rounded-xl border px-3 py-2 text-xs font-black transition ${customizingCommonTabs ? "border-ink bg-ink text-white" : "border-stone-200 bg-white text-stone-600 hover:bg-stone-50"}`}
-                  onClick={() => setCustomizingCommonTabs(current => !current)}
-                  type="button"
-                >
-                  {customizingCommonTabs ? "完成" : "自定义"}
-                </button>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-3 lg:grid-cols-5" data-admin-common-tabs>
-              {visibleCommonTabKeys.map(key => (
-                <button
-                  data-admin-tab={key}
-                  key={key}
-                  className={`${desktopOnlyTabs.has(key) ? "hidden xl:flex" : "flex"} min-h-12 items-center justify-center rounded-xl px-3 py-2.5 text-center text-sm font-black transition sm:min-h-14 sm:px-4 sm:py-3 ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-ink hover:bg-stone-100"}`}
-                  onClick={() => activateAdminTab(key, "common")}
-                  type="button"
-                >
-                  {commonTabLabelByKey.get(key) || key}
-                </button>
-              ))}
-            </div>
-            {customizingCommonTabs ? (
-              <div className="border-t border-stone-100 bg-stone-50/70 p-3 sm:p-4" data-admin-common-customizer>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-sm font-black text-ink">调整常用操作</p>
-                    <p className="mt-1 text-xs leading-5 text-stone-500">使用左右按钮调整顺序；从下方分组中选择“加入常用”。每种角色的设置分别保存在当前浏览器。</p>
-                  </div>
-                  <button className="min-h-9 w-fit rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-600 hover:bg-stone-100" onClick={resetCommonTabs} type="button">恢复默认</button>
-                </div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                  {visibleCommonTabKeys.map((key, index) => (
-                    <div className={`${desktopOnlyTabs.has(key) ? "hidden xl:block" : "block"} rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5`} key={`${key}-custom`}>
-                      <p className="text-sm font-black text-ink">{commonTabLabelByKey.get(key) || key}</p>
-                      <div className="mt-3 grid grid-cols-3 gap-1.5">
-                        <button aria-label={`将${commonTabLabelByKey.get(key) || key}向前移动`} className="min-h-9 rounded-lg border border-stone-200 text-sm font-black text-stone-600 disabled:opacity-30" disabled={index === 0} onClick={() => moveCommonTab(key, -1)} type="button">←</button>
-                        <button aria-label={`将${commonTabLabelByKey.get(key) || key}向后移动`} className="min-h-9 rounded-lg border border-stone-200 text-sm font-black text-stone-600 disabled:opacity-30" disabled={index === visibleCommonTabKeys.length - 1} onClick={() => moveCommonTab(key, 1)} type="button">→</button>
-                        <button aria-label={`从常用操作移除${commonTabLabelByKey.get(key) || key}`} className="min-h-9 rounded-lg border border-red-100 text-xs font-black text-red-500 hover:bg-red-50" onClick={() => removeCommonTab(key)} type="button">移除</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {visibleAdvancedTabKeys.length > 0 ? (
-                  <div className="mt-4 border-t border-stone-200 pt-4">
-                    <p className="text-xs font-black text-stone-500">可加入的管理工具</p>
-                    <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      {visibleManagementGroups.filter(group => group.tabKeys.length > 0).map(group => (
-                        <div className={`${group.desktopOnly ? "hidden xl:block" : "block"} rounded-xl border border-stone-200 bg-white p-3`} key={`${group.key}-custom-group`}>
-                          <p className="text-xs font-black text-ink">{group.label}</p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {group.tabKeys.map(key => (
-                              <button className={`${desktopOnlyTabs.has(key) ? "hidden xl:inline-flex" : "inline-flex"} min-h-10 items-center rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-600 hover:border-stone-400 hover:text-ink`} data-admin-add-tab={key} key={`${key}-available`} onClick={() => addCommonTab(key)} type="button">＋ {commonTabLabelByKey.get(key) || key}</button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            <p className="border-t border-stone-100 px-3 py-2.5 text-[11px] font-bold leading-5 text-stone-400 xl:hidden">更多管理默认折叠；POS 扫码和批量工具仅在桌面端显示。</p>
-            {visibleManagementGroups.length > 0 ? (
-              <details className="border-t border-stone-100" data-admin-management-tools>
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black text-ink hover:bg-stone-50">
-                  <span>更多管理</span>
-                  <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-500">
-                    <span className="xl:hidden">库存、销售与商品资料</span>
-                    <span className="hidden xl:inline">{visibleManagementGroups.length} 组 · {visibleAdvancedTabKeys.length + (canUseMaintenanceExport ? 1 : 0)} 项</span>
-                  </span>
-                </summary>
-                <div className="grid gap-3 border-t border-stone-100 bg-stone-50/50 p-3 md:grid-cols-2 xl:grid-cols-4" data-admin-advanced-tabs>
-                  {visibleManagementGroups.map(group => (
-                    <section className={`${group.desktopOnly ? "hidden xl:block" : "block"} rounded-2xl border border-stone-200 bg-white p-3 shadow-sm shadow-stone-900/5`} data-admin-management-group={group.key} key={group.key}>
-                      <div className="mb-3 flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-black text-ink">{group.label}</p>
-                          <p className="mt-1 text-[11px] font-bold leading-4 text-stone-400">{group.description}</p>
-                        </div>
-                        <span className="shrink-0 rounded-full bg-stone-100 px-2 py-1 text-[10px] font-black text-stone-500">{group.tabKeys.length + (group.key === "batch" && canUseMaintenanceExport ? 1 : 0)} 项</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {group.tabKeys.map(key => (
-                          <button
-                            data-admin-tab={key}
-                            key={key}
-                            className={`${desktopOnlyTabs.has(key) ? "hidden xl:flex" : "flex"} min-h-11 items-center justify-center rounded-xl px-3 py-2 text-center text-xs font-black transition ${tab === key ? "bg-ink text-white shadow-sm shadow-stone-900/10" : "bg-stone-50 text-stone-600 hover:bg-stone-100 hover:text-ink"}`}
-                            onClick={() => activateAdminTab(key)}
-                            type="button"
-                          >
-                            {tabLabelByKey.get(key) || key}
-                          </button>
-                        ))}
-                        {group.key === "batch" && canUseMaintenanceExport ? (
-                          <button className="hidden min-h-11 items-center justify-center rounded-xl bg-stone-50 px-3 py-2 text-center text-xs font-black text-stone-600 hover:bg-stone-100 hover:text-ink xl:flex" onClick={() => void downloadProductBackup()} title="商品资料交换用途，不是数据库与图片灾备" type="button">商品资料导出</button>
-                        ) : null}
-                      </div>
-                    </section>
-                  ))}
-                </div>
-              </details>
-            ) : null}
-          </div>
-        </nav>
+        {tab === "workspace" ? <WorkspacePage actions={workspaceActions} stats={canUseTab("dashboard") ? stats : null} onSelect={(view, mode) => view === "stockOperations" ? openStockMode(mode || "receiving") : activateAdminTab(view)} /> : null}
+        {tab === "pos" && posRuntimeIssue ? <p role="alert" className="mb-4 rounded-xl bg-red-50 p-4 text-red-700">收银暂不可用，请联系负责人处理后重试。当前不能结账。</p> : null}
+        {activeSection === "catalog" ? <div className="mb-4 flex flex-wrap gap-2" aria-label="商品库存页面" data-admin-secondary>
+          {canUseTab("dashboard") ? <button type="button" className="admin-button-secondary aria-pressed:!border-ink aria-pressed:!bg-ink aria-pressed:!text-white" aria-pressed={["dashboard", "add", "quickAdd", "check"].includes(tab)} onClick={() => activateAdminTab("dashboard")}>商品</button> : null}
+          {canUseTab("inventory") ? <button type="button" className="admin-button-secondary aria-pressed:!border-ink aria-pressed:!bg-ink aria-pressed:!text-white" aria-pressed={tab === "inventory"} onClick={() => activateAdminTab("inventory")}>库存</button> : null}
+          {canUseTab("stockOperations") ? <button type="button" className="admin-button-secondary aria-pressed:!border-ink aria-pressed:!bg-ink aria-pressed:!text-white" aria-pressed={tab === "stockOperations"} onClick={() => openStockMode("stocktake")}>盘点</button> : null}
+        </div> : null}
+        {activeSection === "orders" ? <div className="mb-4 flex flex-wrap gap-2" aria-label="订单售后页面" data-admin-secondary>
+          {canUseTab("ordersAll") ? <button type="button" className="admin-button-secondary aria-pressed:!border-ink aria-pressed:!bg-ink aria-pressed:!text-white" aria-pressed={["ordersAll", "posOrders", "onlineOrders"].includes(tab)} onClick={() => activateAdminTab("ordersAll")}>全部订单</button> : null}
+          {canUseTab("returns") ? <button type="button" className="admin-button-secondary aria-pressed:!border-ink aria-pressed:!bg-ink aria-pressed:!text-white" aria-pressed={tab === "returns" || tab === "stockOperations"} onClick={() => activateAdminTab("returns")}>退货换货</button> : null}
+          {canUseTab("posDaily") ? <button type="button" className="admin-button-secondary aria-pressed:!border-ink aria-pressed:!bg-ink aria-pressed:!text-white" aria-pressed={tab === "posDaily"} onClick={() => activateAdminTab("posDaily")}>日结</button> : null}
+        </div> : null}
+        {tab === "ordersAll" ? <label className="mb-4 flex items-center gap-3 text-sm font-bold">订单来源
+          <select aria-label="订单来源" className="input max-w-60" value={orderSource} onChange={event => setOrderSource(event.target.value as typeof orderSource)}>
+            <option value="all">全部可查看来源</option>
+            {canUseTab("posOrders") ? <option value="store">门店订单</option> : null}
+            {canUseTab("onlineOrders") ? <option value="online">在线订单</option> : null}
+          </select>
+        </label> : null}
+        {tab === "returns" ? <section className="admin-panel"><h2 className="text-xl font-black">退货换货</h2>
+          <p className="my-3 text-sm text-stone-600">先查找原订单并核对付款与退货情况。整单作废可能自动恢复库存，不要再重复加回。在线退款和换货请按原订单及支付渠道办理；库存加回不等于退款。</p>
+          <div className="flex flex-wrap gap-3">{canUseTab("ordersAll") ? <button className="admin-button-secondary" type="button" onClick={() => activateAdminTab("ordersAll")}>查找原订单</button> : null}
+          {canUseTab("stockOperations") ? <button className="admin-button-secondary" type="button" onClick={() => openStockMode("return")}>已核对的可售退货加回</button> : <p className="text-sm text-stone-500">库存加回需由库存人员或负责人处理。</p>}</div>
+        </section> : null}
+        {tab === "more" ? <AdminMorePage isOwner={isOwner} canUse={available} onSelect={activateAdminTab} /> : null}
+        {tab === "staff" && isOwner ? <section className="admin-panel"><h2 className="text-xl font-black">员工与权限</h2><p className="my-3">员工账号仍由维护者通过现有可信部署流程创建和分配角色，本页不提供提升权限或重置密码接口。</p><ul className="list-disc space-y-2 pl-5"><li>店主：经营管理；店铺、法律及功能设置仍需独立开发者验证。</li><li>收银员：收银及授权订单处理，不能调整库存。</li><li>库存员：到货、盘点、标签，不能使用收银或紧急扣减。</li><li>只读：仅查看授权数据，不可写入。</li></ul></section> : null}
+        {tab === "backup" && canUseTab("backup") ? <section className="admin-panel"><h2 className="text-xl font-black">备份恢复</h2><p className="my-3">完整备份和恢复仍由维护者通过现有 customer:backup / customer:restore 工具执行。商品 CSV 仅用于资料交换，不能恢复数据库或图片。</p><button type="button" className="admin-button-secondary" onClick={() => void downloadProductBackup()}>导出商品资料 CSV（非完整备份）</button></section> : null}
+        {tab === "printing" && canUseTab("printing") ? <section className="admin-panel"><h2 className="text-xl font-black">打印设置</h2><p className="my-3">标签纸尺寸、语言和供应商 SKU 显示沿用标签页面的设置；小票沿用 58/80mm 浏览器打印。打印机和纸张请在浏览器打印窗口中选择。</p><button className="admin-button-secondary" type="button" onClick={() => activateAdminTab("labels")}>设置标签与试打</button></section> : null}
+        {tab === "diagnostics" && isOwner ? <section className="admin-panel"><h2 className="text-xl font-black">系统诊断</h2><p className="my-3">{posRuntimeIssue || "当前未检测到收银配置错误；此状态不代替真实交易验收。"}</p><p>{featureSettingsFallback ? "功能配置未完成或读取失败，当前安全使用基础版。" : "功能配置已读取。"}</p>{canUseTab("inventory") ? <button className="admin-button-secondary mt-4" type="button" onClick={() => activateAdminTab("inventory")}>前往库存对账与流水</button> : null}</section> : null}
+        {["labels", "add", "quickAdd", "check"].includes(tab) ? <button className="admin-button-secondary mb-4" type="button" onClick={() => activateAdminTab(canUseTab("dashboard") ? "dashboard" : "inventory")}>返回商品库存</button> : null}
+        {activeSection === "more" && tab !== "more" ? <button className="admin-button-secondary mb-4" type="button" onClick={() => activateAdminTab("more")}>返回更多管理</button> : null}
 
         {/* ── TAB: Stock lookup ─────────────────────────────── */}
-        {tab === "stockLookup" ? (
+        {(tab === "stockLookup" || tab === "inventory") && canUseTab("stockLookup") ? (
           <section className="admin-panel">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -4460,31 +4408,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Stock Operations</p>
-                <h2 className="mt-1 text-xl font-black text-ink">扫码库存作业</h2>
-                <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">独立处理盘点、到货和可销售退货。不会创建 POS 订单，也不会改动商品资料或真实收银机记录。</p>
+                <h2 className="mt-1 text-xl font-black text-ink">{stockOperationMode === "receiving" ? "到货入库" : stockOperationMode === "stocktake" ? "盘点" : "退货库存加回"}</h2>
+                <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">{stockOperationMode === "receiving" ? "扫码选择到货规格，核对本次数量后入库。" : stockOperationMode === "stocktake" ? "扫描商品并填写实际清点数量，核对差异后提交。" : "仅加回已经核对、可再次销售的退货，不创建退款或换货订单。"}</p>
               </div>
-              <span className="w-fit rounded-full bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700">写入 MAIN_STORE 库存，提交前二次确认</span>
-            </div>
-
-            <div className="mt-5 grid gap-2 md:grid-cols-3">
-              {stockOperationOptions.map(option => (
-                <button
-                  className={`rounded-2xl border p-4 text-left transition ${stockOperationMode === option.key ? "border-ink bg-ink text-white shadow-sm shadow-stone-900/10" : "border-stone-200 bg-white text-ink hover:bg-stone-50"}`}
-                  key={option.key}
-                  onClick={() => {
-                    setStockOperationMode(option.key);
-                    setStockOperationQuantity(stockOperationItem ? (option.key === "stocktake" ? "" : "1") : "");
-                    setStockOperationReference("");
-                    setStockOperationError("");
-                    setStockOperationMessage("");
-                    window.setTimeout(() => (stockOperationItem ? stockOperationQuantityRef : stockOperationInputRef).current?.focus(), 30);
-                  }}
-                  type="button"
-                >
-                  <span className="block text-sm font-black">{option.label}</span>
-                  <span className={`mt-1 block text-xs leading-5 ${stockOperationMode === option.key ? "text-stone-300" : "text-stone-500"}`}>{option.shortDescription}</span>
-                </button>
-              ))}
+              <span className="w-fit rounded-full bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700">更新本店库存，提交前二次确认</span>
             </div>
 
             <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-bold leading-5 text-blue-800">{activeStockOperation.guidance}</p>
@@ -4721,8 +4648,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           <section className="admin-panel">
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h2 className="text-lg font-black text-ink">快速售出减库存</h2>
-                <p className="mt-1 text-xs text-stone-500">实体店卖出一件后，在这里点一下即可减库存；库存归零时会自动下架。</p>
+                <h2 className="text-lg font-black text-ink">库存紧急扣减</h2>
+                <p className="mt-1 text-xs text-stone-500">仅供负责人处理异常库存扣减，不创建销售订单、付款或小票。普通销售请使用扫码收银。</p>
               </div>
               <button className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-bold text-ink hover:bg-stone-50" disabled={loading} onClick={() => void loadProducts()} type="button">刷新库存</button>
             </div>
@@ -5011,10 +4938,6 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
 
         {tab === "posDaily" ? (
           <section className="flex flex-col gap-5">
-            <div className="inline-flex w-fit rounded-xl border border-stone-200 bg-white p-1 shadow-sm" data-admin-sales-record-tabs>
-              <button className="rounded-lg px-4 py-2 text-xs font-black text-stone-600 hover:bg-stone-50" onClick={() => setTab("posOrders")} type="button">POS 订单</button>
-              <button className="rounded-lg bg-ink px-4 py-2 text-xs font-black text-white" type="button">POS 日报</button>
-            </div>
             <div className="admin-panel">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
@@ -5151,12 +5074,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           </section>
         ) : null}
 
-        {tab === "posOrders" ? (
+        {showStoreOrders ? (
           <section className="flex flex-col gap-5">
-            <div className="inline-flex w-fit rounded-xl border border-stone-200 bg-white p-1 shadow-sm" data-admin-sales-record-tabs>
-              <button className="rounded-lg bg-ink px-4 py-2 text-xs font-black text-white" type="button">POS 订单</button>
-              {canUseTab("posDaily") ? <button className="rounded-lg px-4 py-2 text-xs font-black text-stone-600 hover:bg-stone-50" onClick={() => setTab("posDaily")} type="button">POS 日报</button> : null}
-            </div>
             <div className="admin-panel">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
@@ -5294,6 +5213,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           {posReceiptLoading ? "读取小票..." : "查看 / 打印小票"}
                         </button>
                       ) : null}
+                      <button className="admin-button-secondary" onClick={() => { setPosOrderDetail(null); activateAdminTab("returns"); }} type="button">退货换货指引</button>
                       <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50" onClick={() => setPosOrderDetail(null)} type="button">关闭</button>
                     </div>
                   </div>
@@ -5441,17 +5361,16 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             <div className="admin-panel">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">ERP Inventory</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Inventory</p>
                   <h2 className="mt-1 text-xl font-black text-ink">库存管理</h2>
                   <p className="mt-1 text-xs text-stone-500">查看规格库存、流水与对账状态；手工调整只向有库存写入权限的角色显示。</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {isOwner && adminFeatures.quick_sell ? <button className="min-h-11 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-black text-amber-800 hover:bg-amber-100" onClick={() => setTab("quickSale")} title="只扣库存，不创建 POS 订单或付款" type="button">快速售出（无订单）</button> : null}
                   <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50 disabled:opacity-50" disabled={inventoryLoading} onClick={() => void loadInventoryData()} type="button">刷新库存</button>
                 </div>
               </div>
               {inventoryError ? <p className="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{inventoryError}</p> : null}
-              <div className={`mt-4 rounded-2xl border px-4 py-3 ${inventoryIssueCount(inventoryReconciliation) === 0 ? "border-emerald-100 bg-emerald-50 text-emerald-800" : "border-red-100 bg-red-50 text-red-700"}`}>
+              {isOwner ? <details className="mt-4" data-inventory-diagnostics><summary className="cursor-pointer py-2 font-bold">对账异常与技术诊断</summary><div className={`mt-4 rounded-2xl border px-4 py-3 ${inventoryIssueCount(inventoryReconciliation) === 0 ? "border-emerald-100 bg-emerald-50 text-emerald-800" : "border-red-100 bg-red-50 text-red-700"}`}>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm font-black">{inventoryReconciliation ? inventoryIssueCount(inventoryReconciliation) === 0 ? "ERP 库存对账正常" : `ERP 库存有 ${inventoryIssueCount(inventoryReconciliation)} 个对账问题` : "正在读取 ERP 对账状态"}</p>
                   <button className="rounded-lg border border-current/20 bg-white/70 px-3 py-1.5 text-xs font-black" disabled={inventoryLoading} onClick={() => void loadInventoryReconciliation()} type="button">重新检查</button>
@@ -5510,7 +5429,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     ))}
                   </div>
                 ) : null}
-              </div>
+              </div></details> : null}
             </div>
 
             <div className="admin-panel">
@@ -5702,8 +5621,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
             </div>
 
-            <div className="admin-panel">
-              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <details className="admin-panel" open={movementVariantId ? true : undefined} data-inventory-history>
+              <summary className="cursor-pointer font-black">库存流水</summary>
+              <div className="mb-3 mt-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h3 className="text-base font-black text-ink">最近库存流水</h3>
                   <p className="text-xs text-stone-500">{movementVariantId ? "当前只显示所选 variant 的流水。" : `默认显示最近 ${movementLimit} 条库存流水。`}</p>
@@ -5717,23 +5637,23 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <input className="input" placeholder="搜索 SKU / 商品名 / reason" value={movementQ} onChange={e => setMovementQ(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void loadInventoryMovements(); }} />
                 <select className="input" value={movementType} onChange={e => setMovementType(e.target.value)}>
                   <option value="">全部类型</option>
-                  <option value="initial_migration">initial_migration</option>
-                  <option value="sale">sale</option>
-                  <option value="manual_adjustment">manual_adjustment</option>
-                  <option value="correction">correction</option>
-                  <option value="return">return</option>
-                  <option value="transfer_in">transfer_in</option>
+                  <option value="initial_migration">{movementTypeLabel("initial_migration")}</option>
+                  <option value="sale">{movementTypeLabel("sale")}</option>
+                  <option value="manual_adjustment">{movementTypeLabel("manual_adjustment")}</option>
+                  <option value="correction">{movementTypeLabel("correction")}</option>
+                  <option value="return">{movementTypeLabel("return")}</option>
+                  <option value="transfer_in">{movementTypeLabel("transfer_in")}</option>
                 </select>
                 <select className="input" value={movementSourceType} onChange={e => setMovementSourceType(e.target.value)}>
                   <option value="">全部来源</option>
-                  <option value="quick_sell">quick_sell</option>
-                  <option value="admin_create">admin_create</option>
-                  <option value="admin_edit">admin_edit</option>
-                  <option value="csv_import">csv_import</option>
-                  <option value="admin_inventory_adjustment">admin_inventory_adjustment</option>
-                  <option value="admin_stocktake">admin_stocktake</option>
-                  <option value="admin_receiving">admin_receiving</option>
-                  <option value="admin_customer_return">admin_customer_return</option>
+                  <option value="quick_sell">{sourceTypeLabel("quick_sell")}</option>
+                  <option value="admin_create">{sourceTypeLabel("admin_create")}</option>
+                  <option value="admin_edit">{sourceTypeLabel("admin_edit")}</option>
+                  <option value="csv_import">{sourceTypeLabel("csv_import")}</option>
+                  <option value="admin_inventory_adjustment">{sourceTypeLabel("admin_inventory_adjustment")}</option>
+                  <option value="admin_stocktake">{sourceTypeLabel("admin_stocktake")}</option>
+                  <option value="admin_receiving">{sourceTypeLabel("admin_receiving")}</option>
+                  <option value="admin_customer_return">{sourceTypeLabel("admin_customer_return")}</option>
                 </select>
                 <select className="input" value={movementLimit} onChange={e => setMovementLimit(Number(e.target.value) || 50)}>
                   <option value={50}>50 条</option>
@@ -5770,7 +5690,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   </table>
                 </div>
               )}
-            </div>
+            </details>
 
             {adjustInventory.item ? (
               <div className="fixed inset-0 z-50 flex items-end justify-center bg-stone-950/40 p-3 sm:items-center">
@@ -5940,13 +5860,15 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Product management</p>
                 <h2 className="mt-1 text-xl font-black text-ink">商品管理</h2>
-                <p className="mt-1 text-xs leading-5 text-stone-500">查询、上下架和编辑商品；新增完整商品和问题检查从这里进入。</p>
+                <p className="mt-1 text-xs leading-5 text-stone-500">查询、上下架和编辑商品；通过状态筛选定位资料不完整、缺图或缺译文商品。</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 {isOwner ? (
                   <button className="min-h-10 rounded-xl bg-ink px-4 py-2 text-xs font-black text-white hover:bg-stone-800" onClick={() => { resetProductEditor(); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button">新增完整商品</button>
                 ) : null}
-                <button className="min-h-10 rounded-xl border border-stone-200 bg-white px-4 py-2 text-xs font-black text-stone-600 hover:bg-stone-50 hover:text-ink" onClick={() => { setTab("check"); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button">问题商品检查</button>
+                {canUseTab("quickAdd") ? <button className="admin-button-secondary" onClick={() => activateAdminTab("quickAdd")} type="button">拍照上新</button> : null}
+                {canUseTab("labels") ? <button className="admin-button-secondary" onClick={() => activateAdminTab("labels")} type="button">标签批量补打</button> : null}
+                {isOwner && adminFeatures.ai_tools && ["incomplete", "untranslated"].includes(filterStatus) ? <button className="admin-button-secondary" disabled={loading || launchChecks.aiCompletable === 0} onClick={confirmBatchAiComplete} type="button">批量 AI 补全缺失资料</button> : null}
               </div>
             </div>
             {/* Search bar */}
@@ -5954,7 +5876,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <input className="input sm:col-span-2 xl:col-span-2" placeholder="搜索 SKU / 商品名..." value={search} onChange={e => setSearch(e.target.value)} />
               <select className="input" data-admin-category-filter value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterSub(""); }}><option value="">全部一级分类</option>{adminCategoryOptions.map(category => <option key={String(category.slug)} value={String(category.slug)}>{categoryOptionLabel(category)}</option>)}</select>
               <select className="input" data-admin-subcategory-filter value={filterSub} onChange={e => setFilterSub(e.target.value)}><option value="">全部二级分类</option>{filterCat ? adminSubcategoryOptions(filterCat).map(subcategory => <option key={String(subcategory.slug)} value={String(subcategory.slug)}>{subcategoryOptionLabel(subcategory)}</option>) : null}</select>
-              <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="nostock">库存为 0</option></select>
+              <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">全部状态</option><option value="active">已上架</option><option value="inactive">已下架</option><option value="nostock">无库存</option><option value="incomplete">资料不完整</option><option value="noimg">缺图</option><option value="untranslated">缺译文</option></select>
             </div>
 
             {/* Batch actions */}
@@ -6001,6 +5923,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       <button className="rounded-xl border border-green-100 bg-green-50 px-3 py-2 text-xs font-black text-green-700 hover:bg-green-100" onClick={() => confirmRestoreProduct(p)} type="button">上架</button>
                     )}
                   </div> : null}
+                  {isOwner ? <button className="admin-button-secondary mt-2" type="button" onClick={() => copyProduct(p)}>复制</button> : null}
+                  {productContextActions(p)}
                 </article>
               ))}
               {filteredProducts.length === 0 ? <p className="py-10 text-center text-sm text-stone-400 md:col-span-2 lg:col-span-3">没有匹配的商品</p> : null}
@@ -6051,7 +5975,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                             <button className="rounded-md border border-red-100 px-3 py-1.5 text-xs font-bold whitespace-nowrap text-red-400 hover:bg-red-50" onClick={() => void permanentDelete(p)}>永久删除</button>
                           </>
                         )}
-                      </div> : <span className="text-xs font-bold text-stone-400">只读</span>}</td>
+                      </div> : <span className="text-xs font-bold text-stone-400">只读</span>}{productContextActions(p)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -6675,11 +6599,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {/* ── TAB: Categories ─────────────────────────────── */}
         {tab === "categories" ? <CategoriesManager activePassword={activePassword} authHeaders={adminAuthHeaders} toast={toast} confirm={setConfirm} dismissConfirm={dismissConfirm} /> : null}
 
-        {tab === "onlineOrders" ? <OnlineOrdersManager authHeaders={adminAuthHeaders} toast={toast} /> : null}
+        {showOnlineOrders ? <OnlineOrdersManager authHeaders={adminAuthHeaders} toast={toast} /> : null}
 
         {tab === "suppliers" ? <SuppliersManager authHeaders={adminAuthHeaders} initialSuppliers={suppliers} onChanged={loadSuppliers} toast={toast} /> : null}
 
-      </div>
+      </AdminShell>
 
       {posReceiptDetail ? (
         <PosReceiptPreview

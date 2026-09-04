@@ -66,3 +66,8 @@ Next decision point:
 
 - If browser printing works well on real hardware, keep the current solution.
 - If browser printing has alignment, blank page, scanner, or driver issues, then design the next phase for printer SDK / ESC/POS / local print bridge.
+## Phase 1 workflow update (2026-09-04)
+
+The store-operations workflow adds a keyboard-wedge scanner recognizer, an operation-scoped label queue, and a PT-1509 browser calibration view. The recommended profile is 50 x 30 mm / Code 128 / 100% scale / zero margins / no headers or footers. Existing 40 x 30 and 60 x 40 layouts remain available. Drivers still require manual configuration.
+
+Browser simulations and local transaction tests do not certify the physical PT-1509 or scanner. No ESC/POS, silent printing, vendor SDK, local bridge, myDATA, fiscal receipt, or payment-terminal integration has been added. Use the updated printer test log for real-device sign-off.
