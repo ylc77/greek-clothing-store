@@ -22,7 +22,7 @@ test("feature settings failures visibly and actually fall back to Basic", () => 
   const dashboard = source("components/admin-dashboard.tsx");
   assert.match(page, /initialFeatureSettingsConfigured=\{featureSettings\.configured\}/);
   assert.match(dashboard, /setAdminFeatures\(defaultAdminFeatures\)/);
-  assert.match(dashboard, /安全回退到基础版（Basic）/);
+  assert.match(dashboard, /功能配置未完成或读取失败，当前安全使用基础版/);
 });
 
 test("print copy and product snapshots are Greek or English, never internal Chinese", () => {
@@ -76,6 +76,6 @@ test("the browser CSV endpoint is explicitly a maintenance export, not disaster 
   const dashboard = source("components/admin-dashboard.tsx");
   assert.match(route, /X-Export-Purpose.*maintenance-csv/i);
   assert.match(route, /X-Disaster-Recovery.*false/i);
-  assert.match(dashboard, /商品资料导出/);
-  assert.match(dashboard, /不是数据库与图片灾备/);
+  assert.match(dashboard, /导出商品资料 CSV（非完整备份）/);
+  assert.match(dashboard, /不能恢复数据库或图片/);
 });

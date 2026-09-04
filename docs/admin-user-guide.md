@@ -1,231 +1,68 @@
-# Admin User Guide
+# 服装店后台操作指南（Phase 1）
 
-This is a draft guide for using the clothing store admin system in the v1.0 commercial demo version.
+## 日常操作顺序
 
-## Login
+创建/查找商品 → 到货入库 → 补齐缺失 Barcode → 按本次数量打印标签 → 扫码收银 → 结账后自动扣库存。
 
-1. Open `/admin`.
-2. Enter the admin password.
-3. After login, the dashboard shows product count, active products, stock warnings, and common actions.
+新增商品时填写的库存已经入库，**不要再去到货页面重复增加一次**。已有商品补货才使用“到货入库”。
 
-Security notes:
+## 六个入口
 
-- Do not share the admin password publicly.
-- Do not put the service role key in browser code or any `NEXT_PUBLIC_` environment variable.
+| 一级入口 | 内容 |
+| --- | --- |
+| 工作台 | 按角色显示新货入库、扫码收银、在线订单、拍照上新、盘点、补打标签等快捷操作 |
+| 扫码收银 | 商品扫描、购物车、折扣、付款记录与结账 |
+| 到货入库 | 查找具体规格，填写本次增加件数，确认入库 |
+| 商品库存 | 商品、库存、盘点；商品页提供完整新增、拍照上新、编辑、复制、标签和上下架 |
+| 订单售后 | 全部订单（门店/在线来源筛选）、退换货指引、日结；沿用原订单处理能力 |
+| 更多管理 | 分类、供应商、CSV、批量图片、标签与打印设置、员工和开发者设置等分组 |
 
-## Add A Product
+owner 默认工作台；staff 默认扫码收银；inventory 默认到货入库；readonly 默认只读工作台。权限及版本功能关闭时入口不会显示，也不能绕过后台接口权限。
 
-1. Open `新增/编辑`.
-2. Fill in:
-   - SKU
-   - Category
-   - Subcategory
-   - Price
-   - Product names and descriptions
-   - Images
-   - Size stock
-3. Save the product.
-4. After saving, the system keeps legacy stock and ERP inventory in sync.
+沿用原有设备限制：POS、CSV、批量图片仅桌面布局显示；平板/手机通过抽屠菜单访问其他获授权功能，staff 在小屏回到工作台。未在本阶段开放移动 POS。
 
-Notes:
+成本仅对具有 procurement:cost 权限的身份显示。普通员工不显示系统诊断。店铺资料、法律资料和功能设置仍需要独立开发者会话，owner 密码不能代替它。
 
-- Total stock is calculated from size stock.
-- For clothing and shoes, fill stock by size.
-- For one-size categories, use `ONE SIZE`.
+## 新货与标签
 
-## Edit A Product
+1. 完整新增或拍照上新，填写分类、价格、颜色（可选）和各尺码数量。
+2. 商品事务成功后，系统读取服务端最终规格及 Barcode，加入“本次作业标签”。例如 S=2、M=3，队列共 5 张。
+3. 若最终规格或 Barcode 无法确认，会明确提示补打，不会猜测 ID，也不会要求重新创建已保存商品。
+4. 编辑已有商品后的补打默认每个提交规格一张，不会把全部现有库存重印；可自行调整份数。
+5. 商品图片上传失败与商品已保存是两件事，按提示重传图片，不要重复新增。
 
-1. Open `商品列表`.
-2. Click edit on a product.
-3. Update product information.
-4. Save.
+## 到货入库
 
-Important:
+1. 扫描或输入已有条码、SKU、供货商 SKU/款号或商品名，确认颜色和尺码。
+2. 填写**本次增加件数**（例如原来 20 件、本次进 3 件，填写 3）。
+3. 缺少内部 Barcode 时先调用现有服务端条码生成能力；已有 Barcode 保持不变。
+4. 确认成功后队列增加 3 张，不是 23 张。相同业务请求重试不重复排队。
+5. 网络超时或结果未知时按页面提示复用原操作重试，先核对，不要新建另一笔到货。
 
-- Products with inventory movements cannot freely change SKU.
-- Use down listing instead of permanent deletion for real products with inventory history.
+队列可以合并相同规格、修改份数、移除和清空，并显示来源。单次入库数量沿用原接口上限，单次预览最多 1,000 张；大量标签请分次操作。队列只保存在本页面会话，刷新前有浏览器提醒；切换后台入口不会清空，退出登录或刷新后不保证保留。打印窗口关闭不等于打印成功，核对实物后再清空队列。取消或清空标签不会撤销库存操作。
 
-## Upload Images
+## 扫码收银
 
-1. Open the product editor.
-2. Upload the main image and extra images.
-3. Save the product.
-4. Check storefront product card and detail page.
+- 使用键盘楔入式 USB/蓝牙扫码枪，设置扫码结束发送 Enter，不使用摄像头。
+- 打开桌面 POS 时自动聚焦扫码框；扫码完成后精确匹配 Barcode 的单一规格自动加入，连续扫描同码每次加 1。
+- 无匹配或匹配不明确时显示提示，收银员核对后选择；扫描框保持可继续输入。
+- 人工慢速输入保留普通搜索方式；快速识别默认最少 3 个字符、相邻输入间隔不超过 60 ms。设备不符合此速度时仍可按普通搜索操作。
+- 每次加入都受可售库存限制；最终仍由现有 dry-run 和事务 checkout 再次校验。加入购物车本身不扣库存。
+- 结账超时后保留原业务 ID，不要重复创建新订单。订单作废沿用现有受权限保护的事务流程。
+- “库存紧急扣减”只在 owner 的更多管理中，用于异常修正，不创建销售订单、付款或小票，不代替普通 POS 销售。
 
-Tips:
+## PT-1509 浏览器打印
 
-- Use clear product photos.
-- Use the 3:4 crop flow so product photos display consistently on desktop and mobile.
+默认推荐 50×30 mm，Code 128；仍支持 40×30 和 60×40。预览中有“校准页”。
 
-## Manage Inventory
+驱动选择正确的打印机与纸张尺寸，缩放 100%、边距 0、关闭页眉页脚。校准页线框应为 20×5 mm，测试条码为 PT1509-TEST。先用尺测量、扫码核对，再打印商品标签。浏览器不能强制修改打印机驱动设置。
 
-Open `库存管理`.
+当前没有 ESC/POS、静默打印、厂商 SDK 或本地打印桥。**系统小票不是 AADE 税务票据**，不能代替法定财政收银设备。
 
-You can:
+## 后续功能与故障处理
 
-- Search product name, SKU, variant SKU, or barcode.
-- Filter by stock status.
-- View quantity on hand, reserved quantity, and available quantity.
-- View reconciliation status.
-- Open the manual inventory adjustment dialog.
+在线订单、CSV、备份与标签补打沿用原能力。退换货页面仅引导现有作废、订单处理和库存加回，不代表已经实现新的退款/换货事务。库存加回不等于退款。
 
-## Manual Inventory Adjustment
+失败提示先区分未登录、权限不足、功能关闭、服务暂不可用与结果未知。结果未知时先核对原订单/库存流水，不重复创建。联系负责人处理技术诊断，不自行更改数据库、权限或密钥。
 
-1. Open `库存管理`.
-2. Select a variant.
-3. Click adjust inventory.
-4. Choose:
-   - Set to a specific quantity
-   - Adjust by a positive or negative amount
-5. Enter a reason.
-6. Submit.
-
-Rules:
-
-- Reason is required.
-- Stock cannot become negative.
-- The adjustment writes an inventory movement.
-- Legacy `products.stock` and `products.size_stock` are synced after adjustment.
-
-## View Inventory Movements
-
-Open `库存管理` and review recent movements.
-
-Movement examples:
-
-- `initial_migration`
-- `manual_adjustment`
-- `sale`
-- `return`
-- `correction`
-
-Use movements to understand why stock changed.
-
-## Generate Barcode
-
-Open `标签打印`.
-
-1. Search or filter variants.
-2. Select variants with missing barcode.
-3. Click generate selected barcode.
-
-Current barcode rule:
-
-```txt
-barcode = variant_sku
-```
-
-Rules:
-
-- Existing barcode is not overwritten.
-- Barcode must be unique.
-- Variants with inventory or sales history are protected by the barcode API.
-
-## Print Labels
-
-Open `标签打印`.
-
-1. Select variants.
-2. Choose label size:
-   - `40x30mm`
-   - `50x30mm`
-   - `60x40mm`
-3. Click print selected labels.
-4. Confirm barcode SVG appears.
-5. Use browser print.
-
-Current limitation:
-
-- Real label printer hardware validation is pending.
-- Do not build ESC/POS or printer SDK integration until real device testing confirms browser printing is not enough.
-
-## POS Checkout
-
-Open `POS 收银`.
-
-1. Search by barcode, variant SKU, product SKU, or product name.
-2. Add product to cart.
-3. Adjust quantity.
-4. Choose payment method:
-   - cash
-   - card
-   - other
-5. Run dryRun / pre-check.
-6. Complete checkout.
-
-Checkout result:
-
-- Creates sales order.
-- Creates order items.
-- Creates payment record.
-- Deducts ERP inventory.
-- Writes `sale / pos_sale` stock movement.
-- Syncs legacy product stock.
-
-## Void A POS Order
-
-Open `POS 订单`.
-
-1. Find the order.
-2. Open order detail.
-3. Click void if the order is completed.
-4. Enter a reason.
-5. Confirm.
-
-Void result:
-
-- Marks order as voided.
-- Marks payment as voided.
-- Adds stock back.
-- Writes `return / pos_void` stock movement.
-- Syncs legacy product stock.
-
-Important:
-
-- Void is not the same as refund.
-- Complex refunds and partial returns are deferred.
-- Future tax invoice integration may require provider-side void/refund flow.
-
-## Print Receipt
-
-Receipt preview is available after checkout and in order detail.
-
-1. Open a completed or voided order.
-2. Click receipt preview / print.
-3. Use browser print.
-
-Receipt notes:
-
-- The receipt is not a tax invoice.
-- myDATA / invoice QR / MARK are not implemented yet.
-
-## CSV Import
-
-Open `CSV 导入`.
-
-1. Download or prepare a CSV template.
-2. Upload it and complete server-side preflight validation.
-3. Choose `create_only`, `update_existing`, or explicitly confirmed `upsert`.
-4. Choose `metadata_only` (no inventory changes) or `set_inventory` (stocktake/set-to semantics).
-5. Optionally translate, review the final translated preview, and then commit.
-6. Review the persistent Job result. After a refresh or network interruption, recover the same Job instead of starting a duplicate import.
-7. Download failed rows and retry only those rows when appropriate.
-
-Current small-store safety limits are 1 MiB per CSV, 500 data rows, 100 columns, 32 KiB per cell, 20 image URLs, and 100 sizes per product. Files beyond a limit are rejected before a Job is created; split them into smaller files instead of repeatedly retrying an oversized request.
-
-After import:
-
-- Every successful row has committed its product, Variants, inventory, movements, compatibility projections, and result atomically.
-- Failed rows are not reported as successful and do not leave partial product/inventory writes.
-- `metadata_only` never changes inventory; `set_inventory` must be selected deliberately.
-- Product CSV export is a product-data export, not a complete database backup.
-
-## Demo Safety Rules
-
-- Use dryRun before any real POS checkout.
-- Use test products for checkout and void demonstrations.
-- Do not demonstrate tax invoice / myDATA as completed.
-- Do not modify production database manually during demo.
-- Do not expose Supabase service role key.
-- Keep `USE_POS_RPC=true` unless rollback is needed.
-- Keep `USE_VARIANT_INVENTORY=false` for v1.0.
+真实 PT-1509 与扫码枪验收尚需按 docs/barcode-label-printer-test-log.md 逐项记录；浏览器自动化通过不等于硬件验收通过。

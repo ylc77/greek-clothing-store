@@ -1,5 +1,51 @@
 import type { AdminRole } from "./admin-auth";
 
+// Primary destinations are presentation only. Legacy views retain their existing authorization.
+export const adminPrimaryNavigation = [
+  { key: "workspace", label: "工作台" },
+  { key: "pos", label: "扫码收银" },
+  { key: "receiving", label: "到货入库" },
+  { key: "catalog", label: "商品库存" },
+  { key: "orders", label: "订单售后" },
+  { key: "more", label: "更多管理" },
+] as const;
+export type AdminPrimaryKey = (typeof adminPrimaryNavigation)[number]["key"];
+// Presentation only: callers must retain the original status/code and recovery metadata.
+export function adminVisibleMessage(message: string, showDiagnostics: boolean): string {
+  return !showDiagnostics && /\b(?:rpc|migration|supabase|postgrest|sqlstate)\b|feature[ _-]?flag/i.test(message)
+    ? "操作暂不可用，请联系负责人。若已提交，请先核对结果，不要重复创建操作。"
+    : message;
+}
+export type AdminView = AdminNavigationTab | "workspace" | "more" | "ordersAll" | "returns" | "diagnostics" | "printing" | "staff" | "backup";
+export const legacyAdminSection: Record<AdminNavigationTab, AdminPrimaryKey> = {
+  dashboard: "catalog", check: "catalog", quickAdd: "catalog", add: "catalog",
+  stockLookup: "catalog", inventory: "catalog", labels: "catalog",
+  stockOperations: "receiving", pos: "pos", posOrders: "orders", onlineOrders: "orders",
+  posDaily: "orders", quickSale: "more", csv: "more", images: "more", categories: "more", suppliers: "more",
+};
+export function adminSectionForView(view: AdminView, mode: "receiving" | "stocktake" | "return"): AdminPrimaryKey {
+  if (view === "stockOperations") return mode === "receiving" ? "receiving" : mode === "stocktake" ? "catalog" : "orders";
+  if (view === "workspace") return "workspace";
+  if (view === "ordersAll" || view === "returns") return "orders";
+  return legacyAdminSection[view as AdminNavigationTab] || "more";
+}
+export function getAdminPrimaryNavigation(canUse: (view: AdminView) => boolean, compact: boolean) {
+  const views: Record<AdminPrimaryKey, AdminView[]> = {
+    workspace: ["workspace"], pos: compact ? [] : ["pos"], receiving: ["stockOperations"],
+    catalog: ["dashboard", "inventory", "labels"], orders: ["posOrders", "onlineOrders", "stockOperations"], more: ["more"],
+  };
+  return adminPrimaryNavigation.filter(item => views[item.key].some(canUse));
+}
+export function getAdminDefaultView(role: AdminRole): AdminView {
+  return role === "staff" ? "pos" : role === "inventory" ? "stockOperations" : "workspace";
+}
+export const adminWorkspaceActions: Record<AdminRole, Array<{ view: AdminNavigationTab; label: string; mode?: "receiving" | "stocktake" }>> = {
+  owner: [{ view: "pos", label: "扫码收银" }, { view: "stockOperations", label: "新货入库", mode: "receiving" }, { view: "onlineOrders", label: "在线订单" }, { view: "quickAdd", label: "拍照上新" }, { view: "stockOperations", label: "盘点", mode: "stocktake" }, { view: "labels", label: "标签补打" }],
+  staff: [{ view: "pos", label: "扫码收银" }, { view: "inventory", label: "库存查询" }, { view: "onlineOrders", label: "在线订单" }, { view: "dashboard", label: "商品查询" }],
+  inventory: [{ view: "stockOperations", label: "新货入库", mode: "receiving" }, { view: "inventory", label: "库存查询" }, { view: "stockOperations", label: "盘点", mode: "stocktake" }, { view: "labels", label: "标签补打" }],
+  readonly: [{ view: "inventory", label: "库存查询" }, { view: "dashboard", label: "商品查询" }, { view: "posOrders", label: "门店订单" }],
+};
+
 export const adminNavigationTabKeys = [
   "dashboard",
   "check",
