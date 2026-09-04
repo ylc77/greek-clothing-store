@@ -12,6 +12,9 @@ function supabaseImageHostname() {
 }
 
 const nextConfig: NextConfig = {
+  // UI mocks must not cache a Basic plan into later real local database tests.
+  distDir: process.env.ADMIN_UI_TEST_ISOLATED === "1" ? ".next-admin-ui"
+    : process.env.ADMIN_INVENTORY_TEST_ISOLATED === "1" ? ".next-inventory-test" : ".next",
   // Keep sharp and its @img native deps external — @vercel/nft doesn't trace dlopen()'d .so files
   serverExternalPackages: ["sharp"],
   outputFileTracingIncludes: {
