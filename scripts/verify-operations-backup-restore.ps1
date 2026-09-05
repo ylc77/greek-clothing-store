@@ -81,23 +81,54 @@ const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SU
 const mode = process.env.BACKUP_DRILL_MODE;
 if (mode === "create") {
   await client.storage.from("product-images").remove(["audit/backup-6b.webp"]);
+  const oldReceipts = await client.from("inventory_receipts").select("id").like("client_request_id", "AUDIT_BACKUP_6B%");
+  if (oldReceipts.data?.length) {
+    await client.from("inventory_receipt_items").delete().in("receipt_id", oldReceipts.data.map(row => row.id));
+    await client.from("inventory_receipts").delete().in("id", oldReceipts.data.map(row => row.id));
+  }
   await client.from("products").delete().eq("sku", "AUDIT_BACKUP_6B");
   const inserted = await client.from("products").insert({
     sku: "AUDIT_BACKUP_6B", name_cn: "Backup fixture", name_en: "Backup fixture", name_gr: "Backup fixture",
     category: "audit", subcategory: "backup", price: 7, stock: 0, sizes: "ONE SIZE", size_stock: { "ONE SIZE": 0 }, is_active: true,
-  });
+  }).select("id").single();
   if (inserted.error) throw inserted.error;
+  const variant = await client.from("product_variants").insert({ product_id: inserted.data.id, variant_sku: "AUDIT_BACKUP_6B-ONE", barcode: null, size: "ONE SIZE", active: true }).select("id").single();
+  if (variant.error) throw variant.error;
+  const location = await client.from("inventory_locations").select("id").eq("code", "MAIN_STORE").single();
+  if (location.error) throw location.error;
+  const balance = await client.from("inventory_balances").insert({ variant_id: variant.data.id, location_id: location.data.id, quantity_on_hand: 0, quantity_reserved: 0 });
+  if (balance.error) throw balance.error;
+  const receipt = await client.rpc("inventory_receipt_complete_rpc", {
+    p_client_request_id: "AUDIT_BACKUP_6B_RECEIPT", p_supplier_id: null, p_supplier_reference: "BACKUP-DRILL",
+    p_notes: "Backup restore fixture", p_items: [{ variantId: variant.data.id, quantity: 2, unitCost: null }], p_created_by: "test:backup",
+  });
+  if (receipt.error) throw receipt.error;
   const uploaded = await client.storage.from("product-images").upload("audit/backup-6b.webp", Buffer.from([82,73,70,70,4,0,0,0,87,69,66,80]), { contentType: "image/webp", upsert: true });
   if (uploaded.error) throw uploaded.error;
 } else if (mode === "verify") {
   const product = await client.from("products").select("id").eq("sku", "AUDIT_BACKUP_6B").single();
   if (product.error) throw product.error;
+  const receipt = await client.from("inventory_receipts").select("id,total_units,receipt_number").eq("client_request_id", "AUDIT_BACKUP_6B_RECEIPT").single();
+  if (receipt.error || receipt.data.total_units !== 2) throw receipt.error || new Error("restored receipt header mismatch");
+  const items = await client.from("inventory_receipt_items").select("quantity_received,barcode_snapshot").eq("receipt_id", receipt.data.id);
+  if (items.error || items.data?.length !== 1 || items.data[0].quantity_received !== 2 || items.data[0].barcode_snapshot !== "AUDIT_BACKUP_6B-ONE") throw items.error || new Error("restored receipt item mismatch");
   const object = await client.storage.from("product-images").download("audit/backup-6b.webp");
   if (object.error || !object.data) throw object.error || new Error("restored object missing");
   const bytes = Buffer.from(await object.data.arrayBuffer());
   if (bytes.toString("hex") !== "524946460400000057454250") throw new Error("restored object content mismatch");
 } else if (mode === "cleanup") {
   await client.storage.from("product-images").remove(["audit/backup-6b.webp"]);
+  const receipts = await client.from("inventory_receipts").select("id").like("client_request_id", "AUDIT_BACKUP_6B%");
+  if (receipts.data?.length) {
+    await client.from("inventory_receipt_items").delete().in("receipt_id", receipts.data.map(row => row.id));
+    await client.from("inventory_receipts").delete().in("id", receipts.data.map(row => row.id));
+  }
+  const variants = await client.from("product_variants").select("id").eq("variant_sku", "AUDIT_BACKUP_6B-ONE");
+  if (variants.data?.length) {
+    await client.from("stock_movements").delete().in("variant_id", variants.data.map(row => row.id));
+    await client.from("inventory_balances").delete().in("variant_id", variants.data.map(row => row.id));
+    await client.from("product_variants").delete().in("id", variants.data.map(row => row.id));
+  }
   await client.from("products").delete().eq("sku", "AUDIT_BACKUP_6B");
 } else {
   throw new Error("unknown backup drill mode");

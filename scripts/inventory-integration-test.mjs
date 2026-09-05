@@ -124,8 +124,26 @@ async function quickSell(fixture, requestId, input = {}, options = { role: "owne
   return api("/api/admin/products/sell", body, options);
 }
 
+async function receiveBatch(fixture, requestId, role = "owner", input = {}) {
+  return api("/api/admin/inventory/receipts", {
+    clientRequestId: requestId,
+    supplierId: null,
+    supplierReference: "Integration delivery",
+    notes: "Inventory route permission test",
+    items: [{
+      variantId: fixture.variants[0].id,
+      quantity: 1,
+      unitCost: input.unitCost ?? null,
+    }],
+  }, { role });
+}
+
 async function cleanupAuditData() {
   sql(`
+    delete from public.inventory_receipt_items where receipt_id in (
+      select id from public.inventory_receipts where client_request_id like '${AUDIT_PREFIX}%'
+    );
+    delete from public.inventory_receipts where client_request_id like '${AUDIT_PREFIX}%';
     do $$
     begin
       if to_regclass('public.inventory_operations') is not null then
@@ -582,6 +600,25 @@ try {
     const response = await adjust(fixture, auditId("INVENTORY-WRITE"), { quantity: 1 }, "inventory");
     assert.equal(response.status, 200, `inventory adjustment rejected: ${response.data.code || "unknown"} ${response.data.error || ""}`);
     assert.equal((await quickSell(fixture, auditId("INVENTORY-SELL"), {}, { role: "inventory" })).status, 403);
+  });
+
+  await runCase("receipt route enforces write and procurement cost permissions", async () => {
+    const fixture = await createFixture("RECEIPT-PERMISSIONS", [1], { oneSize: true });
+    const inventoryResponse = await receiveBatch(fixture, auditId("RECEIPT-INVENTORY"), "inventory");
+    assert.equal(inventoryResponse.status, 200, JSON.stringify(inventoryResponse.data));
+    const inventoryCost = await receiveBatch(fixture, auditId("RECEIPT-INVENTORY-COST"), "inventory", { unitCost: 8 });
+    assert.equal(inventoryCost.status, 403, JSON.stringify(inventoryCost.data));
+    const ownerCost = await receiveBatch(fixture, auditId("RECEIPT-OWNER-COST"), "owner", { unitCost: 8 });
+    assert.equal(ownerCost.status, 200, JSON.stringify(ownerCost.data));
+    for (const role of ["staff", "readonly"]) {
+      const response = await receiveBatch(fixture, auditId(`RECEIPT-${role}`), role);
+      assert.equal(response.status, 403, `${role}: ${JSON.stringify(response.data)}`);
+    }
+    const unauthenticated = await api("/api/admin/inventory/receipts", {
+      clientRequestId: auditId("RECEIPT-UNAUTH"), items: [{ variantId: fixture.variants[0].id, quantity: 1 }],
+    });
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(Number((await balance(fixture.variants[0].id)).quantity_on_hand), 3);
   });
 
   await runCase("disabled Quick Sell feature blocks owner and writes nothing", async () => {
