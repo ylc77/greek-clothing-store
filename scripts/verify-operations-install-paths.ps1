@@ -74,6 +74,8 @@ begin
     'public.pos_search_rpc(text,integer)',
     'public.variant_barcodes_apply_rpc(text,jsonb,text,text)',
     'public.variant_barcodes_generate_missing_rpc(text,jsonb,text)',
+    'public.inventory_receipt_complete_rpc(text,uuid,text,text,jsonb,text)',
+    'public.inventory_receipt_runtime_health_rpc()',
     'public.category_catalog_apply_rpc(jsonb,jsonb,uuid[],uuid[])',
     'public.operations_runtime_health_rpc()'
   ] loop
@@ -97,6 +99,15 @@ begin
   if not exists (
     select 1 from pg_catalog.pg_class where oid='public.barcode_operations'::pg_catalog.regclass and relrowsecurity
   ) then raise exception 'barcode operation RLS missing'; end if;
+  if not exists (
+    select 1 from pg_catalog.pg_class where oid='public.inventory_receipts'::pg_catalog.regclass and relrowsecurity
+  ) then raise exception 'inventory receipt RLS missing'; end if;
+  if not exists (
+    select 1 from pg_catalog.pg_class where oid='public.inventory_receipt_items'::pg_catalog.regclass and relrowsecurity
+  ) then raise exception 'inventory receipt item RLS missing'; end if;
+  if (public.inventory_receipt_runtime_health_rpc()->>'ready')::boolean is not true then
+    raise exception 'inventory receipt runtime is not ready';
+  end if;
   if pg_catalog.has_table_privilege('service_role','public.audit_logs','insert')
      or pg_catalog.has_table_privilege('service_role','public.audit_logs','update')
      or pg_catalog.has_table_privilege('service_role','public.audit_logs','delete')

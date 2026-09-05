@@ -24,6 +24,7 @@ import { WorkspacePage } from "@/components/workspace-page";
 import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import { useOperationLabelQueue } from "@/hooks/use-operation-label-queue";
 import { OperationLabelQueue } from "@/components/operation-label-queue";
+import { InventoryReceivingWorkspace } from "@/components/inventory-receiving-workspace";
 import { AdminMorePage } from "@/components/admin-more-page";
 import { getSupabaseBrowserAuthClient } from "@/lib/supabase";
 import { tokenUpdateForSupabaseAuthEvent } from "@/lib/admin-session-lifecycle";
@@ -4403,13 +4404,29 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         ) : null}
 
         {/* ── TAB: Stock operations ─────────────────────────── */}
-        {tab === "stockOperations" ? (
+        {tab === "stockOperations" ? stockOperationMode === "receiving" ? (
+          <InventoryReceivingWorkspace
+            api={api}
+            suppliers={suppliers}
+            canViewCost={hasPermission("procurement:cost")}
+            onCompleted={async (result, labels) => {
+              operationLabels.dispatch({
+                type: "enqueue",
+                operationId: result.receiptId,
+                source: `到货单 ${result.receiptNumber}`,
+                labels,
+              });
+              await loadProducts();
+              if (inventoryItems.length > 0) await loadInventoryData();
+            }}
+          />
+        ) : (
           <section className="admin-panel">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Stock Operations</p>
-                <h2 className="mt-1 text-xl font-black text-ink">{stockOperationMode === "receiving" ? "到货入库" : stockOperationMode === "stocktake" ? "盘点" : "退货库存加回"}</h2>
-                <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">{stockOperationMode === "receiving" ? "扫码选择到货规格，核对本次数量后入库。" : stockOperationMode === "stocktake" ? "扫描商品并填写实际清点数量，核对差异后提交。" : "仅加回已经核对、可再次销售的退货，不创建退款或换货订单。"}</p>
+                <h2 className="mt-1 text-xl font-black text-ink">{stockOperationMode === "stocktake" ? "盘点" : "退货库存加回"}</h2>
+                <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">{stockOperationMode === "stocktake" ? "扫描商品并填写实际清点数量，核对差异后提交。" : "仅加回已经核对、可再次销售的退货，不创建退款或换货订单。"}</p>
               </div>
               <span className="w-fit rounded-full bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700">更新本店库存，提交前二次确认</span>
             </div>
@@ -4424,7 +4441,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               }}
             >
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black text-stone-500">{stockOperationMode === "receiving" ? "扫描条码，或搜索无条码商品" : "扫描或搜索商品"}</span>
+                <span className="mb-1.5 block text-xs font-black text-stone-500">扫描或搜索商品</span>
                 <input
                   autoComplete="off"
                   className="input min-h-12 text-base"
@@ -4432,7 +4449,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     setStockOperationQuery(event.target.value);
                     setStockOperationError("");
                   }}
-                  placeholder={stockOperationMode === "receiving" ? "扫描条码，或输入商品 SKU / 供货商 SKU / 款号 / 商品名" : "扫描条码，或输入 Variant SKU / 供货商 SKU / 商品名"}
+                  placeholder="扫描条码，或输入 Variant SKU / 供货商 SKU / 商品名"
                   ref={stockOperationInputRef}
                   value={stockOperationQuery}
                 />
@@ -4542,7 +4559,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                             <p className="mt-1 truncate font-mono text-[11px] font-bold text-stone-400">{item.variant_sku}</p>
                             <p className="mt-1 text-xs font-bold text-stone-500">{item.color || "未设置颜色"}</p>
                             {item.supplier_style_code ? <p className="mt-1 truncate text-[11px] font-bold text-stone-500">款号：{item.supplier_style_code}</p> : null}
-                            <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-black ${item.barcode ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{item.barcode ? "已有 Barcode" : stockOperationMode === "receiving" ? "将生成 Barcode" : "无 Barcode"}</span>
+                            <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-black ${item.barcode ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{item.barcode ? "已有 Barcode" : "无 Barcode"}</span>
                           </div>
                         </div>
                         <p className="mt-3 text-xs font-bold text-stone-500">当前 <span className="text-base font-black text-ink">{item.quantity_on_hand}</span> · 可用 <span className="text-emerald-700">{item.quantity_available}</span></p>
@@ -4553,8 +4570,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
             ) : (
               <div className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50/70 px-5 py-9 text-center">
-                <p className="text-base font-black text-ink">{stockOperationMode === "receiving" ? "等待扫码或搜索同款" : "等待扫码"}</p>
-                <p className="mt-2 text-sm text-stone-500">{stockOperationMode === "receiving" ? "有条码直接扫码；没有条码时搜索商品、供货商 SKU 或款号，再选择正确颜色和尺码。" : "扫码枪输入条码并按 Enter 后，系统会选中对应尺码。"}</p>
+                <p className="text-base font-black text-ink">等待扫码</p>
+                <p className="mt-2 text-sm text-stone-500">扫码枪输入条码并按 Enter 后，系统会选中对应尺码。</p>
               </div>
             )}
           </section>

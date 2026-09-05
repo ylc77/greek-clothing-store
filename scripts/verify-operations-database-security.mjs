@@ -36,6 +36,8 @@ const functions = [
   "public.pos_search_rpc(text,integer)",
   "public.variant_barcodes_apply_rpc(text,jsonb,text,text)",
   "public.variant_barcodes_generate_missing_rpc(text,jsonb,text)",
+  "public.inventory_receipt_complete_rpc(text,uuid,text,text,jsonb,text)",
+  "public.inventory_receipt_runtime_health_rpc()",
   "public.operations_runtime_health_rpc()",
 ];
 
@@ -62,6 +64,14 @@ assert.equal(sql("select pg_catalog.has_table_privilege('service_role','public.b
 assert.equal(sql("select pg_catalog.has_table_privilege('service_role','public.audit_logs','select');"), "t");
 assert.equal(sql("select pg_catalog.has_table_privilege('service_role','public.audit_logs','insert,update,delete');"), "f");
 assert.equal(sql("select prosecdef from pg_catalog.pg_proc where oid='app_private.audit_logs_immutable_trigger()'::pg_catalog.regprocedure;"), "f", "immutability trigger must observe the caller role");
+for (const table of ["inventory_receipts", "inventory_receipt_items"]) {
+  assert.equal(sql(`select relrowsecurity from pg_catalog.pg_class where oid='public.${table}'::pg_catalog.regclass;`), "t");
+  assert.equal(sql(`select count(*) from pg_catalog.pg_policies where schemaname='public' and tablename='${table}';`), "0");
+  for (const role of ["anon", "authenticated"]) {
+    assert.equal(sql(`select pg_catalog.has_table_privilege('${role}','public.${table}','select,insert,update,delete');`), "f");
+  }
+  assert.equal(sql(`select pg_catalog.has_table_privilege('service_role','public.${table}','select,insert,update,delete');`), "t");
+}
 assert.equal(sql("select count(*) from information_schema.role_table_grants where table_schema='app_private' and table_name='pos_order_reconciliation' and grantee in ('anon','authenticated','public');"), "0");
 
 const local = readLocalEnvironment();

@@ -93,7 +93,7 @@ async function verify(browser, role, viewport) {
   const compact = viewport.width < 1280;
   try {
     await openAdmin(page, role, {}, calls);
-    const defaultHeading = role === "inventory" ? "到货入库" : role === "staff" && !compact ? "POS 扫码" : "工作台";
+    const defaultHeading = role === "inventory" ? "整批到货入库" : role === "staff" && !compact ? "POS 扫码" : "工作台";
     await page.getByRole("heading", {name: defaultHeading, exact:true}).waitFor();
     await navigate(page, "workspace", compact);
     if (role === "owner") await page.screenshot({path:join(tmpdir(), `clothing-admin-workspace-${viewport.width}.png`),fullPage:true});
@@ -125,7 +125,7 @@ async function verify(browser, role, viewport) {
       await page.getByRole("heading",{name:"盘点",exact:true}).waitFor();
       expect(await page.getByRole("button",{name:"到货扫码",exact:true}).count() === 0, "stocktake exposes receiving mode");
       await navigate(page,"receiving",compact);
-      await page.getByRole("heading",{name:"到货入库",exact:true}).waitFor();
+      await page.getByRole("heading",{name:"整批到货入库",exact:true}).waitFor();
       expect(await page.locator("[data-admin-secondary]").count() === 0, "receiving has mode tabs");
     }
     await navigate(page,"orders",compact);
@@ -178,9 +178,11 @@ async function verifyContextLabels(browser) {
       const path = new URL(request.url()).pathname;
       if (path === "/api/admin/products") return {body:{ok:true,products:[product],total:1}};
       if (path === "/api/admin/inventory") return {body:{ok:true,items:[item],total:1}};
-      if (path === "/api/admin/inventory/adjust") {
+      if (path === "/api/admin/inventory/receipts/preview") return {body:{ok:true,itemCount:1,totalUnits:3,missingBarcodeCount:0,items:[{variantId:item.variant_id,quantityReceived:3,quantityBefore:20,quantityAfter:23}]}};
+      if (path === "/api/admin/inventory/receipts") {
+        if (request.method() === "GET") return {body:{receipts:[]}};
         writes.push(request.postDataJSON());
-        return fail ? {status:503,body:{error:"测试：结果未知，请使用原操作重试"}} : {body:{ok:true,quantityBefore:20,quantityAfter:23,noChange:false}};
+        return fail ? {status:503,body:{error:"测试：结果未知，请使用原操作重试",operationSafeToDiscard:false}} : {body:{ok:true,receiptId:"22222222-2222-4222-8222-222222222222",receiptNumber:"RCV-TEST",totalUnits:3,items:[{variantId:item.variant_id,barcode:item.barcode,quantityReceived:3,quantityBefore:20,quantityAfter:23}]}};
       }
     });
     await navigate(page,"catalog",false);
@@ -189,20 +191,26 @@ async function verifyContextLabels(browser) {
     await page.getByRole("heading",{name:/标签打印/}).waitFor();
     expect(await page.getByText("预计打印：1 张",{exact:true}).count() === 1,"product labels used total stock instead of one per variant");
     await navigate(page,"receiving",false);
-    const lookup = page.getByPlaceholder("扫描条码，或输入商品 SKU / 供货商 SKU / 款号 / 商品名");
+    const lookup = page.getByPlaceholder("连续扫描条码，或搜索 SKU / 供货商 SKU / 商品名");
+    await lookup.focus();
+    await page.keyboard.type("UNKNOWN123", {delay:5});
+    await page.keyboard.press("Enter");
+    await page.getByRole("alert").filter({hasText:"未找到条码 UNKNOWN123"}).waitFor();
+    expect(await page.getByLabel("到货数量",{exact:true}).count() === 0,"a non-exact scanner result was added to the receipt");
+    expect(await lookup.evaluate(node => node === document.activeElement),"unknown receiving barcode lost scanner focus");
     await lookup.fill(item.barcode);
-    await page.getByRole("button",{name:"查找商品",exact:true}).click();
-    await page.getByPlaceholder("填写本次增加件数").fill("3");
-    await page.getByRole("button",{name:"检查并到货扫码",exact:true}).click();
-    await page.getByRole("button",{name:"确认到货扫码",exact:true}).click();
+    await page.getByRole("button",{name:"查找",exact:true}).click();
+    await page.getByLabel("到货数量",{exact:true}).fill("3");
+    page.once("dialog", dialog => dialog.accept());
+    await page.getByRole("button",{name:"确认整批入库",exact:true}).click();
     await page.getByRole("alert").filter({hasText:"测试：结果未知"}).waitFor();
     expect(await page.getByRole("button",{name:"打印本次标签",exact:true}).count() === 0,"failed receiving offered success labels");
     fail = false;
-    await page.getByRole("button",{name:"检查并到货扫码",exact:true}).click();
-    await page.getByRole("button",{name:"确认到货扫码",exact:true}).click();
+    page.once("dialog", dialog => dialog.accept());
+    await page.getByRole("button",{name:"确认整批入库",exact:true}).click();
     await page.getByRole("button",{name:"打印本次标签",exact:true}).click();
     expect(writes.length === 2 && writes[0].clientRequestId === writes[1].clientRequestId,"receiving retry changed the business ID");
-    expect(writes[1].quantity === 3 && writes[1].mode === "adjust_by","receiving changed the inventory request contract");
+    expect(writes[1].items.length === 1 && writes[1].items[0].quantity === 3,"receiving changed the atomic receipt request contract");
     await page.locator(".label-print-root .label-page").first().waitFor();
     expect(await page.locator(".label-print-root .label-page").count() === 3, "receiving preview used total stock instead of increment");
     await page.getByText("设备与打印设置", {exact:true}).click();

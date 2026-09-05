@@ -10,8 +10,10 @@ const operationsMigrations = migrations.filter((name) => /^\d+_operations_report
 assert.deepEqual(operationsMigrations, ["20260718105030_operations_reporting_audit_barcode.sql"]);
 const projectionMigration = "20260719100000_reconcile_legacy_inventory_projections.sql";
 const bulkBarcodeMigration = "20260719120000_transactional_bulk_barcode_generation.sql";
+const receiptMigration = "20260904184454_transactional_inventory_receipts.sql";
 assert.ok(migrations.includes(projectionMigration), "legacy inventory projection reconciliation migration is missing");
 assert.ok(migrations.includes(bulkBarcodeMigration), "bulk Barcode generation migration is missing");
+assert.ok(migrations.includes(receiptMigration), "atomic inventory receipt migration is missing");
 assert.ok(
   migrations.indexOf(operationsMigrations[0]) < migrations.indexOf(projectionMigration),
   "legacy inventory projection reconciliation must follow operations reporting",
@@ -51,6 +53,31 @@ for (const marker of [
   "barcode_already_in_use",
   "jsonb_array_length(p_variant_ids) > 100",
 ]) assert.ok(bulkBarcode.includes(marker), `bulk Barcode migration is missing ${marker}`);
+const receipt = read(`supabase/migrations/${receiptMigration}`).toLowerCase();
+for (const marker of [
+  "inventory_receipts", "inventory_receipt_items", "inventory_receipt_complete_rpc",
+  "security definer", "set search_path = ''", "pg_advisory_xact_lock", "for update",
+  "inventory-receipt:", "product_variants_barcode_unique", "quantity_received",
+]) assert.ok(receipt.includes(marker), `receipt migration is missing ${marker}`);
+assert.match(receipt, /revoke all on function public\.inventory_receipt_complete_rpc[\s\S]*from public, anon, authenticated/);
+assert.match(receipt, /grant execute on function public\.inventory_receipt_complete_rpc[\s\S]*to service_role/);
+
+const receiptRoute = read("app/api/admin/inventory/receipts/route.ts");
+assert.match(receiptRoute, /authorizeAdminRequest\(request, permission\)/);
+assert.match(receiptRoute, /permission: "inventory:read" \| "inventory:write"/);
+assert.match(receiptRoute, /parseInventoryReceiptInput/);
+assert.match(receiptRoute, /inventory_receipt_complete_rpc/);
+assert.match(receiptRoute, /procurement:cost/);
+assert.doesNotMatch(receiptRoute, /from\(["']inventory_balances["']\).*update/s);
+const receiptPreviewRoute = read("app/api/admin/inventory/receipts/preview/route.ts");
+assert.match(receiptPreviewRoute, /authorizeAdminRequest\(request, "inventory:write"\)/);
+assert.match(receiptPreviewRoute, /parseInventoryReceiptInput/);
+assert.doesNotMatch(receiptPreviewRoute, /\.insert\(|\.update\(|\.delete\(|\.rpc\(/);
+const receivingWorkspace = read("components/inventory-receiving-workspace.tsx");
+assert.match(receivingWorkspace, /InventoryOperationIdStore\("inventory-receipt"/);
+assert.match(receivingWorkspace, /receiptRequestFingerprint/);
+assert.match(receivingWorkspace, /\/api\/admin\/inventory\/receipts/);
+assert.match(receivingWorkspace, /quantityReceived/);
 assert.match(migration, /revoke all on table public\.audit_logs from public, anon, authenticated, service_role/);
 assert.match(migration, /grant select on table public\.audit_logs to service_role/);
 assert.doesNotMatch(migration, /grant (?:update|delete|insert).*audit_logs.*service_role/);
