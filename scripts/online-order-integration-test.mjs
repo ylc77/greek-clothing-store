@@ -20,6 +20,61 @@ function sql(statement) {
   return command("docker", ["exec", "-i", DB_CONTAINER, "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-At"], { input: statement });
 }
 
+function assertDatabaseBoundary() {
+  sql(`
+    do $$
+    declare candidate record;
+    declare table_name text;
+    begin
+      for candidate in
+        select p.oid, p.oid::regprocedure as signature, p.proconfig
+        from pg_catalog.pg_proc p
+        join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+        where n.nspname='public' and p.proname in (
+          'product_fulfillment_update_rpc', 'online_checkout_prepare_rpc',
+          'online_checkout_bind_viva_rpc', 'online_payment_confirm_rpc',
+          'online_shipment_prepare_rpc', 'online_shipment_complete_rpc',
+          'online_shipment_cancel_prepare_rpc', 'online_shipment_cancel_complete_rpc',
+          'online_shipment_refresh_rpc', 'online_order_transition_rpc',
+          'online_order_extend_pickup_rpc', 'online_order_expire_pending_rpc',
+          'product_checkout_variants_batch_rpc', 'online_commerce_runtime_health_rpc'
+        )
+      loop
+        if pg_catalog.has_function_privilege('anon',candidate.oid,'execute')
+           or pg_catalog.has_function_privilege('authenticated',candidate.oid,'execute')
+           or not pg_catalog.has_function_privilege('service_role',candidate.oid,'execute') then
+          raise exception 'unsafe execute grant for %',candidate.signature;
+        end if;
+        if not candidate.proconfig @> array['search_path=""'] then
+          raise exception 'unsafe search_path for %',candidate.signature;
+        end if;
+      end loop;
+      if (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+          where n.nspname='public' and p.proname in (
+            'product_fulfillment_update_rpc','online_checkout_prepare_rpc','online_checkout_bind_viva_rpc',
+            'online_payment_confirm_rpc','online_shipment_prepare_rpc','online_shipment_complete_rpc',
+            'online_shipment_cancel_prepare_rpc','online_shipment_cancel_complete_rpc','online_shipment_refresh_rpc',
+            'online_order_transition_rpc','online_order_extend_pickup_rpc','online_order_expire_pending_rpc',
+            'product_checkout_variants_batch_rpc','online_commerce_runtime_health_rpc'
+          )) <> 14 then raise exception 'online commerce RPC set is incomplete'; end if;
+      foreach table_name in array array['online_payment_attempts','online_payment_events','online_shipments','product_fulfillment_operations']
+      loop
+        if not exists(select 1 from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname=table_name and c.relrowsecurity) then
+          raise exception 'RLS missing for %',table_name;
+        end if;
+        if pg_catalog.has_table_privilege('anon','public.'||table_name,'select,insert,update,delete')
+           or pg_catalog.has_table_privilege('authenticated','public.'||table_name,'select,insert,update,delete') then
+          raise exception 'public table privilege present for %',table_name;
+        end if;
+      end loop;
+      if (public.online_commerce_runtime_health_rpc()->>'ready')::boolean is not true then
+        raise exception 'online commerce runtime is not ready';
+      end if;
+    end;
+    $$;
+  `);
+}
+
 function localEnvironment() {
   const output = process.platform === "win32"
     ? command(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", "npx.cmd supabase status -o env"])
@@ -125,6 +180,7 @@ async function balance(variantId) {
   return data;
 }
 
+assertDatabaseBoundary();
 cleanup();
 try {
   const f = await fixture();
@@ -159,6 +215,23 @@ try {
   const cancelOperation = randomUUID();
   assert.ifError((await transition(cancelOrder.data.id, "cancelled", cancelOperation)).error);
   assert.ifError((await transition(cancelOrder.data.id, "cancelled", cancelOperation)).error);
+  assert.deepEqual(await balance(f.variants.M.id), { quantity_on_hand: 3, quantity_reserved: 0 });
+
+  const expiryInput = checkoutArgs(f, { size: "M", quantity: 1 });
+  const expiryOrder = await prepare(expiryInput);
+  assert.ifError(expiryOrder.error);
+  assert.deepEqual(await balance(f.variants.M.id), { quantity_on_hand: 3, quantity_reserved: 1 });
+  const expiryBound = await supabase.rpc("online_checkout_bind_viva_rpc", {
+    p_operation_id: expiryInput.operationId,
+    p_request_fingerprint: expiryInput.requestFingerprint,
+    p_order_id: expiryOrder.data.id,
+    p_viva_order_code: `8${Date.now()}${Math.floor(Math.random() * 100000)}`,
+    p_payment_expires_at: new Date(Date.now() - 60_000).toISOString(),
+  });
+  assert.ifError(expiryBound.error);
+  const expired = await supabase.rpc("online_order_expire_pending_rpc", { p_limit: 100 });
+  assert.ifError(expired.error);
+  assert.equal(expired.data.expired, 1);
   assert.deepEqual(await balance(f.variants.M.id), { quantity_on_hand: 3, quantity_reserved: 0 });
 
   const { error: oversizedUpdateError } = await supabase.from("products").update({
@@ -225,7 +298,7 @@ try {
 
   const { count: orderCount, error: countError } = await supabase.from("online_orders").select("id", { count: "exact", head: true }).like("customer_email", "audit-web-%@example.com");
   assert.ifError(countError);
-  assert.equal(orderCount, 4);
+  assert.equal(orderCount, 5);
   console.log("PASS online checkout integration: Viva binding, payment confirmation, idempotency, reservation, cancellation, completion, BOX NOW package limits, state refresh and last-unit concurrency");
 } finally {
   cleanup();

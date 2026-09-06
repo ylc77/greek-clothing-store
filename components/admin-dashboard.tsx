@@ -6389,10 +6389,10 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <Field label="希腊语配送提示（选填）"><input className="input" value={form.shipping_note_gr} onChange={e => updateField("shipping_note_gr", e.target.value)} /></Field>
               </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Field label="重量 g（选填）"><input className="input" min="1" step="1" type="number" value={form.package_weight_grams} onChange={e => updateField("package_weight_grams", e.target.value)} /></Field>
-                <Field label="长 mm（选填）"><input className="input" min="1" step="1" type="number" value={form.package_length_mm} onChange={e => updateField("package_length_mm", e.target.value)} /></Field>
-                <Field label="宽 mm（选填）"><input className="input" min="1" step="1" type="number" value={form.package_width_mm} onChange={e => updateField("package_width_mm", e.target.value)} /></Field>
-                <Field label="高 mm（选填）"><input className="input" min="1" step="1" type="number" value={form.package_height_mm} onChange={e => updateField("package_height_mm", e.target.value)} /></Field>
+                <Field label="重量 g（选填）"><input className="input" min="1" step="1" type="number" value={form.package_weight_grams} onChange={e => updateField("package_weight_grams", e.target.value === "" ? "" : Number(e.target.value))} /></Field>
+                <Field label="长 mm（选填）"><input className="input" min="1" step="1" type="number" value={form.package_length_mm} onChange={e => updateField("package_length_mm", e.target.value === "" ? "" : Number(e.target.value))} /></Field>
+                <Field label="宽 mm（选填）"><input className="input" min="1" step="1" type="number" value={form.package_width_mm} onChange={e => updateField("package_width_mm", e.target.value === "" ? "" : Number(e.target.value))} /></Field>
+                <Field label="高 mm（选填）"><input className="input" min="1" step="1" type="number" value={form.package_height_mm} onChange={e => updateField("package_height_mm", e.target.value === "" ? "" : Number(e.target.value))} /></Field>
               </div>
             </section>
 

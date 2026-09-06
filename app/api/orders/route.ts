@@ -55,6 +55,15 @@ export async function POST(request: NextRequest) {
   try { vivaConfig = getVivaConfig(); }
   catch { return NextResponse.json({ error: "Online payment is not configured.", code: "PAYMENT_UNAVAILABLE" }, { status: 503 }); }
 
+  // Hobby deployments can only schedule a daily Vercel Cron. Clear expired
+  // reservations before every new checkout as the primary recovery path, and
+  // retain the daily Cron as a quiet-period safety net.
+  const { data: expiry, error: expiryError } = await (supabase as any).rpc("online_order_expire_pending_rpc", { p_limit: 100 });
+  if (expiryError || !expiry || expiry.ok !== true) {
+    console.error("[online order] reservation expiry unavailable", { code: String(expiryError?.code || "") });
+    return NextResponse.json({ error: "Online ordering is temporarily unavailable.", code: "ONLINE_ORDER_UNAVAILABLE" }, { status: 503 });
+  }
+
   const { data, error } = await (supabase as any).rpc("online_checkout_prepare_rpc", {
     p_operation_id: input.operationId,
     p_request_fingerprint: fingerprint,

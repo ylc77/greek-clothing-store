@@ -16,7 +16,7 @@
 
 ```text
 20260802120000_online_store_orders.sql
-20260820121706_viva_boxnow_online_checkout.sql
+20260907120000_viva_boxnow_online_checkout.sql
 ```
 
 配置：
@@ -27,6 +27,8 @@ USE_ONLINE_ORDER_RPC=true
 AUTH_RATE_LIMIT_SECRET=每客户独立且至少32位的随机值
 CRON_SECRET=每客户独立且至少32位的随机值
 ```
+
+结账接口会在创建新订单前先事务清理过期的未付款预留。`vercel.json` 的每日 Cron 是无新访问时的兜底，默认兼容 Vercel Hobby；不要移除 `CRON_SECRET` 校验，也不要让过期任务取消或释放已付款订单。
 
 ## 2. Viva Smart Checkout
 

@@ -136,11 +136,11 @@ POS 部分退换货由 `20260905192432_transactional_pos_returns_exchanges.sql` 
 
 CSV 导入还必须包含 `20260716100000_transactional_csv_import_jobs.sql`，并同时设置 `USE_PRODUCT_RPC=true` 与 `USE_CSV_IMPORT_RPC=true`。配置、migration、RPC 执行权限或服务不可用时，导入 API 返回 503，且不会回退到直接写表或 Node.js 多步 upsert。
 
-在线购物必须包含 `20260802120000_online_store_orders.sql` 和 `20260820121706_viva_boxnow_online_checkout.sql`，并设置 `USE_ONLINE_ORDER_RPC=true`。当前正式流程只支持 Viva 预付款后的 BOX NOW Locker 或到店自取，不再创建货到付款订单。顾客开始付款前会在 `MAIN_STORE` 事务内预留对应尺码 / 颜色库存；安全取消或付款超时会释放预留，完成交付时才正式扣减库存。Viva 回跳页不是付款真相，只有服务端核验的 Webhook 才能将订单标记为已付款。配置、migration、RPC、Viva 或 service role 不可用时订单 API 返回 503，不会回退到旧的多步或货到付款路径。
+在线购物必须包含 `20260802120000_online_store_orders.sql` 和 `20260907120000_viva_boxnow_online_checkout.sql`，并设置 `USE_ONLINE_ORDER_RPC=true`。当前正式流程只支持 Viva 预付款后的 BOX NOW Locker 或到店自取，不再创建货到付款订单。顾客开始付款前会在 `MAIN_STORE` 事务内预留对应尺码 / 颜色库存；安全取消或付款超时会释放预留，完成交付时才正式扣减库存。Viva 回跳页不是付款真相，只有服务端核验的 Webhook 才能将订单标记为已付款。配置、migration、RPC、Viva 或 service role 不可用时订单 API 返回 503，不会回退到旧的多步或货到付款路径。
 
 Viva Dashboard 中应配置当前域名的 `/api/webhooks/viva`，成功和失败回跳分别使用 `/checkout/success` 与 `/checkout/failure`。BOX NOW Locker 选择器使用官方 v5 Widget；公开的 `NEXT_PUBLIC_BOXNOW_PARTNER_ID` 仅用于 Widget，BOX NOW client secret 必须保留在服务端。后台生成运单后由服务端代理下载标签。没有通知服务商时，后台提供希腊语 / 英语取货通知复制按钮，由商家人工发送。
 
-`/api/cron/online-orders` 应通过 Vercel Cron 或外部可信定时器调用，并携带 `Authorization: Bearer <CRON_SECRET>`。该维护任务只释放已过付款期限的未付款订单预留，并把超过保留期的到店自取订单标记为需人工处理；它不会自动取消、退款或释放已付款订单库存。
+每次新结账会先通过事务 RPC 清理已过付款期限的未付款订单预留；`/api/cron/online-orders` 另以每日 Vercel Cron 作为无访问时的兜底，并携带 `Authorization: Bearer <CRON_SECRET>`。该维护任务只释放已过期的未付款预留，并把超过保留期的到店自取订单标记为需人工处理；它不会自动取消、退款或释放已付款订单库存。默认每日频率兼容 Vercel Hobby，如客户使用 Pro 且需要更快的静默期清理，可由维护者审查后提高频率。
 
 CSV 会先完成整份文件预检，再建立可恢复的持久 Job，并按行事务提交。商品模式必须显式选择 `create_only`（默认，仅新增）、`update_existing`（仅更新）或 `upsert`（新增或更新）；库存模式必须选择 `metadata_only`（不改库存）或 `set_inventory`（明确按盘点数量设置库存）。可选翻译发生在最终预览和提交之前，不在数据库事务内调用。网络中断或刷新后应恢复原 Job；失败行可以下载并安全重试，成功行不会重复执行。
 

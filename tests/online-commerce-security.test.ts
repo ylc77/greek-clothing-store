@@ -6,12 +6,22 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 
 test("checkout is Viva RPC-only and does not restore legacy COD creation", () => {
   const route = read("app/api/orders/route.ts");
-  const migration = read("supabase/migrations/20260820121706_viva_boxnow_online_checkout.sql");
+  const migration = read("supabase/migrations/20260907120000_viva_boxnow_online_checkout.sql");
   assert.match(route, /online_checkout_prepare_rpc/);
   assert.match(route, /online_checkout_bind_viva_rpc/);
   assert.doesNotMatch(route, /online_order_create_rpc/);
   assert.match(migration, /revoke execute on function public\.online_order_create_rpc[\s\S]*from service_role/);
   assert.match(migration, /p_fulfillment_method not in \('box_now', 'store_pickup'\)/);
+});
+
+test("expired reservations are cleared before checkout and the fallback cron remains Hobby-compatible", () => {
+  const route = read("app/api/orders/route.ts");
+  const config = JSON.parse(read("vercel.json")) as { crons?: Array<{ path: string; schedule: string }> };
+  const expiryCall = route.indexOf('rpc("online_order_expire_pending_rpc"');
+  const checkoutCall = route.indexOf('rpc("online_checkout_prepare_rpc"');
+  assert.ok(expiryCall > 0 && checkoutCall > expiryCall);
+  assert.match(route, /expiryError\s*\|\|\s*!expiry\s*\|\|\s*expiry\.ok\s*!==\s*true/);
+  assert.deepEqual(config.crons, [{ path: "/api/cron/online-orders", schedule: "0 3 * * *" }]);
 });
 
 test("Viva return pages never act as payment proof", () => {
@@ -26,7 +36,7 @@ test("Viva return pages never act as payment proof", () => {
 });
 
 test("private payment and shipment ledgers are RLS protected and service-role only", () => {
-  const migration = read("supabase/migrations/20260820121706_viva_boxnow_online_checkout.sql");
+  const migration = read("supabase/migrations/20260907120000_viva_boxnow_online_checkout.sql");
   for (const table of ["online_payment_attempts", "online_payment_events", "online_shipments", "product_fulfillment_operations"]) {
     assert.match(migration, new RegExp(`alter table public\\.${table} enable row level security`));
     assert.match(migration, new RegExp(`revoke all on table public\\.${table} from anon, authenticated`));
@@ -36,7 +46,7 @@ test("private payment and shipment ledgers are RLS protected and service-role on
 
 test("expiry maintenance fails closed and never auto-cancels paid overdue pickups", () => {
   const cron = read("app/api/cron/online-orders/route.ts");
-  const migration = read("supabase/migrations/20260820121706_viva_boxnow_online_checkout.sql");
+  const migration = read("supabase/migrations/20260907120000_viva_boxnow_online_checkout.sql");
   assert.match(cron, /CRON_SECRET/);
   assert.match(cron, /timingSafeEqual/);
   assert.match(cron, /online_order_expire_pending_rpc/);
@@ -46,7 +56,7 @@ test("expiry maintenance fails closed and never auto-cancels paid overdue pickup
 });
 
 test("checkout replay cannot regress paid state and late payment checks reserved stock", () => {
-  const migration = read("supabase/migrations/20260820121706_viva_boxnow_online_checkout.sql");
+  const migration = read("supabase/migrations/20260907120000_viva_boxnow_online_checkout.sql");
   assert.match(migration, /response-loss retry[\s\S]*Never regress a committed checkout back to pending state/);
   assert.match(migration, /coalesce\(\(v_result ->> 'replayed'\)::boolean, false\)[\s\S]*return app_private\.online_order_payload\(v_order_id,true\)/);
   assert.match(migration, /coalesce\(b\.quantity_reserved,0\)<i\.quantity/);
@@ -64,7 +74,7 @@ test("storefront uses the official BOX NOW v5 widget contract", () => {
 
 test("pickup-only fulfillment is present in the public product contract without exposing package internals", () => {
   const boundary = read("lib/product-data-boundary.ts");
-  const migration = read("supabase/migrations/20260820121706_viva_boxnow_online_checkout.sql");
+  const migration = read("supabase/migrations/20260907120000_viva_boxnow_online_checkout.sql");
   assert.match(boundary, /PUBLIC_PRODUCT_LIST_COLUMNS[\s\S]*"fulfillment_profile"/);
   assert.match(boundary, /PUBLIC_PRODUCT_DETAIL_COLUMNS[\s\S]*"fulfillment_profile"/);
   assert.match(migration, /grant select \(fulfillment_profile\) on table public\.products to anon, authenticated/);
@@ -76,7 +86,7 @@ test("pickup-only fulfillment is present in the public product contract without 
 
 test("admin runtime health checks configuration and transactional database capabilities", () => {
   const route = read("app/api/admin/online-orders/health/route.ts");
-  const migration = read("supabase/migrations/20260820121706_viva_boxnow_online_checkout.sql");
+  const migration = read("supabase/migrations/20260907120000_viva_boxnow_online_checkout.sql");
   assert.match(route, /authorizeAdminRequest\(request, "online_orders:read"\)/);
   assert.match(route, /USE_ONLINE_ORDER_RPC/);
   assert.match(route, /getVivaConfig/);
@@ -93,7 +103,7 @@ test("admin runtime health checks configuration and transactional database capab
 
 test("BOX NOW cancellation is administrator-only, two-phase, and never releases paid inventory", () => {
   const route = read("app/api/admin/online-orders/[id]/boxnow/cancel/route.ts");
-  const migration = read("supabase/migrations/20260820121706_viva_boxnow_online_checkout.sql");
+  const migration = read("supabase/migrations/20260907120000_viva_boxnow_online_checkout.sql");
   assert.match(route, /authorizeAdminRequest\(request, "online_orders:write"\)/);
   assert.match(route, /online_shipment_cancel_prepare_rpc/);
   assert.match(route, /cancelBoxNowParcel/);
@@ -106,7 +116,7 @@ test("BOX NOW cancellation is administrator-only, two-phase, and never releases 
 });
 
 test("pickup extensions and transitions preserve actor and before-after audit fields", () => {
-  const migration = read("supabase/migrations/20260820121706_viva_boxnow_online_checkout.sql");
+  const migration = read("supabase/migrations/20260907120000_viva_boxnow_online_checkout.sql");
   assert.match(migration, /add column if not exists previous_status text/);
   assert.match(migration, /create or replace function public\.online_order_extend_pickup_rpc/);
   assert.match(migration, /previous_status,next_status,note/);
@@ -115,7 +125,7 @@ test("pickup extensions and transitions preserve actor and before-after audit fi
 
 test("BOX NOW refresh uses the documented provider state set and blocks unsafe completion", () => {
   const route = read("app/api/admin/online-orders/[id]/boxnow/refresh/route.ts");
-  const migration = read("supabase/migrations/20260820121706_viva_boxnow_online_checkout.sql");
+  const migration = read("supabase/migrations/20260907120000_viva_boxnow_online_checkout.sql");
   assert.match(route, /authorizeAdminRequest\(request, "online_orders:write"\)/);
   assert.match(route, /fetchBoxNowParcelState/);
   assert.match(route, /online_shipment_refresh_rpc/);

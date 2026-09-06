@@ -352,15 +352,3 @@ Keep provider credentials customer-specific and environment-driven. A new custom
 
 Use `npm run commerce:status` to inspect configuration without exposing values, `npm run commerce:verify -- --provider viva|boxnow|all` for authentication-only provider checks, and `npm run test:online-orders-runtime` for the local application/database readiness check. Provider verification must not create payments, orders, parcels, or labels.
 
----
-
-## 27. Admin navigation shell and maintenance-only tools
-
-The admin UI has six primary destinations in `lib/admin-navigation.ts`: workspace, pos, receiving, catalog, orders, and more. Legacy view keys remain internal component identifiers, not primary navigation. Never derive authorization from the primary section: reuse the existing view permission and feature checks plus server authorization. The existing compact-viewport POS restriction is intentionally preserved.
-
-Stock receiving, stocktake, and return reuse one legacy component but must be entered in the corresponding fixed mode. Return stock addition is not a refund or exchange transaction; never describe it as one. Quick Sell belongs only to the owner-only emergency inventory tool, not ordinary selling shortcuts.
-
-The repository has no browser-based employee account manager, full database restore UI, or persistent label-history feature. Their navigation entries explain or reuse existing trusted maintenance/printing tools; do not invent working management APIs behind these links. Store, legal, and feature settings still require the independent developer session.
-
-Use `node scripts/run-admin-ui-browser-tests.mjs` for isolated navigation and existing print-preview regression tests. Stop this repository's dev server first (the harness reserves port 3026 and uses the same `.next` directory). The harness generates process-only random emergency credentials and a read-only local settings fixture; it does not read, alter, or validate real customer credentials or databases. An existing weak `.env.local` password may otherwise prevent local Next startup; never weaken the authentication policy to run UI tests.
-
