@@ -334,3 +334,9 @@ The store-operations plan still describes an eventual batch stocktake workflow b
 
 Local Supabase platform DDL hooks were observed reapplying broad `service_role` grants to an older public table when a later public table was created. Any migration adding public tables after the immutable `barcode_operations` or `audit_logs` ledgers must explicitly restore their existing least-privilege grants at the end and rerun the database security gate; do not assume an earlier revoke remains the final ACL.
 
+## 25. POS partial return and exchange boundary
+
+Formal partial returns and exchanges are RPC-only through `public.pos_return_exchange_rpc`. Keep whole-order POS void as a separate operation; never implement a partial return by weakening or reusing the void path. The original order, prior returned quantities, sellable balance, replacement balance, stock movements, external settlement evidence, actor, and request fingerprint must be checked and written in one transaction. Preserve the browser `clientRequestId` across retry or response loss.
+
+Only `resellable` goods return to `MAIN_STORE`. `damaged` and `quarantine` goods go to their dedicated non-sellable locations and must not raise the storefront stock projection. A non-zero price difference requires an explicit external collection or refund method, reference, confirmation, and exact expected amount; the application does not perform the external payment. The printable result is an internal operational receipt and must state that it is not an AADE tax receipt.
+

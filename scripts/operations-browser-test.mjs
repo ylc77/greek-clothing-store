@@ -120,7 +120,7 @@ const detail = {
   stock_movements: [],
 };
 
-function mockedResponse(url) {
+function mockedResponse(url, method = "GET") {
   const parsed = new URL(url);
   const pathname = parsed.pathname;
   if (pathname === "/api/admin/session") return { ok: true, role: "owner", permissions: ownerPermissions, authType: "password", displayName: "6B Browser Owner" };
@@ -131,6 +131,29 @@ function mockedResponse(url) {
   if (pathname === "/api/admin/inventory") return { ok: true, items: [inventoryItem, missingBarcodeItem], total: 2 };
   if (pathname === "/api/admin/pos/health") return { ok: true, ready: true, runtimeHealth: { ready: true } };
   if (pathname === `/api/admin/pos/orders/${orderId}`) return detail;
+  if (pathname === `/api/admin/pos/orders/${orderId}/returns`) {
+    if (method === "POST") return {
+      ok: true,
+      rpc: true,
+      alreadyProcessed: false,
+      return: {
+        id: "6b000000-0000-4000-8000-000000000007",
+        return_number: "RET-AUDIT-6B",
+        original_order_id: orderId,
+        status: "completed",
+        reason: "Browser return fixture",
+        return_subtotal: 39.9,
+        exchange_subtotal: 39.9,
+        balance_delta: 0,
+        external_action: "none",
+        external_method: null,
+        external_reference: null,
+      },
+      affected_skus: [inventoryItem.product_sku],
+    };
+    return { ok: true, returns: [] };
+  }
+  if (pathname === "/api/admin/pos/search") return { ok: true, items: [missingBarcodeItem] };
   if (pathname === "/api/admin/pos/orders") return { ok: true, orders: [order], total: 1, limit: 100, offset: 0 };
   return { ok: true };
 }
@@ -224,6 +247,30 @@ async function verifyReceiptPreview(page, label) {
   expect(overflow <= 1, `${label} receipt preview causes ${overflow}px root overflow`);
 }
 
+async function verifyReturnExchange(page, label, state) {
+  await page.locator(".pos-receipt-no-print").getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("button", { name: "部分退货 / 换货", exact: true }).click();
+  await page.getByRole("heading", { name: /退货与换货/ }).waitFor();
+  await page.getByRole("heading", { name: "1. 选择退入商品", exact: true }).locator("..").getByRole("checkbox").first().check();
+  const search = page.getByPlaceholder("扫描 Barcode 或搜索 SKU / 商品名", { exact: true });
+  await search.focus();
+  await page.keyboard.type(missingBarcodeItem.variant_sku, { delay: 5 });
+  await page.keyboard.press("Enter");
+  await page.getByText(`${missingBarcodeItem.variant_sku} 已加入换出清单。`, { exact: true }).waitFor();
+  await page.getByText("无需补退").waitFor();
+  await page.locator("textarea").fill("Browser return fixture");
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "确认退货 / 换货", exact: true }).click();
+  await page.getByRole("heading", { name: "退换货已完成", exact: true }).waitFor();
+  const receipt = page.locator(".pos-return-receipt");
+  expect((await receipt.innerText()).includes("不是 AADE 税务票据"), `${label} return receipt disclaimer is missing`);
+  expect(state.returnPosts === 1, `${label} return submitted ${state.returnPosts} times`);
+  expect(typeof state.returnBody?.clientRequestId === "string" && state.returnBody.clientRequestId.length > 10, `${label} return operation ID is missing`);
+  expect(state.returnBody?.returnItems?.[0]?.orderItemId === detail.items[0].id, `${label} returned the wrong order line`);
+  expect(state.returnBody?.exchangeItems?.[0]?.variantId === missingBarcodeItem.variant_id, `${label} exchanged the wrong Variant`);
+  expect(state.returnBody?.externalConfirmation?.expectedBalanceDelta === 0, `${label} submitted the wrong expected balance`);
+}
+
 const browser = await chromium.launch({ headless: true });
 for (const viewport of [
   { width: 390, height: 844, label: "mobile" },
@@ -232,8 +279,15 @@ for (const viewport of [
 ]) {
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
+  const state = { returnPosts: 0, returnBody: null };
   await page.route("**/api/admin/**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mockedResponse(route.request().url())) });
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === `/api/admin/pos/orders/${orderId}/returns` && request.method() === "POST") {
+      state.returnPosts += 1;
+      state.returnBody = request.postDataJSON();
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mockedResponse(request.url(), request.method())) });
   });
   await check(`${viewport.label} label and receipt previews`, async () => {
     await login(page);
@@ -253,6 +307,7 @@ for (const viewport of [
       expect(receiptPdf.subarray(0, 4).toString() === "%PDF", "receipt print output is not a PDF");
       await page.emulateMedia({ media: "screen" });
     }
+    await verifyReturnExchange(page, viewport.label, state);
   });
   await context.close();
 }

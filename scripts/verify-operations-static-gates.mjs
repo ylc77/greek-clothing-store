@@ -11,9 +11,11 @@ assert.deepEqual(operationsMigrations, ["20260718105030_operations_reporting_aud
 const projectionMigration = "20260719100000_reconcile_legacy_inventory_projections.sql";
 const bulkBarcodeMigration = "20260719120000_transactional_bulk_barcode_generation.sql";
 const receiptMigration = "20260904184454_transactional_inventory_receipts.sql";
+const returnMigration = "20260905192432_transactional_pos_returns_exchanges.sql";
 assert.ok(migrations.includes(projectionMigration), "legacy inventory projection reconciliation migration is missing");
 assert.ok(migrations.includes(bulkBarcodeMigration), "bulk Barcode generation migration is missing");
 assert.ok(migrations.includes(receiptMigration), "atomic inventory receipt migration is missing");
+assert.ok(migrations.includes(returnMigration), "atomic POS return and exchange migration is missing");
 assert.ok(
   migrations.indexOf(operationsMigrations[0]) < migrations.indexOf(projectionMigration),
   "legacy inventory projection reconciliation must follow operations reporting",
@@ -61,6 +63,15 @@ for (const marker of [
 ]) assert.ok(receipt.includes(marker), `receipt migration is missing ${marker}`);
 assert.match(receipt, /revoke all on function public\.inventory_receipt_complete_rpc[\s\S]*from public, anon, authenticated/);
 assert.match(receipt, /grant execute on function public\.inventory_receipt_complete_rpc[\s\S]*to service_role/);
+const returns = read(`supabase/migrations/${returnMigration}`).toLowerCase();
+for (const marker of [
+  "sales_returns", "sales_return_items", "sales_exchanges", "sales_exchange_items",
+  "pos_return_exchange_rpc", "security definer", "set search_path = ''",
+  "pg_advisory_xact_lock", "for update", "returns_damaged", "returns_quarantine",
+  "pos_return:", "pos_exchange:", "expectedbalancedelta",
+]) assert.ok(returns.includes(marker), `POS return migration is missing ${marker}`);
+assert.match(returns, /revoke execute on function public\.pos_return_exchange_rpc[\s\S]*from public, anon, authenticated/);
+assert.match(returns, /grant execute on function public\.pos_return_exchange_rpc[\s\S]*to service_role/);
 
 const receiptRoute = read("app/api/admin/inventory/receipts/route.ts");
 assert.match(receiptRoute, /authorizeAdminRequest\(request, permission\)/);
@@ -78,6 +89,19 @@ assert.match(receivingWorkspace, /InventoryOperationIdStore\("inventory-receipt"
 assert.match(receivingWorkspace, /receiptRequestFingerprint/);
 assert.match(receivingWorkspace, /\/api\/admin\/inventory\/receipts/);
 assert.match(receivingWorkspace, /quantityReceived/);
+const returnRoute = read("app/api/admin/pos/orders/[id]/returns/route.ts");
+assert.match(returnRoute, /authorizeAdminRequest\(request, "pos:void"\)/);
+assert.match(returnRoute, /isFeatureEnabled\("pos_void"\)/);
+assert.match(returnRoute, /USE_POS_RPC/);
+assert.match(returnRoute, /pos_return_exchange_rpc/);
+assert.match(returnRoute, /parsePosReturnExchangeInput/);
+assert.doesNotMatch(returnRoute, /\.from\(["'](?:sales_returns|sales_return_items|sales_exchanges|sales_exchange_items|inventory_balances|stock_movements)["']\)\.(?:insert|update|upsert|delete)/s);
+const returnDialog = read("components/pos-return-exchange-dialog.tsx");
+for (const marker of [
+  "useBarcodeScanner", "PosOperationIdStore", "posReturnRequestFingerprint",
+  "可再次销售", "瑕疵 / 损坏", "隔离待检查", "不是 AADE 税务票据",
+  "expectedBalanceDelta", "window.confirm",
+]) assert.ok(returnDialog.includes(marker), `POS return dialog is missing ${marker}`);
 assert.match(migration, /revoke all on table public\.audit_logs from public, anon, authenticated, service_role/);
 assert.match(migration, /grant select on table public\.audit_logs to service_role/);
 assert.doesNotMatch(migration, /grant (?:update|delete|insert).*audit_logs.*service_role/);

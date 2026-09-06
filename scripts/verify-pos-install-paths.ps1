@@ -6,6 +6,7 @@ $clientInitPath = Join-Path $repoRoot "supabase\client-init.sql"
 $postgresImage = "public.ecr.aws/supabase/postgres:17.6.1.127"
 $checkoutMigration = "20260715100000_harden_pos_checkout_rpc.sql"
 $voidMigration = "20260715100001_reconcile_pos_void_rpc.sql"
+$returnMigration = "20260905192432_transactional_pos_returns_exchanges.sql"
 $testContainers = @(
   "clothing_pos_client_init_test",
   "clothing_pos_legacy_upgrade_test"
@@ -81,6 +82,16 @@ begin
   if pg_catalog.to_regprocedure('public.pos_runtime_health_rpc()') is null then
     raise exception 'POS health RPC is missing';
   end if;
+  if pg_catalog.to_regprocedure('public.pos_return_exchange_rpc(uuid,text,jsonb,jsonb,text,jsonb,text)') is null then
+    raise exception 'return/exchange RPC is missing';
+  end if;
+  if not pg_catalog.has_function_privilege('service_role', 'public.pos_return_exchange_rpc(uuid,text,jsonb,jsonb,text,jsonb,text)', 'EXECUTE')
+     or pg_catalog.has_function_privilege('anon', 'public.pos_return_exchange_rpc(uuid,text,jsonb,jsonb,text,jsonb,text)', 'EXECUTE') then
+    raise exception 'return/exchange RPC grants are unsafe';
+  end if;
+  if to_regclass('public.sales_returns') is null or to_regclass('public.sales_return_items') is null or to_regclass('public.sales_exchanges') is null or to_regclass('public.sales_exchange_items') is null then
+    raise exception 'return/exchange tables are missing';
+  end if;
   if not pg_catalog.has_function_privilege(
     'service_role',
     'public.pos_checkout_rpc(text,text,jsonb,numeric,text,text,text,text,timestamp with time zone)',
@@ -126,9 +137,9 @@ try {
   $legacyContainer = $testContainers[1]
   Start-TestContainer $legacyContainer
   $allMigrations = Get-ChildItem -LiteralPath $migrationsDirectory -Filter "*.sql" -File | Sort-Object Name
-  $legacyMigrations = $allMigrations | Where-Object { $_.Name -notin @($checkoutMigration, $voidMigration) }
-  $upgradeMigrations = $allMigrations | Where-Object { $_.Name -in @($checkoutMigration, $voidMigration) }
-  if ($upgradeMigrations.Count -ne 2) { throw "Expected both POS upgrade migrations" }
+  $legacyMigrations = $allMigrations | Where-Object { $_.Name -notin @($checkoutMigration, $voidMigration, $returnMigration) }
+  $upgradeMigrations = $allMigrations | Where-Object { $_.Name -in @($checkoutMigration, $voidMigration, $returnMigration) }
+  if ($upgradeMigrations.Count -ne 3) { throw "Expected all POS upgrade migrations" }
 
   foreach ($migration in $legacyMigrations) { Invoke-SqlFile $legacyContainer $migration.FullName }
   Invoke-SqlText $legacyContainer "drop function if exists public.set_updated_at() cascade;" "legacy missing trigger helper fixture"
