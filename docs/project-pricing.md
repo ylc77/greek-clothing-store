@@ -13,7 +13,7 @@
 - Privacy Policy / Terms / Cookie Policy / Refund Policy 等基础法律页面
 - Cookie Banner 结构
 - Footer 法律链接
-- 购物车、货到付款和到店自取
+- 购物车、Viva 在线预付款、BOX NOW Locker 和到店自取
 - `/sitemap.xml`
 - `/robots.txt`
 - AI 客服入口，需配置 OpenAI / DeepSeek 等 API Key 后使用
@@ -118,7 +118,7 @@
 - 支持扫码收银和商品标签打印
 - 支持库存流水追踪
 - 支持低库存提醒
-- 支持站内购物车、货到付款和到店自取
+- 支持站内购物车、Viva 在线预付款、BOX NOW Locker 和到店自取
 - 支持后台快速维护商品
 - 支持订单记录和作废
 - 减少人工 Excel 管库存的错误
@@ -175,7 +175,7 @@
 - 尺码库存快查
 - 库存作业、手动调整、流水和对账
 - 快速售出扣库存
-- 购物车、货到付款和到店自取
+- 购物车、Viva 在线预付款、BOX NOW Locker 和到店自取
 - 在线订单管理
 - 联系页面
 - 基础法律页面模板

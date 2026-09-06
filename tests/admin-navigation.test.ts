@@ -1,6 +1,49 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+// @ts-expect-error Node's strip-only runner requires the extension.
+import { adminPrimaryNavigation, legacyAdminSection, adminNavigationTabKeys, adminSectionForView, getAdminPrimaryNavigation, adminWorkspaceActions, adminVisibleMessage } from "../lib/admin-navigation.ts";
+
+test("employee messages omit infrastructure details without disguising uncertain writes", () => {
+  for (const message of ["RPC unavailable", "missing migration", "Supabase unavailable", "Feature Flag unavailable", "PostgREST error"]) {
+    assert.equal(adminVisibleMessage(message,true),message);
+    assert.match(adminVisibleMessage(message,false), /先核对结果/);
+    assert.doesNotMatch(adminVisibleMessage(message,false), /RPC|migration|Supabase|Feature Flag|PostgREST/);
+  }
+  assert.equal(adminVisibleMessage("库存不足：需要 3，可用 1",false),"库存不足：需要 3，可用 1");
+});
+
+test("six primary destinations cover every legacy view without exposing internal tools", () => {
+  assert.deepEqual(adminPrimaryNavigation.map(item => item.key), ["workspace", "pos", "receiving", "catalog", "orders", "more"]);
+  assert.deepEqual(Object.keys(legacyAdminSection).sort(), [...adminNavigationTabKeys].sort());
+  for (const view of ["dashboard", "check", "quickAdd", "add", "stockLookup", "inventory", "labels"] as const) assert.equal(adminSectionForView(view, "receiving"), "catalog");
+  for (const view of ["posOrders", "onlineOrders", "posDaily", "returns", "ordersAll"] as const) assert.equal(adminSectionForView(view, "receiving"), "orders");
+  assert.equal(adminSectionForView("quickSale", "receiving"), "more");
+});
+
+test("stock modes remain separate destinations with the same underlying view", () => {
+  assert.equal(adminSectionForView("stockOperations", "receiving"), "receiving");
+  assert.equal(adminSectionForView("stockOperations", "stocktake"), "catalog");
+  assert.equal(adminSectionForView("stockOperations", "return"), "orders");
+});
+
+test("primary navigation fails closed using existing role and feature authorization", () => {
+  assert.deepEqual(getAdminPrimaryNavigation(() => false, false), []);
+  assert.deepEqual(getAdminPrimaryNavigation(view => ["workspace", "inventory"].includes(view), false).map(item => item.key), ["workspace", "catalog"]);
+  assert.deepEqual(getAdminPrimaryNavigation(() => true, true).map(item => item.key), ["workspace", "receiving", "catalog", "orders", "more"]);
+  assert.equal(getAdminPrimaryNavigation(view => view === "labels", false)[0]?.key, "catalog");
+});
+
+test("role workspaces contain at most four ordinary operations and never emergency reduction", () => {
+  for (const actions of Object.values(adminWorkspaceActions)) {
+    assert.ok(actions.length >= 3 && actions.length <= 4);
+    assert.equal(actions.some(action => action.view === "quickSale"), false);
+    assert.equal(new Set(actions.map(action => action.view)).size, actions.length);
+  }
+  assert.equal(adminWorkspaceActions.staff.some(action => action.view === "stockOperations"), false);
+  assert.equal(adminWorkspaceActions.inventory.some(action => action.view === "pos"), false);
+});
+
 // @ts-expect-error Node's strip-only test runner requires the explicit .ts extension.
 import { adminCommonNavigationLabelByKey, adminCommonTabsStorageKey, adminDesktopOnlyTabKeys, adminInternalOnlyTabKeys, adminNavigableTabKeys, adminNavigationGroups, adminNavigationLabelByKey, getDefaultAdminCommonTabs, isAdminTabVisibleInViewport, moveAdminCommonTab, normalizeAdminCommonTabs } from "../lib/admin-navigation.ts";
 

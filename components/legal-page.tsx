@@ -162,10 +162,11 @@ function legalCopy(kind: LegalKind, language: Language, settings: LegalSettingsD
 
   if (kind === "shipping") return {
     title: en ? "Shipping Policy" : "Πολιτική Αποστολής",
-    intro: en ? "Delivery areas, timing, charges and what to do if a parcel has a problem." : "Περιοχές παράδοσης, χρόνοι, χρεώσεις και αντιμετώπιση προβλημάτων αποστολής.",
+    intro: en ? "BOX NOW Locker delivery, store pickup, charges and what to do if an order has a problem." : "Παράδοση σε BOX NOW Locker, παραλαβή από το κατάστημα, χρεώσεις και αντιμετώπιση προβλημάτων παραγγελίας.",
     sections: [
       { title: en ? "Shipping and delivery" : "Αποστολή και παράδοση", paragraphs: [legalText(settings, "shippingPolicy", language)] },
-      { title: en ? "Delivery details" : "Στοιχεία παράδοσης", paragraphs: [en ? "Please provide a complete and accurate delivery address and contact number. Contact the store promptly if you notice an error or if a parcel arrives visibly damaged." : "Παρακαλούμε δώστε πλήρη και σωστή διεύθυνση παράδοσης και τηλέφωνο. Επικοινωνήστε άμεσα με το κατάστημα αν εντοπίσετε λάθος ή αν το δέμα φτάσει εμφανώς κατεστραμμένο."] },
+      { title: "BOX NOW Locker", paragraphs: [en ? "Choose the intended BOX NOW Locker during checkout and provide accurate contact details. The store does not request a home-delivery address for this method. Contact the store promptly if the selected Locker is incorrect or the parcel appears damaged." : "Επιλέξτε το σωστό BOX NOW Locker κατά την ολοκλήρωση της αγοράς και δώστε ακριβή στοιχεία επικοινωνίας. Για αυτή τη μέθοδο το κατάστημα δεν ζητά διεύθυνση κατ’ οίκον παράδοσης. Επικοινωνήστε άμεσα με το κατάστημα αν το Locker είναι λάθος ή το δέμα φαίνεται κατεστραμμένο."] },
+      { title: en ? "Store pickup" : "Παραλαβή από το κατάστημα", paragraphs: [en ? "Wait until the store confirms that the prepaid order is ready. Bring the pickup code and collect the order within the stated holding period. An overdue pickup is handled by the store and is not cancelled or refunded automatically." : "Περιμένετε την επιβεβαίωση ότι η προπληρωμένη παραγγελία είναι έτοιμη. Έχετε μαζί σας τον κωδικό παραλαβής και παραλάβετε εντός της αναφερόμενης προθεσμίας. Μια εκπρόθεσμη παραλαβή εξετάζεται από το κατάστημα και δεν ακυρώνεται ούτε επιστρέφεται αυτόματα."] },
       { title: en ? "Contact" : "Επικοινωνία", paragraphs: [`${text(settings.contactEmail, language)} · ${text(settings.phone, language)}`] },
     ],
   };

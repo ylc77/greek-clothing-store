@@ -51,6 +51,7 @@ export const PUBLIC_PRODUCT_COLUMN_GRANT_COLUMNS = [
   "eu_responsible_person",
   "product_safety_notes_gr",
   "product_safety_notes_en",
+  "fulfillment_profile",
   "is_active",
   "created_at",
   "updated_at",
@@ -72,6 +73,7 @@ export const PUBLIC_PRODUCT_LIST_COLUMNS = [
   "image_urls",
   "brand",
   "color",
+  "fulfillment_profile",
   "is_active",
   "created_at",
 ] as const;
@@ -118,6 +120,7 @@ export const PUBLIC_PRODUCT_DETAIL_COLUMNS = [
   "size_chart",
   "fit_type",
   "material_verified",
+  "fulfillment_profile",
   "is_active",
   "updated_at",
   "created_at",

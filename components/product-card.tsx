@@ -41,6 +41,7 @@ export function ProductCard({
         >
           {stock > 0 ? t.inStock : t.outOfStock}
         </span>
+        {product.fulfillment_profile === "pickup_only" ? <span className="absolute bottom-3 left-3 rounded-full bg-amber-50/95 px-3 py-1 text-[10px] font-black text-amber-900 shadow-sm">{language === "el" ? "Μόνο παραλαβή" : "Pickup only"}</span> : null}
       </div>
 
       <div className="flex flex-1 flex-col justify-between gap-3 p-3 sm:p-4">

@@ -8,6 +8,7 @@ export type CartItem = {
   availableQuantity: number;
   unitPrice: number;
   imageUrl: string;
+  fulfillmentProfile?: "boxnow_and_pickup" | "pickup_only";
 };
 
 export type CartAvailabilitySnapshot = Pick<CartItem, "productSku" | "size" | "color" | "availableQuantity"> & {
@@ -59,6 +60,7 @@ export function normalizeCartItem(value: unknown): CartItem | null {
     availableQuantity,
     unitPrice,
     imageUrl: cleanText(row.imageUrl, 2_000),
+    fulfillmentProfile: row.fulfillmentProfile === "pickup_only" ? "pickup_only" : "boxnow_and_pickup",
   };
 }
 

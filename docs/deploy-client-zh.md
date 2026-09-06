@@ -47,8 +47,11 @@ SUPABASE_SERVICE_ROLE_KEY=你的service_role_key
 USE_POS_RPC=true
 USE_PRODUCT_RPC=true
 USE_CSV_IMPORT_RPC=true
+USE_ONLINE_ORDER_RPC=true
 DEEPSEEK_API_KEY=
 ```
+
+在线付款还需要按 README 的环境变量清单配置 Viva Smart Checkout、BOX NOW 和每客户独立的 `CRON_SECRET`。先使用 Viva Demo 与 BOX NOW Stage 完成验收，再切换正式商户凭据；任何 client secret 只能放在 Vercel 服务端，不能使用 `NEXT_PUBLIC_` 前缀。`NEXT_PUBLIC_BOXNOW_PARTNER_ID` 只用于官方 Locker Widget。
 
 `USE_CSV_IMPORT_RPC=true` 需要数据库已包含 `20260716100000_transactional_csv_import_jobs.sql`。若配置或 RPC 不可用，CSV 写入会返回 503 并安全停止，不会回退到直接写表。DeepSeek 只用于可选的提交前翻译预览，没有配置也可以导入已填写完整语言内容的 CSV。
 
@@ -89,9 +92,11 @@ npx supabase db push
 
 ## 9. 检查在线购物
 1. 在商品详情页选择有库存的规格并加入购物车
-2. 分别验证货到付款和到店自取
-3. 在后台「在线订单」确认订单可查看和处理
-4. 访问 `/feed.xml`，确认旧 Feed 返回 410
+2. 分别选择 BOX NOW Locker 和到店自取，并通过 Viva Demo 完成付款
+3. 验证只有服务端核验的 Viva Webhook 会确认付款，浏览器成功回跳本身不会确认订单
+4. 在后台「在线订单」创建 BOX NOW 运单、下载标签，或复制到店自取通知并完成交付
+5. 验证付款超时任务会释放未付款预留；取货超期只标记人工处理，不自动取消或退款
+6. 访问 `/feed.xml`，确认旧 Feed 返回 410
 
 ## 10. 绑定域名（可选）
 Vercel → Settings → Domains → 添加自定义域名

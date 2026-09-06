@@ -64,6 +64,17 @@ const emptySettings: BusinessSettings = {
   delivery_instructions_en: "",
   delivery_instructions_gr: "",
   order_notification_email: "",
+  viva_payments_enabled: false,
+  boxnow_enabled: false,
+  boxnow_minimum_subtotal: 15,
+  boxnow_shipping_fee: 2.5,
+  boxnow_free_shipping_threshold: 39,
+  boxnow_max_items: 10,
+  boxnow_max_weight_grams: 20000,
+  boxnow_max_length_mm: 600,
+  boxnow_max_width_mm: 450,
+  boxnow_max_height_mm: 360,
+  pickup_hold_days: 3,
 };
 
 function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
@@ -466,7 +477,7 @@ export default function AdminSettingsPage() {
             </div>
           </Section>
 
-          <Section title="在线购物与履约" desc="第一版支持货到付款和到店自取；正式开启前请先确认配送费用、地址和法律页面。">
+          <Section title="在线购物与履约" desc="第一版使用 Viva 在线付款，支持 BOX NOW Locker 和门店自提；外部凭据未配置时支付与物流接口会安全关闭。">
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="在线下单" hint="关闭时商品仍可浏览，但购物车和结账不会接受订单。">
                 <select
@@ -486,10 +497,18 @@ export default function AdminSettingsPage() {
                   value={settings.order_notification_email}
                 />
               </Field>
-              <Field label="货到付款配送"><select className="input" onChange={(event) => updateField("delivery_enabled", event.target.value === "true")} value={settings.delivery_enabled ? "true" : "false"}><option value="true">开启</option><option value="false">关闭</option></select></Field>
-              <Field label="到店自取"><select className="input" onChange={(event) => updateField("pickup_enabled", event.target.value === "true")} value={settings.pickup_enabled ? "true" : "false"}><option value="true">开启</option><option value="false">关闭</option></select></Field>
-              <Field label="配送费（EUR）"><input className="input" min="0" onChange={(event) => updateField("shipping_fee", Math.max(0, Number(event.target.value) || 0))} step="0.01" type="number" value={settings.shipping_fee} /></Field>
-              <Field label="免配送费门槛（选填）"><input className="input" min="0" onChange={(event) => updateField("free_shipping_threshold", event.target.value === "" ? "" : Math.max(0, Number(event.target.value) || 0))} step="0.01" type="number" value={settings.free_shipping_threshold ?? ""} /></Field>
+              <Field label="Viva 在线付款"><select className="input" onChange={(event) => updateField("viva_payments_enabled", event.target.value === "true")} value={settings.viva_payments_enabled ? "true" : "false"}><option value="true">开启</option><option value="false">关闭</option></select></Field>
+              <Field label="BOX NOW Locker"><select className="input" onChange={(event) => updateField("boxnow_enabled", event.target.value === "true")} value={settings.boxnow_enabled ? "true" : "false"}><option value="true">开启</option><option value="false">关闭</option></select></Field>
+              <Field label="门店自提"><select className="input" onChange={(event) => updateField("pickup_enabled", event.target.value === "true")} value={settings.pickup_enabled ? "true" : "false"}><option value="true">开启</option><option value="false">关闭</option></select></Field>
+              <Field label="BOX NOW 最低商品金额（EUR）"><input className="input" min="0" onChange={(event) => updateField("boxnow_minimum_subtotal", Math.max(0, Number(event.target.value) || 0))} step="0.01" type="number" value={settings.boxnow_minimum_subtotal} /></Field>
+              <Field label="BOX NOW 运费（EUR）"><input className="input" min="0" onChange={(event) => updateField("boxnow_shipping_fee", Math.max(0, Number(event.target.value) || 0))} step="0.01" type="number" value={settings.boxnow_shipping_fee} /></Field>
+              <Field label="BOX NOW 包邮门槛（选填）"><input className="input" min="0" onChange={(event) => updateField("boxnow_free_shipping_threshold", event.target.value === "" ? "" : Math.max(0, Number(event.target.value) || 0))} step="0.01" type="number" value={settings.boxnow_free_shipping_threshold ?? ""} /></Field>
+              <Field label="单笔最多商品件数"><input className="input" min="1" max="100" onChange={(event) => updateField("boxnow_max_items", Math.max(1, Math.trunc(Number(event.target.value) || 1)))} type="number" value={settings.boxnow_max_items} /></Field>
+              <Field label="BOX NOW 最大重量（g）"><input className="input" min="1" max="100000" onChange={(event) => updateField("boxnow_max_weight_grams", Math.max(1, Math.trunc(Number(event.target.value) || 1)))} type="number" value={settings.boxnow_max_weight_grams} /></Field>
+              <Field label="BOX NOW 最大长度（mm）"><input className="input" min="1" max="2000" onChange={(event) => updateField("boxnow_max_length_mm", Math.max(1, Math.trunc(Number(event.target.value) || 1)))} type="number" value={settings.boxnow_max_length_mm} /></Field>
+              <Field label="BOX NOW 最大宽度（mm）"><input className="input" min="1" max="2000" onChange={(event) => updateField("boxnow_max_width_mm", Math.max(1, Math.trunc(Number(event.target.value) || 1)))} type="number" value={settings.boxnow_max_width_mm} /></Field>
+              <Field label="BOX NOW 最大高度（mm）"><input className="input" min="1" max="2000" onChange={(event) => updateField("boxnow_max_height_mm", Math.max(1, Math.trunc(Number(event.target.value) || 1)))} type="number" value={settings.boxnow_max_height_mm} /></Field>
+              <Field label="自提保留天数"><input className="input" min="1" max="30" onChange={(event) => updateField("pickup_hold_days", Math.max(1, Math.trunc(Number(event.target.value) || 1)))} type="number" value={settings.pickup_hold_days} /></Field>
               <Field label="Pickup instructions (English)"><textarea className="input min-h-24" onChange={(event) => updateField("pickup_instructions_en", event.target.value)} value={settings.pickup_instructions_en} /></Field>
               <Field label="Οδηγίες παραλαβής (Ελληνικά)"><textarea className="input min-h-24" onChange={(event) => updateField("pickup_instructions_gr", event.target.value)} value={settings.pickup_instructions_gr} /></Field>
               <Field label="Delivery instructions (English)"><textarea className="input min-h-24" onChange={(event) => updateField("delivery_instructions_en", event.target.value)} value={settings.delivery_instructions_en} /></Field>

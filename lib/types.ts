@@ -104,6 +104,7 @@ export type Product = {
     color: string;
     quantity_available: number;
     price: number | null;
+    fulfillment_profile?: "boxnow_and_pickup" | "pickup_only";
   }>;
   additional_image_urls?: string | null;
   skroutz_url?: string | null;
@@ -128,6 +129,14 @@ export type Product = {
   category_path_en?: string | null;
   category_path_gr?: string | null;
   is_active?: boolean | null;
+  fulfillment_profile?: "boxnow_and_pickup" | "pickup_only" | null;
+  shipping_note_en?: string | null;
+  shipping_note_gr?: string | null;
+  shipping_note_zh?: string | null;
+  package_weight_grams?: number | null;
+  package_length_mm?: number | null;
+  package_width_mm?: number | null;
+  package_height_mm?: number | null;
   updated_at?: string | null;
   created_at: string;
 };
@@ -174,4 +183,12 @@ export type ProductFormData = {
   style_tags: string;
   size_chart: string;
   material_verified: boolean;
+  fulfillment_profile: "boxnow_and_pickup" | "pickup_only";
+  shipping_note_en: string;
+  shipping_note_gr: string;
+  shipping_note_zh: string;
+  package_weight_grams: number | "";
+  package_length_mm: number | "";
+  package_width_mm: number | "";
+  package_height_mm: number | "";
 };
