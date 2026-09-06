@@ -81,6 +81,20 @@ const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SU
 const mode = process.env.BACKUP_DRILL_MODE;
 if (mode === "create") {
   await client.storage.from("product-images").remove(["audit/backup-6b.webp"]);
+  const oldReturns = await client.from("sales_returns").select("id").like("client_request_id", "AUDIT_BACKUP_6B%");
+  if (oldReturns.data?.length) {
+    const oldExchanges = await client.from("sales_exchanges").select("id").in("return_id", oldReturns.data.map(row => row.id));
+    if (oldExchanges.data?.length) await client.from("sales_exchange_items").delete().in("exchange_id", oldExchanges.data.map(row => row.id));
+    await client.from("sales_return_items").delete().in("return_id", oldReturns.data.map(row => row.id));
+    await client.from("sales_exchanges").delete().in("return_id", oldReturns.data.map(row => row.id));
+    await client.from("sales_returns").delete().in("id", oldReturns.data.map(row => row.id));
+  }
+  const oldOrders = await client.from("sales_orders").select("id").like("idempotency_key", "pos_sale:AUDIT_BACKUP_6B%");
+  if (oldOrders.data?.length) {
+    await client.from("payments").delete().in("order_id", oldOrders.data.map(row => row.id));
+    await client.from("sales_order_items").delete().in("order_id", oldOrders.data.map(row => row.id));
+    await client.from("sales_orders").delete().in("id", oldOrders.data.map(row => row.id));
+  }
   const oldReceipts = await client.from("inventory_receipts").select("id").like("client_request_id", "AUDIT_BACKUP_6B%");
   if (oldReceipts.data?.length) {
     await client.from("inventory_receipt_items").delete().in("receipt_id", oldReceipts.data.map(row => row.id));
@@ -103,6 +117,19 @@ if (mode === "create") {
     p_notes: "Backup restore fixture", p_items: [{ variantId: variant.data.id, quantity: 2, unitCost: null }], p_created_by: "test:backup",
   });
   if (receipt.error) throw receipt.error;
+  const sale = await client.rpc("pos_checkout_rpc", {
+    p_client_request_id: "AUDIT_BACKUP_6B_SALE", p_payment_method: "cash", p_items: [{ variantId: variant.data.id, quantity: 1 }],
+    p_discount_total: 0, p_notes: "Backup return fixture", p_created_by: "test:backup", p_legal_terms_version: null,
+    p_privacy_policy_version: null, p_legal_accepted_at: null,
+  });
+  if (sale.error) throw sale.error;
+  const returned = await client.rpc("pos_return_exchange_rpc", {
+    p_original_order_id: sale.data.order.id, p_client_request_id: "AUDIT_BACKUP_6B_RETURN",
+    p_return_items: [{ orderItemId: sale.data.items[0].id, quantity: 1, condition: "resellable" }], p_exchange_items: [],
+    p_reason: "Backup restore return fixture", p_external_confirmation: { confirmed: true, method: "cash", reference: "AUDIT-BACKUP-REF", expectedBalanceDelta: -7 },
+    p_created_by: "test:backup",
+  });
+  if (returned.error) throw returned.error;
   const uploaded = await client.storage.from("product-images").upload("audit/backup-6b.webp", Buffer.from([82,73,70,70,4,0,0,0,87,69,66,80]), { contentType: "image/webp", upsert: true });
   if (uploaded.error) throw uploaded.error;
 } else if (mode === "verify") {
@@ -112,12 +139,30 @@ if (mode === "create") {
   if (receipt.error || receipt.data.total_units !== 2) throw receipt.error || new Error("restored receipt header mismatch");
   const items = await client.from("inventory_receipt_items").select("quantity_received,barcode_snapshot").eq("receipt_id", receipt.data.id);
   if (items.error || items.data?.length !== 1 || items.data[0].quantity_received !== 2 || items.data[0].barcode_snapshot !== "AUDIT_BACKUP_6B-ONE") throw items.error || new Error("restored receipt item mismatch");
+  const returned = await client.from("sales_returns").select("id,return_subtotal,balance_delta").eq("client_request_id", "AUDIT_BACKUP_6B_RETURN").single();
+  if (returned.error || Number(returned.data.return_subtotal) !== 7 || Number(returned.data.balance_delta) !== -7) throw returned.error || new Error("restored sales return mismatch");
+  const returnItems = await client.from("sales_return_items").select("quantity,condition").eq("return_id", returned.data.id);
+  if (returnItems.error || returnItems.data?.length !== 1 || returnItems.data[0].quantity !== 1 || returnItems.data[0].condition !== "resellable") throw returnItems.error || new Error("restored return item mismatch");
   const object = await client.storage.from("product-images").download("audit/backup-6b.webp");
   if (object.error || !object.data) throw object.error || new Error("restored object missing");
   const bytes = Buffer.from(await object.data.arrayBuffer());
   if (bytes.toString("hex") !== "524946460400000057454250") throw new Error("restored object content mismatch");
 } else if (mode === "cleanup") {
   await client.storage.from("product-images").remove(["audit/backup-6b.webp"]);
+  const returns = await client.from("sales_returns").select("id").like("client_request_id", "AUDIT_BACKUP_6B%");
+  if (returns.data?.length) {
+    const exchanges = await client.from("sales_exchanges").select("id").in("return_id", returns.data.map(row => row.id));
+    if (exchanges.data?.length) await client.from("sales_exchange_items").delete().in("exchange_id", exchanges.data.map(row => row.id));
+    await client.from("sales_return_items").delete().in("return_id", returns.data.map(row => row.id));
+    await client.from("sales_exchanges").delete().in("return_id", returns.data.map(row => row.id));
+    await client.from("sales_returns").delete().in("id", returns.data.map(row => row.id));
+  }
+  const orders = await client.from("sales_orders").select("id").like("idempotency_key", "pos_sale:AUDIT_BACKUP_6B%");
+  if (orders.data?.length) {
+    await client.from("payments").delete().in("order_id", orders.data.map(row => row.id));
+    await client.from("sales_order_items").delete().in("order_id", orders.data.map(row => row.id));
+    await client.from("sales_orders").delete().in("id", orders.data.map(row => row.id));
+  }
   const receipts = await client.from("inventory_receipts").select("id").like("client_request_id", "AUDIT_BACKUP_6B%");
   if (receipts.data?.length) {
     await client.from("inventory_receipt_items").delete().in("receipt_id", receipts.data.map(row => row.id));

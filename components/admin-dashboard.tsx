@@ -15,6 +15,7 @@ import { getTotalStock as effectiveStock } from "@/lib/product-stock";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/components/admin-toast";
 import { PosReceiptPreview } from "@/components/pos-receipt-preview";
+import { PosReturnExchangeDialog } from "@/components/pos-return-exchange-dialog";
 import { LabelPrintPreview, type LabelSize, type PrintableVariantLabel } from "@/components/label-print-preview";
 import type { AdminPermission, AdminRole } from "@/lib/admin-auth";
 import { featurePlanPresets, type FeatureFlags, type FeatureKey } from "@/lib/feature-catalog";
@@ -403,6 +404,8 @@ type PosOrderDetail = {
   };
   items: Array<{
     id: string;
+    product_id: number;
+    variant_id: string;
     product_sku: string;
     variant_sku: string;
     barcode: string | null;
@@ -993,6 +996,7 @@ export function AdminDashboard({
   const [posOrderPaymentMethod, setPosOrderPaymentMethod] = useState<PosPaymentFilter>("all");
   const [posOrderDateRange, setPosOrderDateRange] = useState<PosDateRangeFilter>("today");
   const [posOrderDetail, setPosOrderDetail] = useState<PosOrderDetail | null>(null);
+  const [posReturnDialogOpen, setPosReturnDialogOpen] = useState(false);
   const [posOrderDetailLoading, setPosOrderDetailLoading] = useState(false);
   const [posVoidDialog, setPosVoidDialog] = useState<PosVoidDialogState | null>(null);
   const [posReceiptDetail, setPosReceiptDetail] = useState<PosOrderDetail | null>(null);
@@ -1175,7 +1179,7 @@ export function AdminDashboard({
     if (key === "orders") { activateAdminTab(canUseTab("ordersAll") ? "ordersAll" : "returns"); return; }
     activateAdminTab(key);
   };
-  const showStoreOrders = canUseTab("posOrders") && (tab === "posOrders" || tab === "ordersAll" && orderSource !== "online");
+  const showStoreOrders = canUseTab("posOrders") && (tab === "posOrders" || tab === "returns" || tab === "ordersAll" && orderSource !== "online");
   const showOnlineOrders = canUseTab("onlineOrders") && (tab === "onlineOrders" || tab === "ordersAll" && orderSource !== "store");
   const activeStockOperation = stockOperationOptions.find(option => option.key === stockOperationMode)!;
   useEffect(() => {
@@ -4262,9 +4266,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           </select>
         </label> : null}
         {tab === "returns" ? <section className="admin-panel"><h2 className="text-xl font-black">退货换货</h2>
-          <p className="my-3 text-sm text-stone-600">先查找原订单并核对付款与退货情况。整单作废可能自动恢复库存，不要再重复加回。在线退款和换货请按原订单及支付渠道办理；库存加回不等于退款。</p>
-          <div className="flex flex-wrap gap-3">{canUseTab("ordersAll") ? <button className="admin-button-secondary" type="button" onClick={() => activateAdminTab("ordersAll")}>查找原订单</button> : null}
-          {canUseTab("stockOperations") ? <button className="admin-button-secondary" type="button" onClick={() => openStockMode("return")}>已核对的可售退货加回</button> : <p className="text-sm text-stone-500">库存加回需由库存人员或负责人处理。</p>}</div>
+          <p className="my-3 text-sm text-stone-600">在下方搜索或扫描原 POS 订单，打开详情后选择“部分退货 / 换货”。退入、换出、商品状态和库存流水会在一个事务内完成；整单作废仍使用独立操作。</p>
+          <p className="rounded-xl bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">库存加回不等于退款；退款或补收须先在真实收银机或支付渠道完成并记录参考号。系统打印的是内部凭据，不是 AADE 税务票据。</p>
         </section> : null}
         {tab === "more" ? <AdminMorePage isOwner={isOwner} canUse={available} onSelect={activateAdminTab} /> : null}
         {tab === "staff" && isOwner ? <section className="admin-panel"><h2 className="text-xl font-black">员工与权限</h2><p className="my-3">员工账号仍由维护者通过现有可信部署流程创建和分配角色，本页不提供提升权限或重置密码接口。</p><ul className="list-disc space-y-2 pl-5"><li>店主：经营管理；店铺、法律及功能设置仍需独立开发者验证。</li><li>收银员：收银及授权订单处理，不能调整库存。</li><li>库存员：到货、盘点、标签，不能使用收银或紧急扣减。</li><li>只读：仅查看授权数据，不可写入。</li></ul></section> : null}
@@ -5213,6 +5216,15 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     <div className="flex flex-wrap gap-2">
                       {adminFeatures.pos_void && posOrderDetail.order.status === "completed" && hasPermission("pos:void") ? (
                         <button
+                          className="min-h-11 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-black text-amber-800 hover:bg-amber-100"
+                          onClick={() => setPosReturnDialogOpen(true)}
+                          type="button"
+                        >
+                          部分退货 / 换货
+                        </button>
+                      ) : null}
+                      {adminFeatures.pos_void && posOrderDetail.order.status === "completed" && hasPermission("pos:void") ? (
+                        <button
                           className="min-h-11 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-black text-red-700 hover:bg-red-100"
                           onClick={() => openPosVoidDialog(posOrderDetail.order)}
                           type="button"
@@ -5230,7 +5242,6 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                           {posReceiptLoading ? "读取小票..." : "查看 / 打印小票"}
                         </button>
                       ) : null}
-                      <button className="admin-button-secondary" onClick={() => { setPosOrderDetail(null); activateAdminTab("returns"); }} type="button">退货换货指引</button>
                       <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black text-ink hover:bg-stone-50" onClick={() => setPosOrderDetail(null)} type="button">关闭</button>
                     </div>
                   </div>
@@ -5369,6 +5380,20 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   </div>
                 </div>
               </div>
+            ) : null}
+            {posReturnDialogOpen && posOrderDetail ? (
+              <PosReturnExchangeDialog
+                api={api}
+                order={posOrderDetail.order}
+                items={posOrderDetail.items}
+                onClose={() => setPosReturnDialogOpen(false)}
+                onCompleted={async () => {
+                  await loadPosOrderDetail(posOrderDetail.order.id);
+                  await loadPosOrders(posOrdersOffset);
+                  void loadInventoryData();
+                  void loadProducts();
+                }}
+              />
             ) : null}
           </section>
         ) : null}

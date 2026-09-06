@@ -107,7 +107,9 @@ POS 使用前必须确认数据库已包含以下事务 RPC migrations（新客�
 - `20260715100000_harden_pos_checkout_rpc.sql`
 - `20260715100001_reconcile_pos_void_rpc.sql`
 
-`USE_POS_RPC=true` 是正式运行的必需配置。若配置不是 `true`、migration 未部署、函数缺失或 `service_role` 无执行权限，后台会显示红色阻断提示，checkout / void API 返回 503，并且不会创建订单、付款、库存变化或库存流水。系统不会自动回退到非事务 JavaScript 多步写入。
+`USE_POS_RPC=true` 是正式运行的必需配置。若配置不是 `true`、migration 未部署、函数缺失或 `service_role` 无执行权限，后台会显示红色阻断提示，checkout / void / 部分退换货 API 返回 503，并且不会创建订单、退换货单、付款、库存变化或库存流水。系统不会自动回退到非事务 JavaScript 多步写入。
+
+POS 部分退换货由 `20260905192432_transactional_pos_returns_exchanges.sql` 安装。它保留整单 void 的原行为，另用 `sales_returns`、`sales_return_items`、`sales_exchanges` 和 `sales_exchange_items` 记录可追踪的部分退入与换出。只有 `resellable` 回主可售库存；`damaged` 和 `quarantine` 分别进入非可售位置。有补收或退款时必须先确认外部处理方式和参考号。打印结果只是内部凭据，不是 AADE 税务票据。
 
 库存调整和“快速售出”还必须包含 `20260715102000_transactional_inventory_operations.sql`。这两个正式写入入口只调用 `inventory_apply_rpc`：库存余额、库存流水、幂等记录和兼容的 `products.stock` / `products.size_stock` 投影在同一个数据库事务内完成。RPC 缺失、不可执行或不可用时 API 返回 503，不会回退到前端或服务端多步写入。
 

@@ -13,6 +13,7 @@ begin
   foreach signature in array array[
     'public.pos_checkout_rpc(text,text,jsonb,numeric,text,text,text,text,timestamp with time zone)',
     'public.pos_void_rpc(uuid,text,text,text)',
+    'public.pos_return_exchange_rpc(uuid,text,jsonb,jsonb,text,jsonb,text)',
     'public.pos_runtime_health_rpc()',
     'public.inventory_apply_rpc(text,uuid,text,integer,text,text,text,boolean)',
     'public.inventory_runtime_health_rpc()',
@@ -71,6 +72,18 @@ begin
      or pg_catalog.has_table_privilege('authenticated', 'public.developer_access', 'insert') then
     raise exception 'untrusted role has developer_access table privileges';
   end if;
+  foreach signature in array array['sales_returns','sales_return_items','sales_exchanges','sales_exchange_items'] loop
+    if not exists (select 1 from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname=signature and c.relrowsecurity) then
+      raise exception 'return table is missing RLS: %', signature;
+    end if;
+    if exists (select 1 from pg_catalog.pg_policies where schemaname='public' and tablename=signature) then
+      raise exception 'return table has a public policy: %', signature;
+    end if;
+    if pg_catalog.has_table_privilege('anon', 'public.' || signature, 'select,insert,update,delete')
+       or pg_catalog.has_table_privilege('authenticated', 'public.' || signature, 'select,insert,update,delete') then
+      raise exception 'untrusted role has return table privileges: %', signature;
+    end if;
+  end loop;
 end
 $$;
 
