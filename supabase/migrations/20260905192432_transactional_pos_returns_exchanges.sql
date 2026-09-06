@@ -479,10 +479,20 @@ revoke execute on function public.pos_runtime_health_rpc() from public, anon, au
 grant execute on function public.pos_runtime_health_rpc() to service_role;
 
 -- Supabase platform DDL hooks can reapply default grants when later public
--- tables are created. Restore the existing append-only ledger boundaries.
-revoke all on table public.audit_logs from public, anon, authenticated, service_role;
-grant select on table public.audit_logs to service_role;
-revoke all on table public.barcode_operations from public, anon, authenticated, service_role;
-grant select, insert on table public.barcode_operations to service_role;
+-- tables are created. Restore existing append-only ledger boundaries without
+-- requiring every legacy installation to have every optional ledger table.
+do $$
+begin
+  if pg_catalog.to_regclass('public.audit_logs') is not null then
+    execute 'revoke all on table public.audit_logs from public, anon, authenticated, service_role';
+    execute 'grant select on table public.audit_logs to service_role';
+  end if;
+
+  if pg_catalog.to_regclass('public.barcode_operations') is not null then
+    execute 'revoke all on table public.barcode_operations from public, anon, authenticated, service_role';
+    execute 'grant select, insert on table public.barcode_operations to service_role';
+  end if;
+end;
+$$;
 
 commit;
