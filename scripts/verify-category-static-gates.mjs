@@ -53,7 +53,8 @@ assert.match(dashboard, /deletedSubcategoryIds/);
 assert.match(dashboard, /parseCategoryCatalogMutation/);
 assert.match(dashboard, /if \(!response\.ok\) throw new Error\(data\.error/);
 assert.match(dashboard, /仍被商品使用的分类不能删除/);
-assert.match(dashboard, /一次数据库事务中提交/);
+assert.match(dashboard, /点击保存后会统一提交本次修改/);
+assert.doesNotMatch(dashboard, /数据库事务/);
 
 const integrationTest = read("scripts/category-catalog-integration-test.mjs");
 assert.match(integrationTest, /process\.platform === "win32"[\s\S]*?npx\.cmd supabase status -o env/);
