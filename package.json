@@ -59,7 +59,7 @@
     "test:developer-secrets": "node scripts/scan-developer-secrets.mjs",
     "test:developer": "npm run test:developer-credentials && npm run test:developer-integration && npm run test:developer-secrets",
     "test:feature-catalog": "node --experimental-strip-types --test tests/feature-catalog.test.ts",
-    "test:admin-navigation": "node --experimental-strip-types --test tests/admin-navigation.test.ts",
+    "test:admin-navigation": "node --experimental-strip-types --test tests/admin-navigation.test.ts tests/admin-user-facing-copy.test.ts",
     "test:admin-navigation-browser": "node scripts/admin-navigation-browser-test.mjs",
     "test:feature-gates": "node scripts/feature-gate-integration-test.mjs",
     "test:online-orders-unit": "node --experimental-strip-types --test tests/cart.test.ts tests/cart-availability.test.ts tests/online-order.test.ts tests/checkout-operation.test.ts tests/fulfillment.test.ts tests/viva.test.ts tests/viva-webhook.test.ts tests/boxnow.test.ts tests/online-commerce-security.test.ts",

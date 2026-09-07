@@ -105,7 +105,7 @@ export class InventoryOperationIdStore {
     } catch {
       throw new InventoryOperationStateError(
         "OPERATION_STORAGE_UNAVAILABLE",
-        "浏览器无法持久保存业务 ID，库存写入已阻止。请启用 sessionStorage 后重试。",
+        "浏览器无法安全保存本次库存操作。请检查浏览器隐私设置后重试。",
       );
     }
   }

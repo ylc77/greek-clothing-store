@@ -6,7 +6,7 @@ export function LabelDeviceSettings({ profile, onChange, storageAvailable }: {
 }) {
   return <details className="label-no-print mb-4 rounded-xl border border-stone-200 bg-white p-3">
     <summary className="cursor-pointer font-bold">设备与打印设置</summary>
-    <p className="my-2 text-xs text-stone-600">打印机配置名称：Powertech PT-1509 · 浏览器 / Windows 驱动。硬件验收：待实测，网页未检测打印机连接。</p>
+    <p className="my-2 text-xs text-stone-600">适用打印机：Powertech PT-1509。请先在 Windows 中连接打印机，再从浏览器开始打印。</p>
     <div className="flex flex-wrap items-center gap-4 text-sm">
       <label><input type="checkbox" checked={profile.showStoreName} onChange={e => onChange({ ...profile, showStoreName: e.target.checked })} /> 显示店名</label>
       <label><input type="checkbox" checked={profile.showPrice} onChange={e => onChange({ ...profile, showPrice: e.target.checked })} /> 显示售价</label>

@@ -46,7 +46,7 @@ export function generateBarcodeFromVariantSku(variantSku: string) {
 function mapRpcError(error: { message?: string; code?: string } | null) {
   const message = String(error?.message || "");
   if (message.includes("BARCODE_ALREADY_IN_USE") || message.includes("BARCODE_OPERATION_CONFLICT")) {
-    return new VariantBarcodeError("条码已被其他 Variant 使用，或该业务 ID 对应了不同请求。", 409, "BARCODE_CONFLICT");
+    return new VariantBarcodeError("条码已被其他商品规格使用，或本次操作内容已经改变。请刷新后重试。", 409, "BARCODE_CONFLICT");
   }
   if (message.includes("BARCODE_HISTORY_LOCKED")) {
     return new VariantBarcodeError("该 Variant 已有库存或销售历史，条码不能再修改。", 409, "BARCODE_HISTORY_LOCKED");

@@ -124,7 +124,7 @@ export function PosReturnExchangeDialog({ api, order, items, onClose, onComplete
     const scope = `return:${order.id}`;
     const fingerprint = posReturnRequestFingerprint(withoutId);
     const operationId = ids().getOrCreate(scope, fingerprint);
-    setBusy(true); setError(""); setMessage("正在一个事务内完成退入、换出和库存流水...");
+    setBusy(true); setError(""); setMessage("正在处理所选商品...");
     try {
       const data = await api(`/api/admin/pos/orders/${order.id}/returns`, { method: "POST", body: JSON.stringify({ ...withoutId, clientRequestId: operationId }) });
       ids().complete(scope, operationId); setReceipt(data); setMessage(data.alreadyProcessed ? "该业务已处理，已返回原退换货结果。" : "退换货已完成。");
@@ -132,7 +132,7 @@ export function PosReturnExchangeDialog({ api, order, items, onClose, onComplete
     } catch (cause) {
       const candidate = cause as Error & { operationSafeToDiscard?: boolean };
       if (candidate.operationSafeToDiscard) ids().cancel(scope);
-      setError(candidate.message || "退换货提交失败。结果未知时请先查看记录，不要更换业务 ID 重试。");
+      setError(candidate.message || "退换货结果暂时无法确认。请先查看订单记录，不要重复提交。");
     } finally { setBusy(false); }
   }
 
@@ -155,7 +155,7 @@ export function PosReturnExchangeDialog({ api, order, items, onClose, onComplete
 
   return <div className="fixed inset-0 z-[75] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4">
     <div className="max-h-[96dvh] w-full max-w-6xl overflow-y-auto rounded-t-3xl bg-paper p-5 sm:rounded-3xl">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[11px] font-black uppercase tracking-[.18em] text-stone-400">Atomic return / exchange</p><h3 className="text-xl font-black">退货与换货 · {order.order_number}</h3><p className="mt-1 text-xs text-stone-500">整单作废保持独立。本操作只处理所选明细，并在一个数据库事务内完成。</p></div><button className="admin-button-secondary" disabled={busy} onClick={onClose}>关闭</button></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[11px] font-black uppercase tracking-[.18em] text-stone-400">订单售后</p><h3 className="text-xl font-black">退货与换货 · {order.order_number}</h3><p className="mt-1 text-xs text-stone-500">选择需要退回或换出的商品并确认数量；整单作废请返回订单详情操作。</p></div><button className="admin-button-secondary" disabled={busy} onClick={onClose}>关闭</button></div>
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <section className="rounded-2xl border bg-white p-4"><h4 className="font-black">1. 选择退入商品</h4><div className="mt-3 space-y-3">{items.map(item => {
           const previous = previousByItem.get(item.id)?.quantity || 0; const remaining = Math.max(0, item.quantity - previous); const selected = returns.get(item.id);
@@ -165,7 +165,7 @@ export function PosReturnExchangeDialog({ api, order, items, onClose, onComplete
       </div>
       <section className="mt-5 rounded-2xl border bg-white p-4"><h4 className="font-black">3. 核对金额与外部处理</h4><div className="mt-3 grid gap-3 sm:grid-cols-3"><p className="rounded-xl bg-stone-50 p-3">退入金额<br/><b>€{amounts.returnSubtotal.toFixed(2)}</b></p><p className="rounded-xl bg-stone-50 p-3">换出金额<br/><b>€{amounts.exchangeSubtotal.toFixed(2)}</b></p><p className="rounded-xl bg-stone-50 p-3">{amounts.balanceDelta > 0 ? "应补收" : amounts.balanceDelta < 0 ? "应退款" : "无需补退"}<br/><b>€{Math.abs(amounts.balanceDelta).toFixed(2)}</b></p></div><label className="mt-3 block text-xs font-black">退换货原因<textarea className="input mt-1 min-h-20" maxLength={500} value={reason} onChange={event => setReason(event.target.value)} /></label>{needsExternal ? <div className="mt-3 grid gap-2 sm:grid-cols-2"><label className="text-xs font-black">外部处理方式<select className="input mt-1" value={externalMethod} onChange={event => setExternalMethod(event.target.value as typeof externalMethod)}><option value="">请选择</option><option value="cash">现金</option><option value="card">银行卡 / POS</option><option value="other">其他</option></select></label><label className="text-xs font-black">外部参考号<input className="input mt-1" maxLength={200} value={externalReference} onChange={event => setExternalReference(event.target.value)} /></label><label className="sm:col-span-2 flex gap-2 text-sm font-bold"><input checked={externalConfirmed} type="checkbox" onChange={event => setExternalConfirmed(event.target.checked)} />我已在真实收银机或支付渠道完成对应的{amounts.balanceDelta > 0 ? "补收" : "退款"}</label></div> : <p className="mt-3 text-sm font-bold text-emerald-700">金额相同，不需要外部补收或退款。</p>}</section>
       {error ? <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700" role="alert">{error}</p> : null}{message ? <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800" role="status">{message}</p> : null}
-      <button className="admin-button-primary mt-4 w-full" disabled={busy || !returns.size} onClick={() => void submit()} type="button">{busy ? "事务处理中..." : "确认退货 / 换货"}</button>
+      <button className="admin-button-primary mt-4 w-full" disabled={busy || !returns.size} onClick={() => void submit()} type="button">{busy ? "处理中..." : "确认退货 / 换货"}</button>
     </div>
   </div>;
 }

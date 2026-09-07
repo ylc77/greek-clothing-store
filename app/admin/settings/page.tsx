@@ -477,7 +477,7 @@ export default function AdminSettingsPage() {
             </div>
           </Section>
 
-          <Section title="在线购物与履约" desc="第一版使用 Viva 在线付款，支持 BOX NOW Locker 和门店自提；外部凭据未配置时支付与物流接口会安全关闭。">
+          <Section title="在线购物与履约" desc="选择顾客可用的付款、配送和门店自提方式，并设置对应费用与取货规则。">
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="在线下单" hint="关闭时商品仍可浏览，但购物车和结账不会接受订单。">
                 <select
@@ -522,10 +522,10 @@ export default function AdminSettingsPage() {
             </Field>
           </Section>
 
-          <Section title="版本与功能" desc="按当前服装实体店工作流划分；客户版本控制模块，员工角色继续限制个人权限。">
+          <Section title="可用功能" desc="选择本店需要开放的功能；每位员工仍按自己的账号权限使用。">
             {!featureSettings.configured ? (
               <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">
-                当前使用兼容默认配置（全部开启）。保存前请先部署 feature_settings migration。
+                功能设置暂时无法保存，请联系维护人员处理。其他店铺资料仍可继续填写。
               </div>
             ) : null}
             <div className="grid gap-2 sm:grid-cols-3">
