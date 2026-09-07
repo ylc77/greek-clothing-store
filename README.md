@@ -1,6 +1,6 @@
 # Fashion Boutique 服装店系统
 
-面向希腊服装零售店的希腊语 / 英语在线商店与中文后台系统，包含购物车、货到付款、到店自取、在线订单、商品、库存、POS、AI 导购、员工权限和法律页面。
+面向希腊服装零售店的希腊语 / 英语在线商店与中文后台系统，包含购物车、Viva Smart Checkout、BOX NOW Locker、到店自取、在线订单、商品、库存、POS、AI 导购、员工权限和法律页面。
 
 ## v1 发布与运维文档
 
@@ -12,6 +12,7 @@
 - [v1.0 Release Notes](docs/v1.0-release-notes.md)
 - [客户部署检查清单](docs/v1-customer-deployment-checklist.md)
 - [维护者密钥轮换检查清单](docs/v1-maintainer-key-rotation-checklist.md)
+- [在线付款与配送 API 接入](docs/commerce-provider-setup-zh.md)
 
 ## 新客户快速部署
 
@@ -99,6 +100,24 @@ USE_POS_RPC=true
 USE_PRODUCT_RPC=true
 USE_CSV_IMPORT_RPC=true
 USE_ONLINE_ORDER_RPC=true
+# Viva Smart Checkout（先使用 Demo 凭据验收）
+VIVA_ACCOUNTS_BASE_URL=https://demo-accounts.vivapayments.com
+VIVA_API_BASE_URL=https://demo-api.vivapayments.com
+VIVA_CHECKOUT_BASE_URL=https://demo.vivapayments.com/web/checkout
+VIVA_CLIENT_ID=
+VIVA_CLIENT_SECRET=
+VIVA_SOURCE_CODE=
+VIVA_MERCHANT_ID=
+VIVA_WEBHOOK_VERIFICATION_KEY=
+# BOX NOW（先使用 Stage 凭据验收）
+BOXNOW_API_BASE_URL=
+BOXNOW_CLIENT_ID=
+BOXNOW_CLIENT_SECRET=
+BOXNOW_PARTNER_ID=
+BOXNOW_ORIGIN_ID=
+NEXT_PUBLIC_BOXNOW_PARTNER_ID=
+# 用于定时释放未付款订单的库存预留，每客户独立随机生成
+CRON_SECRET=
 ```
 
 POS 使用前必须确认数据库已包含以下事务 RPC migrations（新客户的 `client-init.sql` 已自动包含）：
@@ -117,7 +136,11 @@ POS 部分退换货由 `20260905192432_transactional_pos_returns_exchanges.sql` 
 
 CSV 导入还必须包含 `20260716100000_transactional_csv_import_jobs.sql`，并同时设置 `USE_PRODUCT_RPC=true` 与 `USE_CSV_IMPORT_RPC=true`。配置、migration、RPC 执行权限或服务不可用时，导入 API 返回 503，且不会回退到直接写表或 Node.js 多步 upsert。
 
-在线购物还必须包含 `20260802120000_online_store_orders.sql`，并设置 `USE_ONLINE_ORDER_RPC=true`。第一版支持货到付款和到店自取：顾客提交订单时在 `MAIN_STORE` 事务内预留对应尺码 / 颜色库存，取消时释放预留，完成交付时才正式扣减库存。配置、migration、RPC 或 service role 不可用时订单 API 返回 503，不会创建半完成订单或绕过库存校验。
+在线购物必须包含 `20260802120000_online_store_orders.sql` 和 `20260907120000_viva_boxnow_online_checkout.sql`，并设置 `USE_ONLINE_ORDER_RPC=true`。当前正式流程只支持 Viva 预付款后的 BOX NOW Locker 或到店自取，不再创建货到付款订单。顾客开始付款前会在 `MAIN_STORE` 事务内预留对应尺码 / 颜色库存；安全取消或付款超时会释放预留，完成交付时才正式扣减库存。Viva 回跳页不是付款真相，只有服务端核验的 Webhook 才能将订单标记为已付款。配置、migration、RPC、Viva 或 service role 不可用时订单 API 返回 503，不会回退到旧的多步或货到付款路径。
+
+Viva Dashboard 中应配置当前域名的 `/api/webhooks/viva`，成功和失败回跳分别使用 `/checkout/success` 与 `/checkout/failure`。BOX NOW Locker 选择器使用官方 v5 Widget；公开的 `NEXT_PUBLIC_BOXNOW_PARTNER_ID` 仅用于 Widget，BOX NOW client secret 必须保留在服务端。后台生成运单后由服务端代理下载标签。没有通知服务商时，后台提供希腊语 / 英语取货通知复制按钮，由商家人工发送。
+
+每次新结账会先通过事务 RPC 清理已过付款期限的未付款订单预留；`/api/cron/online-orders` 另以每日 Vercel Cron 作为无访问时的兜底，并携带 `Authorization: Bearer <CRON_SECRET>`。该维护任务只释放已过期的未付款预留，并把超过保留期的到店自取订单标记为需人工处理；它不会自动取消、退款或释放已付款订单库存。默认每日频率兼容 Vercel Hobby，如客户使用 Pro 且需要更快的静默期清理，可由维护者审查后提高频率。
 
 CSV 会先完成整份文件预检，再建立可恢复的持久 Job，并按行事务提交。商品模式必须显式选择 `create_only`（默认，仅新增）、`update_existing`（仅更新）或 `upsert`（新增或更新）；库存模式必须选择 `metadata_only`（不改库存）或 `set_inventory`（明确按盘点数量设置库存）。可选翻译发生在最终预览和提交之前，不在数据库事务内调用。网络中断或刷新后应恢复原 Job；失败行可以下载并安全重试，成功行不会重复执行。
 
@@ -169,14 +192,14 @@ SERVER_IMAGE_FETCH_ALLOWED_ORIGINS=
 2. 维护者使用 `ADMIN_PASSWORD` 登录，并为商家创建所需的员工账号；不要把紧急 owner 密码交给商家。
 3. 进入 **店铺设置**，再用维护者专属的开发者密码解锁，填写店铺名称、地址、电话、营业时间和联系方式。
 4. 上传 Logo 和首页图片。
-5. 设置 WhatsApp、Instagram、Google Maps，并开启在线购物；选择货到付款、到店自取、配送费和免运费门槛。
+5. 设置 WhatsApp、Instagram、Google Maps，并开启 Viva、BOX NOW 和到店自取；配置 BOX NOW 起送金额、运费、免运费门槛、单笔件数、最大重量、长宽高及取货保留天数。
 6. 添加商品或通过 CSV 导入商品。
 7. 进入 **Settings → Legal Settings**，使用同一个开发者密码解锁，填写商家法律信息并发布 `v1`。
 8. 根据客户购买内容选择 Basic、Standard 或 Advanced。
 
 当前三档版本：
 
-- **Basic 基础版**：双语在线商店、货到付款 / 到店自取、商品 / 图片 / 分类 / 供货商、尺码库存快查、库存作业、流水和对账。
+- **Basic 基础版**：双语在线商店、Viva 付款、BOX NOW / 到店自取、商品 / 图片 / 分类 / 供货商、尺码库存快查、库存作业、流水和对账。
 - **Standard 标准版（推荐实体店）**：包含基础版，并增加 POS 扫码扣库存、销售记录与作废恢复、日报、销售记录小票、条码标签、CSV 导入和员工账号。
 - **Advanced 高级版**：包含标准版，并增加 AI 商品 / 图片 / 导购工具和维护数据导出。
 
@@ -190,8 +213,9 @@ POS 模块只负责系统内扫码销售记录和库存同步，不代替真实�
 - [ ] 希腊语 / 英语切换正常。
 - [ ] Logo、首页图片和商品图片正常显示。
 - [ ] WhatsApp、Instagram 和地图链接正确。
-- [ ] 购物车可以按尺码 / 颜色加入商品，货到付款和到店自取均能提交测试订单。
-- [ ] 后台在线订单可以确认、备货 / 发货、完成和取消，库存预留与释放正确。
+- [ ] 购物车可以按尺码 / 颜色加入商品，并分别用 Viva Demo 完成 BOX NOW Locker 与到店自取测试订单。
+- [ ] Viva 回跳前后都以 Webhook 核验结果为准；错误金额、商户、Source Code、币种或交易状态不能确认付款。
+- [ ] 后台在线订单可以打包、创建 BOX NOW 运单 / 下载标签、标记取货或完成；库存预留、超时释放与最终扣减正确。
 - [ ] Privacy、Terms、Cookie、Contact、Refund、Return、Shipping 页面可以打开。
 - [ ] `/feed.xml` 返回 410，确认旧 Skroutz Feed 已停用。
 

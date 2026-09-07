@@ -301,6 +301,7 @@ export default async function ProductPage({
                 imageUrl={product.image_url || undefined}
                 sizeChart={safeSizeChart}
                 fitType={product.fit_type || "regular"}
+                fulfillmentProfile={product.fulfillment_profile === "pickup_only" ? "pickup_only" : "boxnow_and_pickup"}
                 whatsappUrl={settings.whatsapp || undefined}
               />
             </div>

@@ -8,7 +8,8 @@ const token = () => randomBytes(32).toString("base64url");
 const request = (overrides = {}) => ({
   operationId: randomUUID(),
   accessToken: token(),
-  fulfillmentMethod: "delivery",
+  fulfillmentMethod: "box_now",
+  locker: { id: "ATH-001", name: "Syntagma Locker", address: "1 Test Street", postalCode: "10558" },
   customer: {
     name: "Test Customer",
     email: "TEST@example.com",
@@ -31,7 +32,7 @@ function rejectsCode(value: unknown, code: string) {
   );
 }
 
-test("delivery orders are normalized and duplicate variants are grouped", () => {
+test("BOX NOW orders are normalized and duplicate variants are grouped", () => {
   const parsed = parseOnlineOrderRequest(JSON.stringify(request({
     items: [
       { productSku: "DRESS-001", size: "m", color: "Green", quantity: 1 },
@@ -39,19 +40,23 @@ test("delivery orders are normalized and duplicate variants are grouped", () => 
     ],
   })));
   assert.equal(parsed.customer.email, "test@example.com");
+  assert.equal(parsed.locker?.id, "ATH-001");
   assert.deepEqual(parsed.items, [{ productSku: "DRESS-001", size: "M", color: "green", quantity: 3 }]);
 });
 
-test("pickup orders do not require a delivery address", () => {
+test("store pickup orders do not require a Locker or delivery address", () => {
   const value = request({
-    fulfillmentMethod: "pickup",
+    fulfillmentMethod: "store_pickup",
+    locker: null,
     customer: { name: "Test Customer", email: "test@example.com", phone: "6900000000", addressLine1: "", city: "", postalCode: "", notes: "" },
   });
-  assert.equal(parseOnlineOrderRequest(JSON.stringify(value)).fulfillmentMethod, "pickup");
+  const parsed = parseOnlineOrderRequest(JSON.stringify(value));
+  assert.equal(parsed.fulfillmentMethod, "store_pickup");
+  assert.equal(parsed.locker, null);
 });
 
-test("delivery address, legal consent and quantity constraints fail closed", () => {
-  rejectsCode(request({ customer: { ...request().customer, addressLine1: "" } }), "DELIVERY_ADDRESS_REQUIRED");
+test("Locker, legal consent and quantity constraints fail closed", () => {
+  rejectsCode(request({ locker: null }), "LOCKER_REQUIRED");
   rejectsCode(request({ legalAccepted: false }), "LEGAL_ACCEPTANCE_REQUIRED");
   rejectsCode(request({ items: [{ productSku: "DRESS-001", size: "M", color: "", quantity: 21 }] }), "INVALID_ITEMS");
 });
@@ -65,5 +70,5 @@ test("fingerprint excludes retry credentials but changes with business payload",
   const first = parseOnlineOrderRequest(JSON.stringify(request()));
   const replay = { ...first, operationId: randomUUID(), accessToken: token() };
   assert.equal(onlineOrderFingerprintPayload(first), onlineOrderFingerprintPayload(replay));
-  assert.notEqual(onlineOrderFingerprintPayload(first), onlineOrderFingerprintPayload({ ...replay, fulfillmentMethod: "pickup" }));
+  assert.notEqual(onlineOrderFingerprintPayload(first), onlineOrderFingerprintPayload({ ...replay, fulfillmentMethod: "store_pickup", locker: null }));
 });

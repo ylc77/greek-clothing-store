@@ -106,6 +106,7 @@ export function CartPageClient({ language, onlineStoreEnabled }: { language: Lan
                   <div className="min-w-0 flex-1">
                     <Link className="font-black text-ink hover:underline" href={`/product/${encodeURIComponent(item.productSku)}${en ? "?lang=en" : ""}`}>{en ? item.nameEn : item.nameGr}</Link>
                     <p className="mt-1 text-xs font-bold text-stone-500">{item.size}{item.color ? ` · ${item.color}` : ""}</p>
+                    {item.fulfillmentProfile === "pickup_only" ? <p className="mt-2 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-900">{en ? "Store pickup only" : "Μόνο παραλαβή από κατάστημα"}</p> : null}
                     <p className="mt-2 font-black text-terracotta">€{item.unitPrice.toFixed(2)}</p>
                     <p className={`mt-1 text-xs font-bold ${soldOut ? "text-red-600" : item.availableQuantity <= 3 ? "text-amber-700" : "text-stone-500"}`}>
                       {soldOut

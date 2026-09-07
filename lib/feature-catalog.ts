@@ -39,7 +39,7 @@ export const featureCatalog: Record<FeatureKey, {
   barcode_labels: { label: "条码与标签打印", desc: "按商品和尺码生成 Variant 条码、筛选、预览和打印", group: "store" },
   csv_import: { label: "CSV 批量导入", desc: "批量导入商品、尺码和库存资料", group: "store" },
   staff_accounts: { label: "员工账号与角色", desc: "员工登录并按收银、库存或只读角色限制权限", group: "store" },
-  online_orders: { label: "在线购物", desc: "购物车、货到付款、到店自取和在线订单管理", group: "core", alwaysOn: true },
+  online_orders: { label: "在线购物", desc: "购物车、Viva 在线付款、BOX NOW、门店自提和在线订单管理", group: "core", alwaysOn: true },
   ai_tools: { label: "AI 商品与导购工具", desc: "翻译、商品文案、资料补全、图片生成和前台 AI 导购", group: "growth" },
   backup_tools: { label: "维护数据导出", desc: "仅维护者 / owner 使用的后台数据导出入口", group: "growth" },
 };
@@ -104,7 +104,7 @@ export const featurePlanInfo: Record<Exclude<FeaturePlan, "custom">, {
   basic: {
     label: "基础版",
     audience: "适合单人维护、需要双语网店与尺码库存管理的小型服装店。",
-    highlights: ["双语在线商店", "货到付款与到店自取", "商品与图片", "尺码库存快查"],
+    highlights: ["双语在线商店", "Viva 在线付款与门店自提", "商品与图片", "尺码库存快查"],
   },
   standard: {
     label: "标准版",

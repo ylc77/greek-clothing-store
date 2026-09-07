@@ -340,3 +340,15 @@ Formal partial returns and exchanges are RPC-only through `public.pos_return_exc
 
 Only `resellable` goods return to `MAIN_STORE`. `damaged` and `quarantine` goods go to their dedicated non-sellable locations and must not raise the storefront stock projection. A non-zero price difference requires an explicit external collection or refund method, reference, confirmation, and exact expected amount; the application does not perform the external payment. The printable result is an internal operational receipt and must state that it is not an AADE tax receipt.
 
+---
+
+## 26. Current online commerce provider boundary
+
+The maintained template uses Viva Smart Checkout for prepaid online orders, with BOX NOW Locker and/or store pickup as fulfillment methods. Earlier documents that describe cash on delivery or payment at pickup are stale and must not be used to revert the current order flow.
+
+Keep provider credentials customer-specific and environment-driven. A new customer should only need its own Viva, BOX NOW, site URL, rate-limit, and cron values plus Store Settings switches; do not hardcode merchant IDs, source codes, origin IDs, Partner IDs, domains, or API hosts into customer business logic.
+
+`VIVA_WEBHOOK_VERIFICATION_KEY` is part of the runtime readiness gate. Checkout success/failure return pages are never payment proof: only a Viva Webhook followed by an authoritative transaction retrieval and Merchant/Source/order/amount/currency/status comparison may confirm payment. BOX NOW shipment creation remains prepaid and must never silently enable carrier COD.
+
+Use `npm run commerce:status` to inspect configuration without exposing values, `npm run commerce:verify -- --provider viva|boxnow|all` for authentication-only provider checks, and `npm run test:online-orders-runtime` for the local application/database readiness check. Provider verification must not create payments, orders, parcels, or labels.
+

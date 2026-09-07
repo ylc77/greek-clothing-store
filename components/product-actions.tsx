@@ -29,6 +29,7 @@ type ProductActionsProps = {
   imageUrl?: string;
   sizeChart?: Record<string, unknown> | null;
   fitType?: string;
+  fulfillmentProfile?: "boxnow_and_pickup" | "pickup_only";
 };
 
 function buildWhatsAppUrl(baseUrl: string, message: string) {
@@ -39,7 +40,7 @@ function buildWhatsAppUrl(baseUrl: string, message: string) {
   } catch { return "#"; }
 }
 
-export function ProductActions({ productName, productNameEn, productNameGr, sku, sizes, sizeSystem, sizeStock, variants, stock, onlineStoreEnabled = false, aiEnabled = true, language = "el", whatsappUrl, category, subcategory, price = 0, imageUrl, sizeChart, fitType }: ProductActionsProps) {
+export function ProductActions({ productName, productNameEn, productNameGr, sku, sizes, sizeSystem, sizeStock, variants, stock, onlineStoreEnabled = false, aiEnabled = true, language = "el", whatsappUrl, category, subcategory, price = 0, imageUrl, sizeChart, fitType, fulfillmentProfile = "boxnow_and_pickup" }: ProductActionsProps) {
   const router = useRouter();
   const { addItem, items: cartItems } = useCart();
   const t = text[language];
@@ -120,6 +121,7 @@ export function ProductActions({ productName, productNameEn, productNameGr, sku,
       availableQuantity: selectedAvailable,
       unitPrice: selectedUnitPrice,
       imageUrl: imageUrl || "",
+      fulfillmentProfile,
     });
     if (result.status !== "added") {
       setMessage(result.status === "stock_limit"
@@ -169,6 +171,7 @@ export function ProductActions({ productName, productNameEn, productNameGr, sku,
 
       {aiEnabled ? <button className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-full border border-violet-200 bg-violet-50 px-6 py-3 text-sm font-bold text-violet-700 hover:bg-violet-100" onClick={() => window.dispatchEvent(new CustomEvent("openAiChat", { detail: { product: { sku, productName, productNameEn, productNameGr, sizes, sizeSystem, sizeStock, variants: normalizedVariants, selectedColor: activeColor, stock, category, subcategory, price, imageUrl, sizeChart, fitType } } }))} type="button">{t.askAi}</button> : null}
       {hasWhatsApp ? <a className="mt-2 inline-flex min-h-12 w-full items-center justify-center rounded-full border border-stone-300 bg-white px-6 py-3 text-sm font-bold text-ink" href={buildWhatsAppUrl(whatsappUrl!, whatsappMessage)} rel="noreferrer" target="_blank">{t.whatsappContact}</a> : null}
+      {fulfillmentProfile === "pickup_only" ? <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-900">{language === "en" ? "Store pickup only. Pay online and collect after the store confirms that your order is ready." : "Παραλαβή μόνο από το κατάστημα. Πληρώστε online και παραλάβετε αφού το κατάστημα επιβεβαιώσει ότι η παραγγελία είναι έτοιμη."}</p> : null}
     </div>
   );
 }

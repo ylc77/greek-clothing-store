@@ -58,12 +58,15 @@ for (const [name, source] of [
 }
 const onlineOrderRoute = read("app/api/orders/route.ts");
 const onlineOrderMigration = read("supabase/migrations/20260802120000_online_store_orders.sql");
-for (const marker of ["USE_ONLINE_ORDER_RPC", "online_order_create_rpc", "AUTH_RATE_LIMIT_SECRET", "online_orders"]) {
+const checkoutMigration = read("supabase/migrations/20260907120000_viva_boxnow_online_checkout.sql");
+for (const marker of ["USE_ONLINE_ORDER_RPC", "online_checkout_prepare_rpc", "online_checkout_bind_viva_rpc", "online_order_expire_pending_rpc", "AUTH_RATE_LIMIT_SECRET", "online_orders"]) {
   assert.match(onlineOrderRoute, new RegExp(marker));
 }
+assert.doesNotMatch(onlineOrderRoute, /online_order_create_rpc/);
 for (const marker of ["security definer", "set search_path = ''", "for update of b", "quantity_reserved", "online_order_insufficient_stock"]) {
-  assert.match(onlineOrderMigration.toLowerCase(), new RegExp(escapeRegExp(marker)));
+  assert.match(`${onlineOrderMigration}\n${checkoutMigration}`.toLowerCase(), new RegExp(escapeRegExp(marker)));
 }
+assert.match(checkoutMigration, /revoke execute on function public\.online_order_create_rpc[\s\S]*from service_role/);
 assert.match(read("app/feed.xml/route.ts"), /status:\s*410/);
 
 const homePage = read("app/page.tsx");

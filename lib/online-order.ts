@@ -1,8 +1,14 @@
-export type FulfillmentMethod = "delivery" | "pickup";
+export type FulfillmentMethod = "box_now" | "store_pickup";
 export type OnlineOrderRequest = {
   operationId: string;
   accessToken: string;
   fulfillmentMethod: FulfillmentMethod;
+  locker: {
+    id: string;
+    name: string;
+    address: string;
+    postalCode: string;
+  } | null;
   customer: {
     name: string;
     email: string;
@@ -40,8 +46,20 @@ export function parseOnlineOrderRequest(raw: string): OnlineOrderRequest {
   const accessToken = string(source.accessToken, 100);
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(operationId)) throw new OnlineOrderInputError("INVALID_OPERATION_ID", "Order operation ID is invalid.");
   if (!/^[A-Za-z0-9_-]{43}$/.test(accessToken)) throw new OnlineOrderInputError("INVALID_ACCESS_TOKEN", "Order access token is invalid.");
-  const fulfillmentMethod = source.fulfillmentMethod === "pickup" ? "pickup" : source.fulfillmentMethod === "delivery" ? "delivery" : null;
-  if (!fulfillmentMethod) throw new OnlineOrderInputError("INVALID_FULFILLMENT", "Choose delivery or store pickup.");
+  const fulfillmentMethod = source.fulfillmentMethod === "store_pickup" ? "store_pickup" : source.fulfillmentMethod === "box_now" ? "box_now" : null;
+  if (!fulfillmentMethod) throw new OnlineOrderInputError("INVALID_FULFILLMENT", "Choose BOX NOW or store pickup.");
+  const lockerSource = source.locker && typeof source.locker === "object" && !Array.isArray(source.locker)
+    ? source.locker as Record<string, unknown>
+    : {};
+  const locker = fulfillmentMethod === "box_now" ? {
+    id: string(lockerSource.id, 120),
+    name: string(lockerSource.name, 200),
+    address: string(lockerSource.address, 300),
+    postalCode: string(lockerSource.postalCode, 20),
+  } : null;
+  if (fulfillmentMethod === "box_now" && (!locker?.id || !locker.name)) {
+    throw new OnlineOrderInputError("LOCKER_REQUIRED", "Choose a BOX NOW Locker.");
+  }
   const customerSource = source.customer && typeof source.customer === "object" && !Array.isArray(source.customer) ? source.customer as Record<string, unknown> : {};
   const customer = {
     name: string(customerSource.name, 120),
@@ -53,7 +71,6 @@ export function parseOnlineOrderRequest(raw: string): OnlineOrderRequest {
     notes: string(customerSource.notes, 800),
   };
   if (customer.name.length < 2 || !/^\S+@\S+\.\S+$/.test(customer.email) || customer.phone.length < 6) throw new OnlineOrderInputError("INVALID_CUSTOMER", "Name, email and phone are required.");
-  if (fulfillmentMethod === "delivery" && (!customer.addressLine1 || !customer.city || !/^[0-9A-Za-z -]{3,20}$/.test(customer.postalCode))) throw new OnlineOrderInputError("DELIVERY_ADDRESS_REQUIRED", "A valid delivery address is required.");
   if (!Array.isArray(source.items) || source.items.length < 1 || source.items.length > 25) throw new OnlineOrderInputError("INVALID_ITEMS", "Cart must contain between 1 and 25 items.");
   const grouped = new Map<string, OnlineOrderRequest["items"][number]>();
   for (const item of source.items) {
@@ -75,6 +92,7 @@ export function parseOnlineOrderRequest(raw: string): OnlineOrderRequest {
     operationId,
     accessToken,
     fulfillmentMethod,
+    locker,
     customer,
     items,
     locale: source.locale === "en" ? "en" : "el",
@@ -85,6 +103,7 @@ export function parseOnlineOrderRequest(raw: string): OnlineOrderRequest {
 export function onlineOrderFingerprintPayload(input: OnlineOrderRequest) {
   return JSON.stringify({
     fulfillmentMethod: input.fulfillmentMethod,
+    locker: input.locker,
     customer: input.customer,
     items: input.items,
     locale: input.locale,

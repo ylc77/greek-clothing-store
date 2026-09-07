@@ -61,8 +61,43 @@ export async function PUT(request: NextRequest) {
   for (const f of fields) {
     if (f in payload) update[f] = stringOrNull(payload[f]);
   }
-  for (const field of ["online_store_enabled", "delivery_enabled", "pickup_enabled"] as const) {
+  for (const field of ["online_store_enabled", "delivery_enabled", "pickup_enabled", "viva_payments_enabled", "boxnow_enabled"] as const) {
     if (field in payload) update[field] = payload[field] === true;
+  }
+  for (const field of ["boxnow_minimum_subtotal", "boxnow_shipping_fee"] as const) {
+    if (!(field in payload)) continue;
+    const value = Number(payload[field]);
+    if (!Number.isFinite(value) || value < 0 || value > 100000) {
+      return NextResponse.json({ error: `${field} 配置无效。` }, { status: 400 });
+    }
+    update[field] = Math.round(value * 100) / 100;
+  }
+  if ("boxnow_free_shipping_threshold" in payload) {
+    if (payload.boxnow_free_shipping_threshold === null || payload.boxnow_free_shipping_threshold === "") {
+      update.boxnow_free_shipping_threshold = null;
+    } else {
+      const value = Number(payload.boxnow_free_shipping_threshold);
+      if (!Number.isFinite(value) || value < 0 || value > 100000) {
+        return NextResponse.json({ error: "BOX NOW 包邮门槛无效。" }, { status: 400 });
+      }
+      update.boxnow_free_shipping_threshold = Math.round(value * 100) / 100;
+    }
+  }
+  const integerRanges = {
+    boxnow_max_items: [1, 100],
+    boxnow_max_weight_grams: [1, 100000],
+    boxnow_max_length_mm: [1, 2000],
+    boxnow_max_width_mm: [1, 2000],
+    boxnow_max_height_mm: [1, 2000],
+    pickup_hold_days: [1, 30],
+  } as const;
+  for (const [field, [minimum, maximum]] of Object.entries(integerRanges)) {
+    if (!(field in payload)) continue;
+    const value = Number(payload[field]);
+    if (!Number.isInteger(value) || value < minimum || value > maximum) {
+      return NextResponse.json({ error: `${field} 配置无效。` }, { status: 400 });
+    }
+    update[field] = value;
   }
   if ("shipping_fee" in payload) {
     const value = Number(payload.shipping_fee);
@@ -85,6 +120,13 @@ export async function PUT(request: NextRequest) {
 
   // Get the existing row id
   const existing = await getBusinessSettingsUncached();
+  const minimum = Number(update.boxnow_minimum_subtotal ?? existing.boxnow_minimum_subtotal);
+  const freeThreshold = update.boxnow_free_shipping_threshold === null
+    ? null
+    : Number(update.boxnow_free_shipping_threshold ?? existing.boxnow_free_shipping_threshold);
+  if (freeThreshold !== null && freeThreshold < minimum) {
+    return NextResponse.json({ error: "BOX NOW 包邮门槛不能低于起送金额。" }, { status: 400 });
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)

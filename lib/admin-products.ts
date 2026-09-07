@@ -63,7 +63,7 @@ export type AdminProductPayload = {
   material_verified?: unknown;
 };
 
-export type ProductMutation = Omit<ProductFormData, "category" | "image_urls" | "ai_keywords" | "style_tags" | "size_chart" | "fit_type" | "supplier_id" | "size_system"> & {
+export type ProductMutation = Omit<ProductFormData, "category" | "image_urls" | "ai_keywords" | "style_tags" | "size_chart" | "fit_type" | "supplier_id" | "size_system" | "fulfillment_profile" | "shipping_note_en" | "shipping_note_gr" | "shipping_note_zh" | "package_weight_grams" | "package_length_mm" | "package_width_mm" | "package_height_mm"> & {
   category: Product["category"];
   supplier_id: string | null;
   size_system: SizeSystem | null;
@@ -313,5 +313,13 @@ export function productForForm(product: Product): ProductFormData & { id: string
     style_tags: Array.isArray((product as Record<string, unknown>).style_tags) ? ((product as Record<string, unknown>).style_tags as string[]).join(", ") : String((product as Record<string, unknown>).style_tags || ""),
     size_chart: typeof (product as Record<string, unknown>).size_chart === "object" ? JSON.stringify((product as Record<string, unknown>).size_chart) : String((product as Record<string, unknown>).size_chart || ""),
     material_verified: (product as Record<string, unknown>).material_verified === true,
+    fulfillment_profile: product.fulfillment_profile === "pickup_only" ? "pickup_only" : "boxnow_and_pickup",
+    shipping_note_en: product.shipping_note_en || "",
+    shipping_note_gr: product.shipping_note_gr || "",
+    shipping_note_zh: product.shipping_note_zh || "",
+    package_weight_grams: product.package_weight_grams || "",
+    package_length_mm: product.package_length_mm || "",
+    package_width_mm: product.package_width_mm || "",
+    package_height_mm: product.package_height_mm || "",
   };
 }

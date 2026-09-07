@@ -498,10 +498,11 @@ type QuickAddState = {
   style_tags: string;
   notes: string;
   is_active: boolean;
+  fulfillment_profile: "boxnow_and_pickup" | "pickup_only";
 };
 
 /* ── Constants ───────────────────────────────────────────── */
-const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_en: "", description_cn: "", description_gr: "", description_en: "", category: "men", subcategory: "tshirts", price: 0, stock: 0, sizes: "", size_system: "letter", image_url: "", image_urls: "", brand: "", supplier_id: "", supplier_style_code: "", barcode: "", ean: "", mpn: "", vat: FIXED_PRODUCT_VAT_RATE, color: "", skroutz_url: "", is_active: true, fit_type: "regular", material: "", fiber_composition_gr: "", fiber_composition_en: "", care_instructions_gr: "", care_instructions_en: "", country_of_origin: "", manufacturer_name: "", manufacturer_contact: "", eu_responsible_person: "", product_safety_notes_gr: "", product_safety_notes_en: "", ai_keywords: "", style_tags: "", size_chart: "", material_verified: false };
+const emptyProduct: ProductFormData = { sku: "", name_cn: "", name_gr: "", name_en: "", description_cn: "", description_gr: "", description_en: "", category: "men", subcategory: "tshirts", price: 0, stock: 0, sizes: "", size_system: "letter", image_url: "", image_urls: "", brand: "", supplier_id: "", supplier_style_code: "", barcode: "", ean: "", mpn: "", vat: FIXED_PRODUCT_VAT_RATE, color: "", skroutz_url: "", is_active: true, fit_type: "regular", material: "", fiber_composition_gr: "", fiber_composition_en: "", care_instructions_gr: "", care_instructions_en: "", country_of_origin: "", manufacturer_name: "", manufacturer_contact: "", eu_responsible_person: "", product_safety_notes_gr: "", product_safety_notes_en: "", ai_keywords: "", style_tags: "", size_chart: "", material_verified: false, fulfillment_profile: "boxnow_and_pickup", shipping_note_en: "", shipping_note_gr: "", shipping_note_zh: "", package_weight_grams: "", package_length_mm: "", package_width_mm: "", package_height_mm: "" };
 const csvFields = [...PRODUCT_CSV_FIELDS];
 const quickCsvFields = ["sku","name_cn","description_cn","category","subcategory","price","stock","sizes","size_system","size_stock","brand","color","image_url","image_urls","is_active"];
 const maxProductVisionImages = 2;
@@ -665,6 +666,7 @@ const emptyQuickAdd: QuickAddState = {
   style_tags: "",
   notes: "",
   is_active: true,
+  fulfillment_profile: "boxnow_and_pickup",
 };
 const stockOperationOptions: Array<{
   key: StockOperationMode;
@@ -3060,7 +3062,7 @@ export function AdminDashboard({
       ? [{ size: oneSizeOptions[0], color: p.color || "", quantity: Math.max(0, Math.trunc(Number(p.stock) || 0)), expectedOnHand: Math.max(0, Math.trunc(Number(p.stock) || 0)) }]
       : []);
   }
-  function formFromProduct(p: AdminProduct): ProductFormData { return { sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, size_system:p.size_system || inferredSizeSystem(p.category), image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, supplier_id:p.supplier_id || "", supplier_style_code:p.supplier_style_code || "", barcode:p.barcode, ean:p.ean || "", mpn:p.mpn || "", vat:FIXED_PRODUCT_VAT_RATE, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active, material: p.material || "", fiber_composition_gr:p.fiber_composition_gr || "", fiber_composition_en:p.fiber_composition_en || "", care_instructions_gr:p.care_instructions_gr || "", care_instructions_en:p.care_instructions_en || "", country_of_origin:p.country_of_origin || "", manufacturer_name:p.manufacturer_name || "", manufacturer_contact:p.manufacturer_contact || "", eu_responsible_person:p.eu_responsible_person || "", product_safety_notes_gr:p.product_safety_notes_gr || "", product_safety_notes_en:p.product_safety_notes_en || "", fit_type: (p as Record<string,unknown>).fit_type as string || "regular", ai_keywords: Array.isArray((p as Record<string,unknown>).ai_keywords) ? ((p as Record<string,unknown>).ai_keywords as string[]).join(",") : String((p as Record<string,unknown>).ai_keywords || ""), style_tags: Array.isArray((p as Record<string,unknown>).style_tags) ? ((p as Record<string,unknown>).style_tags as string[]).join(",") : String((p as Record<string,unknown>).style_tags || ""), size_chart: typeof (p as Record<string,unknown>).size_chart === "object" ? JSON.stringify((p as Record<string,unknown>).size_chart) : String((p as Record<string,unknown>).size_chart || ""), material_verified: (p as Record<string,unknown>).material_verified === true }; }
+  function formFromProduct(p: AdminProduct): ProductFormData { return { sku:p.sku, name_cn:p.name_cn, name_gr:p.name_gr, name_en:p.name_en, description_cn:p.description_cn, description_gr:p.description_gr, description_en:p.description_en, category:p.category, subcategory:p.subcategory, price:p.price, stock:p.stock, sizes:p.sizes, size_system:p.size_system || inferredSizeSystem(p.category), image_url:p.image_url, image_urls:p.image_urls, brand:p.brand, supplier_id:p.supplier_id || "", supplier_style_code:p.supplier_style_code || "", barcode:p.barcode, ean:p.ean || "", mpn:p.mpn || "", vat:FIXED_PRODUCT_VAT_RATE, color:p.color, skroutz_url:p.skroutz_url, is_active:p.is_active, material: p.material || "", fiber_composition_gr:p.fiber_composition_gr || "", fiber_composition_en:p.fiber_composition_en || "", care_instructions_gr:p.care_instructions_gr || "", care_instructions_en:p.care_instructions_en || "", country_of_origin:p.country_of_origin || "", manufacturer_name:p.manufacturer_name || "", manufacturer_contact:p.manufacturer_contact || "", eu_responsible_person:p.eu_responsible_person || "", product_safety_notes_gr:p.product_safety_notes_gr || "", product_safety_notes_en:p.product_safety_notes_en || "", fit_type: (p as Record<string,unknown>).fit_type as string || "regular", ai_keywords: Array.isArray((p as Record<string,unknown>).ai_keywords) ? ((p as Record<string,unknown>).ai_keywords as string[]).join(",") : String((p as Record<string,unknown>).ai_keywords || ""), style_tags: Array.isArray((p as Record<string,unknown>).style_tags) ? ((p as Record<string,unknown>).style_tags as string[]).join(",") : String((p as Record<string,unknown>).style_tags || ""), size_chart: typeof (p as Record<string,unknown>).size_chart === "object" ? JSON.stringify((p as Record<string,unknown>).size_chart) : String((p as Record<string,unknown>).size_chart || ""), material_verified: (p as Record<string,unknown>).material_verified === true, fulfillment_profile:p.fulfillment_profile === "pickup_only" ? "pickup_only" : "boxnow_and_pickup", shipping_note_en:p.shipping_note_en || "", shipping_note_gr:p.shipping_note_gr || "", shipping_note_zh:p.shipping_note_zh || "", package_weight_grams:p.package_weight_grams || "", package_length_mm:p.package_length_mm || "", package_width_mm:p.package_width_mm || "", package_height_mm:p.package_height_mm || "" }; }
   function openProductForm(p: AdminProduct) { const nextForm = formFromProduct(p); setEditingId(p.id); setEditingProductSnapshot(p); setForm(nextForm); loadSizeStock(p); setShowSizeChart(!!nextForm.size_chart.trim()); setTab("add"); window.scrollTo({ top: 0, behavior: "smooth" }); return nextForm; }
   function startEdit(p: AdminProduct) { openProductForm(p); }
   function focusAdminField(field: string) {
@@ -3452,6 +3454,27 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       });
       try { productOperationIds().complete(scope, operationId); } catch (storageError) {
         toast(storageError instanceof Error ? storageError.message : "商品已保存，但本地业务 ID 清理失败。", "err");
+      }
+      const savedProductId = String(saved?.product?.id || editingId || "");
+      if (savedProductId) {
+        try {
+          await api(`/api/admin/products/${savedProductId}/fulfillment`, {
+            method: "PUT",
+            body: JSON.stringify({
+              operationId: crypto.randomUUID(),
+              fulfillmentProfile: p.fulfillment_profile,
+              shippingNoteEn: p.shipping_note_en,
+              shippingNoteGr: p.shipping_note_gr,
+              shippingNoteZh: p.shipping_note_zh,
+              packageWeightGrams: p.package_weight_grams === "" ? null : Number(p.package_weight_grams),
+              packageLengthMm: p.package_length_mm === "" ? null : Number(p.package_length_mm),
+              packageWidthMm: p.package_width_mm === "" ? null : Number(p.package_width_mm),
+              packageHeightMm: p.package_height_mm === "" ? null : Number(p.package_height_mm),
+            }),
+          });
+        } catch (fulfillmentError) {
+          toast(`商品已保存，但配送资料保存失败：${fulfillmentError instanceof Error ? fulfillmentError.message : "请重新编辑商品重试"}`, "err");
+        }
       }
       toast(editingId ? "商品已更新" : "商品已新增");
       await queueSavedProductLabels(Number(saved?.product?.id ?? editingId), operationId, variants, !editingId, saved?.product);
@@ -4014,6 +4037,28 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         toast(storageError instanceof Error ? storageError.message : "商品已新增，但本地业务 ID 清理失败。", "err");
       }
       const savedSku = saved?.product?.sku || sku;
+      const savedProductId = String(saved?.product?.id || "");
+      let fulfillmentFailure = "";
+      if (savedProductId) {
+        try {
+          await api(`/api/admin/products/${savedProductId}/fulfillment`, {
+            method: "PUT",
+            body: JSON.stringify({
+              operationId: crypto.randomUUID(),
+              fulfillmentProfile: quickAdd.fulfillment_profile,
+              shippingNoteEn: "",
+              shippingNoteGr: "",
+              shippingNoteZh: "",
+              packageWeightGrams: null,
+              packageLengthMm: null,
+              packageWidthMm: null,
+              packageHeightMm: null,
+            }),
+          });
+        } catch (error) {
+          fulfillmentFailure = error instanceof Error ? error.message : "配送方式保存失败";
+        }
+      }
       await queueSavedProductLabels(Number(saved?.product?.id), operationId, variants, true, saved?.product);
       let imageFailure = "";
       try {
@@ -4047,6 +4092,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         imageFailure = error instanceof Error ? error.message : "图片上传失败";
       }
       if (saved?.cacheWarning) toast(String(saved.cacheWarning), "err");
+      if (fulfillmentFailure) {
+        toast(`商品 ${savedSku} 已新增，但${fulfillmentFailure}。请从新增/编辑页面重试，不要重复新增商品。`, "err");
+      }
       if (imageFailure) {
         toast(`商品 ${savedSku} 已新增，但${imageFailure}。请从图片管理重试，不要重复新增商品。`, "err");
       } else {
@@ -4596,6 +4644,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 <Field label="二级分类"><select className="input" data-admin-field="quick-subcategory" value={quickAdd.subcategory} onChange={e => updateQuickAdd("subcategory", e.target.value)}>{adminSubcategoryOptions(quickAdd.category).map(subcategory => <option key={String(subcategory.slug)} value={String(subcategory.slug)}>{subcategoryOptionLabel(subcategory)}</option>)}</select></Field>
                 <Field label="售价"><input className="input" min="0" step="0.01" type="number" value={quickAdd.price} onChange={e => updateQuickAdd("price", Number(e.target.value))} /></Field>
                 <Field label="上架状态"><select className="input" value={quickAdd.is_active ? "yes" : "no"} onChange={e => updateQuickAdd("is_active", e.target.value === "yes")}><option value="yes">保存后上架</option><option value="no">先存草稿</option></select></Field>
+                <Field label="线上履约"><select className="input" value={quickAdd.fulfillment_profile} onChange={e => updateQuickAdd("fulfillment_profile", e.target.value as QuickAddState["fulfillment_profile"])}><option value="boxnow_and_pickup">BOX NOW + 门店自提</option><option value="pickup_only">仅门店自提</option></select></Field>
                 <Field label="尺码体系">
                   <select className="input" value={quickAdd.size_system} onChange={e => updateQuickAdd("size_system", e.target.value as SizeSystem)}>
                     <option value="letter">国际字母尺码 XS–XXXL</option>
@@ -6325,6 +6374,28 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
             </section>
 
+            <section className="admin-panel">
+              <h2 className="mb-1 text-base font-black text-ink">线上配送</h2>
+              <p className="mb-4 text-xs text-stone-500">大件行李箱或无法放入 Locker 的商品请选择“仅门店自提”。包装重量和尺寸为选填，最终仍需店员打包确认。</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="配送方式">
+                  <select className="input" value={form.fulfillment_profile} onChange={e => updateField("fulfillment_profile", e.target.value as ProductFormData["fulfillment_profile"])}>
+                    <option value="boxnow_and_pickup">BOX NOW + 门店自提</option>
+                    <option value="pickup_only">仅门店自提</option>
+                  </select>
+                </Field>
+                <Field label="后台说明（选填）"><input className="input" value={form.shipping_note_zh} onChange={e => updateField("shipping_note_zh", e.target.value)} placeholder="例如：大号行李箱，仅自提" /></Field>
+                <Field label="英语配送提示（选填）"><input className="input" value={form.shipping_note_en} onChange={e => updateField("shipping_note_en", e.target.value)} /></Field>
+                <Field label="希腊语配送提示（选填）"><input className="input" value={form.shipping_note_gr} onChange={e => updateField("shipping_note_gr", e.target.value)} /></Field>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Field label="重量 g（选填）"><input className="input" min="1" step="1" type="number" value={form.package_weight_grams} onChange={e => updateField("package_weight_grams", e.target.value === "" ? "" : Number(e.target.value))} /></Field>
+                <Field label="长 mm（选填）"><input className="input" min="1" step="1" type="number" value={form.package_length_mm} onChange={e => updateField("package_length_mm", e.target.value === "" ? "" : Number(e.target.value))} /></Field>
+                <Field label="宽 mm（选填）"><input className="input" min="1" step="1" type="number" value={form.package_width_mm} onChange={e => updateField("package_width_mm", e.target.value === "" ? "" : Number(e.target.value))} /></Field>
+                <Field label="高 mm（选填）"><input className="input" min="1" step="1" type="number" value={form.package_height_mm} onChange={e => updateField("package_height_mm", e.target.value === "" ? "" : Number(e.target.value))} /></Field>
+              </div>
+            </section>
+
             {/* Size-Stock card */}
             <section className="admin-panel">
               <h2 className="mb-1 text-base font-black text-ink">颜色（选填）× 尺码库存</h2>
@@ -6641,7 +6712,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {/* ── TAB: Categories ─────────────────────────────── */}
         {tab === "categories" ? <CategoriesManager activePassword={activePassword} authHeaders={adminAuthHeaders} toast={toast} confirm={setConfirm} dismissConfirm={dismissConfirm} /> : null}
 
-        {showOnlineOrders ? <OnlineOrdersManager authHeaders={adminAuthHeaders} toast={toast} /> : null}
+        {showOnlineOrders ? <OnlineOrdersManager authHeaders={adminAuthHeaders} toast={toast} showDiagnostics={isOwner} onAfterSales={() => activateAdminTab("returns")} /> : null}
 
         {tab === "suppliers" ? <SuppliersManager authHeaders={adminAuthHeaders} initialSuppliers={suppliers} onChanged={loadSuppliers} toast={toast} /> : null}
 

@@ -96,7 +96,7 @@ npm run storage:recover -- --project-ref 客户项目ref
 3. 前台需使用 `loadCategories()` 加载
 
 ### feed.xml 返回 410
-这是预期行为。Skroutz Feed 已停用，商品销售改由站内购物车、货到付款和到店自取完成。
+这是预期行为。Skroutz Feed 已停用，商品销售改由站内购物车、Viva 在线预付款、BOX NOW Locker 和到店自取完成。
 
 ### Vercel 部署失败
 1. `npm run build` 本地先通过

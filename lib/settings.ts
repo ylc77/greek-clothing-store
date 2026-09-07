@@ -38,6 +38,17 @@ export type BusinessSettings = {
   delivery_instructions_en: string;
   delivery_instructions_gr: string;
   order_notification_email: string;
+  viva_payments_enabled: boolean;
+  boxnow_enabled: boolean;
+  boxnow_minimum_subtotal: number;
+  boxnow_shipping_fee: number;
+  boxnow_free_shipping_threshold: number | null;
+  boxnow_max_items: number;
+  boxnow_max_weight_grams: number;
+  boxnow_max_length_mm: number;
+  boxnow_max_width_mm: number;
+  boxnow_max_height_mm: number;
+  pickup_hold_days: number;
 };
 
 const defaults: BusinessSettings = {
@@ -62,11 +73,22 @@ const defaults: BusinessSettings = {
   pickup_enabled: true,
   shipping_fee: 0,
   free_shipping_threshold: null,
-  pickup_instructions_en: "Pay when you collect your order from the store.",
-  pickup_instructions_gr: "Πληρώστε κατά την παραλαβή της παραγγελίας σας από το κατάστημα.",
-  delivery_instructions_en: "Pay cash when your order is delivered.",
-  delivery_instructions_gr: "Πληρώστε με μετρητά κατά την παράδοση της παραγγελίας σας.",
+  pickup_instructions_en: "Pay securely online, then collect after the store confirms your order is ready.",
+  pickup_instructions_gr: "Πληρώστε με ασφάλεια online και παραλάβετε αφού το κατάστημα επιβεβαιώσει ότι η παραγγελία είναι έτοιμη.",
+  delivery_instructions_en: "Legacy delivery instructions. BOX NOW settings are configured separately.",
+  delivery_instructions_gr: "Οδηγίες παλαιάς παράδοσης. Το BOX NOW ρυθμίζεται ξεχωριστά.",
   order_notification_email: "",
+  viva_payments_enabled: false,
+  boxnow_enabled: false,
+  boxnow_minimum_subtotal: 15,
+  boxnow_shipping_fee: 2.5,
+  boxnow_free_shipping_threshold: 39,
+  boxnow_max_items: 10,
+  boxnow_max_weight_grams: 20_000,
+  boxnow_max_length_mm: 600,
+  boxnow_max_width_mm: 450,
+  boxnow_max_height_mm: 360,
+  pickup_hold_days: 3,
 };
 
 const SETTINGS_SELECT = [
@@ -96,6 +118,17 @@ const SETTINGS_SELECT = [
   "delivery_instructions_en",
   "delivery_instructions_gr",
   "order_notification_email",
+  "viva_payments_enabled",
+  "boxnow_enabled",
+  "boxnow_minimum_subtotal",
+  "boxnow_shipping_fee",
+  "boxnow_free_shipping_threshold",
+  "boxnow_max_items",
+  "boxnow_max_weight_grams",
+  "boxnow_max_length_mm",
+  "boxnow_max_width_mm",
+  "boxnow_max_height_mm",
+  "pickup_hold_days",
 ].join(",");
 
 async function loadBusinessSettings(): Promise<BusinessSettings> {
@@ -140,6 +173,17 @@ async function loadBusinessSettings(): Promise<BusinessSettings> {
     delivery_instructions_en: storefrontText(data.delivery_instructions_en, defaults.delivery_instructions_en),
     delivery_instructions_gr: storefrontText(data.delivery_instructions_gr, defaults.delivery_instructions_gr),
     order_notification_email: String(data.order_notification_email || ""),
+    viva_payments_enabled: data.viva_payments_enabled === true,
+    boxnow_enabled: data.boxnow_enabled === true,
+    boxnow_minimum_subtotal: Math.max(0, Number(data.boxnow_minimum_subtotal ?? 15)),
+    boxnow_shipping_fee: Math.max(0, Number(data.boxnow_shipping_fee ?? 2.5)),
+    boxnow_free_shipping_threshold: data.boxnow_free_shipping_threshold == null ? null : Math.max(0, Number(data.boxnow_free_shipping_threshold)),
+    boxnow_max_items: Math.max(1, Math.trunc(Number(data.boxnow_max_items ?? 10))),
+    boxnow_max_weight_grams: Math.max(1, Math.trunc(Number(data.boxnow_max_weight_grams ?? 20_000))),
+    boxnow_max_length_mm: Math.max(1, Math.trunc(Number(data.boxnow_max_length_mm ?? 600))),
+    boxnow_max_width_mm: Math.max(1, Math.trunc(Number(data.boxnow_max_width_mm ?? 450))),
+    boxnow_max_height_mm: Math.max(1, Math.trunc(Number(data.boxnow_max_height_mm ?? 360))),
+    pickup_hold_days: Math.max(1, Math.trunc(Number(data.pickup_hold_days ?? 3))),
   };
 
   return settings;
