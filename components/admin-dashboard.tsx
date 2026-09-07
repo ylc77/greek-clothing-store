@@ -606,7 +606,7 @@ function signedQuantity(value: number) {
 }
 function movementTypeLabel(value: string) {
   const labels: Record<string, string> = {
-    initial_migration: "初始迁移",
+    initial_migration: "初始库存",
     sale: "销售出库",
     manual_adjustment: "手动调整",
     correction: "库存修正",
@@ -791,7 +791,7 @@ function productIssues(product: AdminProduct) {
   const nameOk = hasText(product.name_gr) || hasText(product.name_en) || hasText(product.name_cn);
   const descOk = hasText(product.description_gr) || hasText(product.description_en) || hasText(product.description_cn);
   if (!hasText(product.sku)) issues.push({ code: "sku", label: "缺 SKU", level: "block" });
-  if (isTestProductSku(product.sku)) issues.push({ code: "test", label: "测试 / Demo SKU，不建议正式上架", level: "block" });
+  if (isTestProductSku(product.sku)) issues.push({ code: "test", label: "演示商品，请先替换为正式商品资料", level: "block" });
   if (!product.is_active) issues.push({ code: "inactive", label: "未上架", level: "block" });
   if (!Number.isFinite(Number(product.price)) || Number(product.price) <= 0) issues.push({ code: "price", label: "价格无效", level: "block" });
   if (stock <= 0) issues.push({ code: "stock", label: "库存为 0", level: "block" });
@@ -1093,11 +1093,11 @@ export function AdminDashboard({
       .then(async response => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok || data.ready !== true) {
-          throw new Error(data.error || "POS 事务 RPC 未就绪，销售写入已阻断。");
+          throw new Error(data.error || "收银服务暂不可用，当前不能结账。");
         }
         setPosRuntimeIssue("");
       })
-      .catch(error => setPosRuntimeIssue(error instanceof Error ? error.message : "POS 事务 RPC 未就绪，销售写入已阻断。"));
+      .catch(error => setPosRuntimeIssue(error instanceof Error ? error.message : "收银服务暂不可用，当前不能结账。"));
   }, [adminSession, adminAuthToken, activePassword, adminFeatures.pos_checkout]);
 
   // Search / filter state
@@ -1702,7 +1702,7 @@ export function AdminDashboard({
       const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
       if (!response.ok) {
         throw new AdminApiError(
-          typeof data.error === "string" ? data.error : "CSV 请求失败",
+          adminVisibleMessage(typeof data.error === "string" ? data.error : "CSV 请求失败", false),
           response.status,
           data,
         );
@@ -1710,7 +1710,7 @@ export function AdminDashboard({
       return data;
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        throw new Error("CSV 请求超时；如果已经提交导入，请使用原业务 ID 恢复 Job 状态。");
+        throw new Error("CSV 请求超时。如果已经点击导入，请先恢复上次导入状态，不要重复上传。");
       }
       throw error;
     } finally {
@@ -1732,7 +1732,7 @@ export function AdminDashboard({
   function acceptCsvJobView(data: Record<string, unknown>, operationId?: string) {
     const view = data as unknown as CsvImportJobView;
     if (!view.job || typeof view.job.id !== "string") {
-      throw new Error("CSV Job 返回结果不可识别，请使用原业务 ID 恢复后再继续。");
+      throw new Error("CSV 导入结果暂时无法确认，请先恢复上次导入状态后再继续。");
     }
     if (operationId) csvOperationIds().attachJob(operationId, view.job.id);
     setCsvJobView(view);
@@ -1747,7 +1747,7 @@ export function AdminDashboard({
     try {
       pending = csvOperationIds().getPending();
     } catch (error) {
-      setCsvPreviewError(error instanceof Error ? error.message : "CSV 业务状态无法读取，请先人工核对。 ");
+      setCsvPreviewError(error instanceof Error ? error.message : "CSV 导入状态无法读取，请先核对商品数据。 ");
       return;
     }
     if (!pending) return;
@@ -1765,10 +1765,10 @@ export function AdminDashboard({
         : `/api/admin/products/import?operationId=${encodeURIComponent(pending.operationId)}`;
       const data = await csvFetchJson(path);
       const view = acceptCsvJobView(data, pending.operationId);
-      if (showToast) toast(`已恢复 CSV Job：成功 ${view.job.succeeded_rows}，失败 ${view.job.failed_rows}，待处理 ${view.job.pending_rows}`);
+      if (showToast) toast(`已恢复 CSV 导入：成功 ${view.job.succeeded_rows}，失败 ${view.job.failed_rows}，待处理 ${view.job.pending_rows}`);
     } catch (error) {
-      setCsvPreviewError(`${error instanceof Error ? error.message : "CSV Job 恢复失败"} 原业务 ID 已保留；登录失效、权限变化或暂时未找到 Job 都不能证明原请求未写入。`);
-      if (showToast) toast(error instanceof Error ? error.message : "CSV Job 恢复失败", "err");
+      setCsvPreviewError(`${error instanceof Error ? error.message : "CSV 导入恢复失败"} 请先核对商品数据，不要重复上传。`);
+      if (showToast) toast(error instanceof Error ? error.message : "CSV 导入恢复失败", "err");
     } finally {
       setCsvBusy(null);
     }
@@ -1788,13 +1788,13 @@ export function AdminDashboard({
       setConfirm({
         open: true,
         title: "重置未确认的商品操作？",
-        desc: `${error.message} 只有确认已核对商品、Variant、库存余额和流水后，才应重置并生成新的业务 ID。`,
+        desc: `${error.message} 只有确认已核对商品、各规格和库存记录后，才可以重置本次操作。`,
         confirmText: "我已核对，重置操作",
         variant: "danger",
         action: () => {
           try {
             productOperationIds().cancel(scope);
-            toast("未确认的商品业务 ID 已重置，请重新提交。", "ok");
+            toast("未确认的商品操作已重置，请重新提交。", "ok");
           } catch (resetError) {
             toast(resetError instanceof Error ? resetError.message : "无法重置商品操作状态", "err");
           } finally {
@@ -1819,13 +1819,13 @@ export function AdminDashboard({
       setConfirm({
         open: true,
         title: "重置未确认的库存操作？",
-        desc: `${error.message} 只有确认已核对库存流水后，才应重置并生成新的业务 ID。`,
+        desc: `${error.message} 只有确认已核对库存记录后，才可以重置本次操作。`,
         confirmText: "我已核对，重置操作",
         variant: "danger",
         action: () => {
           try {
             store.cancel(scope);
-            toast("未确认的业务 ID 已由你主动重置，请重新提交。", "ok");
+            toast("未确认的库存操作已重置，请重新提交。", "ok");
           } catch (resetError) {
             toast(resetError instanceof Error ? resetError.message : "无法重置操作状态", "err");
           }
@@ -2395,7 +2395,7 @@ export function AdminDashboard({
     });
     if (plan.action === "keep") return { item, generated: false };
     if (plan.action === "unavailable") {
-      throw new Error("当前版本未启用条码与标签打印，无法为无条码商品执行到货扫码。请先启用该功能，或选择已有 Barcode 的规格。");
+      throw new Error("条码与标签功能未启用，无法接收没有条码的商品。请先开启该功能，或选择已有条码的规格。");
     }
 
     const operationScope = `stock-receiving-barcode:${item.variant_id}`;
@@ -2474,7 +2474,7 @@ export function AdminDashboard({
         }),
       });
       try { inventoryOperationIds().complete(operationScope, operationId); } catch (storageError) {
-        toast(storageError instanceof Error ? storageError.message : "操作成功，但本地业务 ID 清理失败。", "err");
+        toast(storageError instanceof Error ? storageError.message : "操作成功，但本次操作状态未能清除。请刷新页面后核对。", "err");
       }
       const before = Number(result.quantityBefore ?? item.quantity_on_hand);
       const after = Number(result.quantityAfter ?? before);
@@ -2544,7 +2544,7 @@ export function AdminDashboard({
       barcodeFeatureEnabled: adminFeatures.barcode_labels,
     });
     if (barcodePlan.action === "unavailable") {
-      setStockOperationError("当前版本未启用条码与标签打印，不能为无条码商品自动生成 Barcode。请先启用该功能，或选择已有 Barcode 的规格。");
+      setStockOperationError("条码与标签功能未启用，不能为无条码商品自动生成条码。请先开启该功能，或选择已有条码的规格。");
       return;
     }
     const barcodeNotice = barcodePlan.action === "generate"
@@ -2853,7 +2853,7 @@ export function AdminDashboard({
         }),
       });
       try { inventoryOperationIds().complete(operationScope, operationId); } catch (storageError) {
-        toast(storageError instanceof Error ? storageError.message : "操作成功，但本地业务 ID 清理失败。", "err");
+        toast(storageError instanceof Error ? storageError.message : "操作成功，但本次操作状态未能清除。请刷新页面后核对。", "err");
       }
       const before = Number(result.quantityBefore ?? item.quantity_on_hand);
       const after = Number(result.quantityAfter ?? before);
@@ -3226,7 +3226,7 @@ export function AdminDashboard({
         body: JSON.stringify({ ...requestPayload, clientRequestId: operationId }),
       });
       try { productOperationIds().complete(scope, operationId); } catch (storageError) {
-        toast(storageError instanceof Error ? storageError.message : "商品已保存，但本地业务 ID 清理失败。", "err");
+        toast(storageError instanceof Error ? storageError.message : "商品已保存，但本次操作状态未能清除。请刷新页面后核对。", "err");
       }
       return result;
     } catch (error) {
@@ -3453,7 +3453,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         body: JSON.stringify({ ...payload, clientRequestId: operationId }),
       });
       try { productOperationIds().complete(scope, operationId); } catch (storageError) {
-        toast(storageError instanceof Error ? storageError.message : "商品已保存，但本地业务 ID 清理失败。", "err");
+        toast(storageError instanceof Error ? storageError.message : "商品已保存，但本次操作状态未能清除。请刷新页面后核对。", "err");
       }
       const savedProductId = String(saved?.product?.id || editingId || "");
       if (savedProductId) {
@@ -3560,7 +3560,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         body: JSON.stringify({ ...requestPayload, clientRequestId: operationId }),
       });
       try { productOperationIds().complete(scope, operationId); } catch (storageError) {
-        toast(storageError instanceof Error ? storageError.message : "商品已下架，但本地业务 ID 清理失败。", "err");
+        toast(storageError instanceof Error ? storageError.message : "商品已下架，但本次操作状态未能清除。请刷新页面后核对。", "err");
       }
       if (result?.cacheWarning) toast(String(result.cacheWarning), "err");
       toast("商品已下架");
@@ -3612,7 +3612,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         body: JSON.stringify({ clientRequestId: operationId, items }),
       });
       try { productOperationIds().complete(scope, operationId); } catch (storageError) {
-        toast(storageError instanceof Error ? storageError.message : "批量操作已完成，但本地业务 ID 清理失败。", "err");
+        toast(storageError instanceof Error ? storageError.message : "批量操作已完成，但本次操作状态未能清除。请刷新页面后核对。", "err");
       }
       if (result?.cacheWarning) toast(String(result.cacheWarning), "err");
       toast(`已${label} ${items.length} 个商品`);
@@ -3669,7 +3669,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       const pending = csvOperationIds().getPending();
       if (pending?.attempted) {
         setCsvHasPendingOperation(true);
-        setCsvPreviewError("上一项 CSV 导入可能已经写入数据。请先恢复并完成该 Job，不能直接换文件生成新业务 ID。");
+        setCsvPreviewError("上一项 CSV 导入结果尚未确认。请先恢复并完成上次导入，不能直接更换文件。");
         if (csvFileInputRef.current) csvFileInputRef.current.value = "";
         await recoverPendingCsvImport(false);
         return;
@@ -3677,7 +3677,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       if (pending) csvOperationIds().cancel();
       setCsvHasPendingOperation(false);
     } catch (error) {
-      setCsvPreviewError(error instanceof Error ? error.message : "CSV 业务状态无法读取");
+      setCsvPreviewError(error instanceof Error ? error.message : "CSV 导入状态无法读取");
       if (csvFileInputRef.current) csvFileInputRef.current.value = "";
       return;
     }
@@ -3691,7 +3691,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     inventoryMode: ProductCsvInventoryMode,
   ) {
     if (csvHasPendingOperation) {
-      toast("当前 CSV Job 尚未结束，不能更改导入模式。", "err");
+      toast("当前 CSV 导入尚未结束，不能更改导入模式。", "err");
       return;
     }
     setCsvImportMode(importMode);
@@ -3772,8 +3772,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     const inventoryLabel = csvInventoryMode === "metadata_only" ? "只改商品资料，不改库存" : "按 CSV 设置库存";
     setConfirm({
       open: true,
-      title: "确认创建 CSV 导入 Job？",
-      desc: `文件 ${csvPreview.filename}，共 ${csvPreview.rowCount} 行。模式：${importLabel}；${inventoryLabel}。提交后会保留同一个业务 ID，网络异常时请恢复 Job，不要重新上传。`,
+      title: "确认开始 CSV 导入？",
+      desc: `文件 ${csvPreview.filename}，共 ${csvPreview.rowCount} 行。模式：${importLabel}；${inventoryLabel}。网络异常时请恢复上次导入，不要重新上传。`,
       confirmText: "确认导入",
       variant: csvInventoryMode === "set_inventory" || csvImportMode === "upsert" ? "danger" : "default",
       action: () => {
@@ -3801,7 +3801,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       setCsvHasPendingOperation(true);
       const data = await csvFetchJson("/api/admin/products/import", { method: "POST", body });
       const view = acceptCsvJobView(data, operationId);
-      toast(`CSV Job：成功 ${view.job.succeeded_rows}，失败 ${view.job.failed_rows}，待处理 ${view.job.pending_rows}`);
+      toast(`CSV 导入：成功 ${view.job.succeeded_rows}，失败 ${view.job.failed_rows}，待处理 ${view.job.pending_rows}`);
       await loadProducts();
     } catch (error) {
       if (error instanceof AdminApiError && error.jobId && operationId) {
@@ -3818,7 +3818,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         : error instanceof Error ? error.message : "CSV 导入失败";
       const operationResultUnknown = Boolean(operationId)
         && !(error instanceof AdminApiError && error.operationSafeToDiscard);
-      setCsvPreviewError(`${message}${operationResultUnknown ? " 原业务 ID 已保留，请点击恢复状态。" : ""}`);
+      setCsvPreviewError(`${message}${operationResultUnknown ? " 请点击恢复状态并核对结果。" : ""}`);
       toast(message, "err");
     } finally {
       setCsvBusy(null);
@@ -3836,11 +3836,11 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         : `/api/admin/products/import/jobs/${encodeURIComponent(job.id)}/${action}`;
       const data = await csvFetchJson(path, action === "refresh" ? {} : { method: "POST" });
       const view = acceptCsvJobView(data, job.client_request_id);
-      toast(`CSV Job：成功 ${view.job.succeeded_rows}，失败 ${view.job.failed_rows}，待处理 ${view.job.pending_rows}`);
+      toast(`CSV 导入：成功 ${view.job.succeeded_rows}，失败 ${view.job.failed_rows}，待处理 ${view.job.pending_rows}`);
       if (action !== "refresh" || Number(view.processed || 0) > 0) await loadProducts();
     } catch (error) {
-      setCsvPreviewError(`${error instanceof Error ? error.message : "CSV Job 操作失败"} 原业务 ID 已保留，请刷新状态后再决定。`);
-      toast(error instanceof Error ? error.message : "CSV Job 操作失败", "err");
+      setCsvPreviewError(`${error instanceof Error ? error.message : "CSV 导入操作失败"} 请刷新状态并核对结果，不要重复上传。`);
+      toast(error instanceof Error ? error.message : "CSV 导入操作失败", "err");
     } finally {
       setCsvBusy(null);
     }
@@ -3879,8 +3879,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
     if (!job || job.pending_rows > 0) return;
     setConfirm({
       open: true,
-      title: "确认已核对 CSV Job？",
-      desc: `该 Job 成功 ${job.succeeded_rows} 行、失败 ${job.failed_rows} 行。只有在已下载失败明细并确认无需继续重试后，才开始新的 CSV 文件。`,
+      title: "确认已核对本次 CSV 导入？",
+      desc: `本次导入成功 ${job.succeeded_rows} 行、失败 ${job.failed_rows} 行。只有在已下载失败明细并确认无需继续重试后，才开始新的 CSV 文件。`,
       confirmText: "已核对，开始新文件",
       variant: "danger",
       action: () => {
@@ -3894,9 +3894,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           setCsvTranslationFailures(0);
           setCsvPreviewError("");
           if (csvFileInputRef.current) csvFileInputRef.current.value = "";
-          toast("CSV Job 已结束，可以选择新文件。", "ok");
+          toast("本次 CSV 导入已结束，可以选择新文件。", "ok");
         } catch (error) {
-          toast(error instanceof Error ? error.message : "CSV 业务 ID 清理失败", "err");
+          toast(error instanceof Error ? error.message : "CSV 导入状态清理失败", "err");
         } finally {
           setConfirm(current => ({ ...current, open: false }));
         }
@@ -4034,7 +4034,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         throw error;
       }
       try { productOperationIds().complete(scope, operationId); } catch (storageError) {
-        toast(storageError instanceof Error ? storageError.message : "商品已新增，但本地业务 ID 清理失败。", "err");
+        toast(storageError instanceof Error ? storageError.message : "商品已新增，但本次操作状态未能清除。请刷新页面后核对。", "err");
       }
       const savedSku = saved?.product?.sku || sku;
       const savedProductId = String(saved?.product?.id || "");
@@ -4129,7 +4129,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         body: JSON.stringify({ sku: product.sku, size, quantity: 1, autoDeactivate: true, clientRequestId: operationId }),
       });
       try { quickSellOperationIds().complete(operationScope, operationId); } catch (storageError) {
-        toast(storageError instanceof Error ? storageError.message : "售出成功，但本地业务 ID 清理失败。", "err");
+        toast(storageError instanceof Error ? storageError.message : "售出成功，但本次操作状态未能清除。请刷新页面后核对。", "err");
       }
       if (result.erpSyncWarning) {
         toast(`旧库存已更新，但 ERP 库存同步需要检查：${result.erpSyncWarning}`, "err");
@@ -4179,7 +4179,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
       let sessionHeaders: Record<string, string>;
       if (loginMode === "account") {
         const supabase = getSupabaseBrowserAuthClient();
-        if (!supabase) throw new Error("Supabase 登录环境未配置");
+        if (!supabase) throw new Error("员工登录服务暂不可用，请联系负责人。");
         const { data, error } = await supabase.auth.signInWithPassword({
           email: loginEmail.trim(),
           password: accountPassword,
@@ -4314,14 +4314,14 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
           </select>
         </label> : null}
         {tab === "returns" ? <section className="admin-panel"><h2 className="text-xl font-black">退货换货</h2>
-          <p className="my-3 text-sm text-stone-600">在下方搜索或扫描原 POS 订单，打开详情后选择“部分退货 / 换货”。退入、换出、商品状态和库存流水会在一个事务内完成；整单作废仍使用独立操作。</p>
+          <p className="my-3 text-sm text-stone-600">在下方搜索或扫描原销售订单，打开详情后选择“部分退货 / 换货”。确认前请核对商品、数量和处理方式；整单作废仍在订单详情中单独操作。</p>
           <p className="rounded-xl bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">库存加回不等于退款；退款或补收须先在真实收银机或支付渠道完成并记录参考号。系统打印的是内部凭据，不是 AADE 税务票据。</p>
         </section> : null}
         {tab === "more" ? <AdminMorePage isOwner={isOwner} canUse={available} onSelect={activateAdminTab} /> : null}
         {tab === "staff" && isOwner ? <section className="admin-panel"><h2 className="text-xl font-black">员工与权限</h2><p className="my-3">员工账号仍由维护者通过现有可信部署流程创建和分配角色，本页不提供提升权限或重置密码接口。</p><ul className="list-disc space-y-2 pl-5"><li>店主：经营管理；店铺、法律及功能设置仍需独立开发者验证。</li><li>收银员：收银及授权订单处理，不能调整库存。</li><li>库存员：到货、盘点、标签，不能使用收银或紧急扣减。</li><li>只读：仅查看授权数据，不可写入。</li></ul></section> : null}
         {tab === "backup" && canUseTab("backup") ? <section className="admin-panel"><h2 className="text-xl font-black">备份恢复</h2><p className="my-3">完整备份和恢复仍由维护者通过现有 customer:backup / customer:restore 工具执行。商品 CSV 仅用于资料交换，不能恢复数据库或图片。</p><button type="button" className="admin-button-secondary" onClick={() => void downloadProductBackup()}>导出商品资料 CSV（非完整备份）</button></section> : null}
         {tab === "printing" && canUseTab("printing") ? <section className="admin-panel"><h2 className="text-xl font-black">打印设置</h2><p className="my-3">标签纸尺寸、语言和供应商 SKU 显示沿用标签页面的设置；小票沿用 58/80mm 浏览器打印。打印机和纸张请在浏览器打印窗口中选择。</p><button className="admin-button-secondary" type="button" onClick={() => activateAdminTab("labels")}>设置标签与试打</button></section> : null}
-        {tab === "diagnostics" && isOwner ? <section className="admin-panel"><h2 className="text-xl font-black">系统诊断</h2><p className="my-3">{posRuntimeIssue || "当前未检测到收银配置错误；此状态不代替真实交易验收。"}</p><p>{featureSettingsFallback ? "功能配置未完成或读取失败，当前安全使用基础版。" : "功能配置已读取。"}</p>{canUseTab("inventory") ? <button className="admin-button-secondary mt-4" type="button" onClick={() => activateAdminTab("inventory")}>前往库存对账与流水</button> : null}</section> : null}
+        {tab === "diagnostics" && isOwner ? <section className="admin-panel"><h2 className="text-xl font-black">系统状态</h2><p className="my-3">{posRuntimeIssue || "收银功能当前可用。"}</p><p>{featureSettingsFallback ? "当前使用基础功能设置；如需调整，请联系维护人员。" : "功能设置当前可用。"}</p>{canUseTab("inventory") ? <button className="admin-button-secondary mt-4" type="button" onClick={() => activateAdminTab("inventory")}>查看库存记录与异常</button> : null}</section> : null}
         {["labels", "add", "quickAdd", "check"].includes(tab) ? <button className="admin-button-secondary mb-4" type="button" onClick={() => activateAdminTab(canUseTab("dashboard") ? "dashboard" : "inventory")}>返回商品库存</button> : null}
         {activeSection === "more" && tab !== "more" ? <button className="admin-button-secondary mb-4" type="button" onClick={() => activateAdminTab("more")}>返回更多管理</button> : null}
 
@@ -4556,7 +4556,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     ) : stockOperationBarcodePlan.action === "generate" ? (
                       <p className="col-span-2 rounded-lg bg-amber-50 px-3 py-2 text-amber-800">无 Barcode：确认后先生成 <span className="font-mono">{stockOperationItem.variant_sku}</span>，成功后再入库。</p>
                     ) : stockOperationBarcodePlan.action === "unavailable" ? (
-                      <p className="col-span-2 rounded-lg bg-red-50 px-3 py-2 text-red-700">无 Barcode，且当前版本未启用条码与标签打印，自动入库已阻断。</p>
+                      <p className="col-span-2 rounded-lg bg-red-50 px-3 py-2 text-red-700">该商品没有条码，且条码与标签功能未启用，因此暂时不能自动入库。</p>
                     ) : <p className="col-span-2 text-stone-400">Barcode：未生成</p>}
                     {stockOperationItem.supplier_sku ? <p className="col-span-2 truncate">供货商 SKU：<span className="font-mono text-ink">{stockOperationItem.supplier_sku}</span></p> : null}
                     {stockOperationItem.supplier_name ? <p className="col-span-2 truncate">供货商：<span className="text-ink">{stockOperationItem.supplier_name}</span></p> : null}
@@ -5401,7 +5401,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                     <span className="text-sm font-black text-ink">作废原因</span>
                     <textarea
                       className="mt-2 min-h-28 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-base font-bold outline-none focus:border-ink sm:text-sm"
-                      placeholder="例如：POS 测试订单作废，恢复测试库存"
+                      placeholder="例如：订单作废后恢复库存"
                       value={posVoidDialog.reason}
                       onChange={e => setPosVoidDialog(current => current ? { ...current, reason: e.target.value, message: "" } : current)}
                     />
@@ -5461,7 +5461,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                 </div>
               </div>
               {inventoryError ? <p className="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{inventoryError}</p> : null}
-              {isOwner ? <details className="mt-4" data-inventory-diagnostics><summary className="cursor-pointer py-2 font-bold">对账异常与技术诊断</summary><div className={`mt-4 rounded-2xl border px-4 py-3 ${inventoryIssueCount(inventoryReconciliation) === 0 ? "border-emerald-100 bg-emerald-50 text-emerald-800" : "border-red-100 bg-red-50 text-red-700"}`}>
+              {isOwner ? <details className="mt-4" data-inventory-diagnostics><summary className="cursor-pointer py-2 font-bold">库存记录与异常</summary><div className={`mt-4 rounded-2xl border px-4 py-3 ${inventoryIssueCount(inventoryReconciliation) === 0 ? "border-emerald-100 bg-emerald-50 text-emerald-800" : "border-red-100 bg-red-50 text-red-700"}`}>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm font-black">{inventoryReconciliation ? inventoryIssueCount(inventoryReconciliation) === 0 ? "ERP 库存对账正常" : `ERP 库存有 ${inventoryIssueCount(inventoryReconciliation)} 个对账问题` : "正在读取 ERP 对账状态"}</p>
                   <button className="rounded-lg border border-current/20 bg-white/70 px-3 py-1.5 text-xs font-black" disabled={inventoryLoading} onClick={() => void loadInventoryReconciliation()} type="button">重新检查</button>
@@ -5478,13 +5478,13 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       ["预留异常", inventoryReconciliation.reservedExceedsOnHand.length],
                       ["流水原因为空", inventoryReconciliation.blankMovementReasons.length],
                       ["负库存", inventoryReconciliation.negativeBalances.length],
-                      ["重复业务 ID", inventoryReconciliation.duplicateOperationKeys.length],
+                      ["重复操作记录", inventoryReconciliation.duplicateOperationKeys.length],
                       ["流水数量计算异常", inventoryReconciliation.movementDeltaMismatches.length],
                       ["流水前后断链", inventoryReconciliation.movementContinuityMismatches.length],
                       ["余额与最新流水不一致", inventoryReconciliation.balanceVsLatestMovementMismatches.length],
                       ["有余额但无流水", inventoryReconciliation.balancesWithoutMovements.length],
                       ["库存操作缺少流水", inventoryReconciliation.operationsMissingMovements.length],
-                      ["事务 RPC 未就绪", inventoryReconciliation.runtimeHealth.ready ? 0 : 1],
+                      ["库存服务不可用", inventoryReconciliation.runtimeHealth.ready ? 0 : 1],
                     ].map(([label, count]) => (
                       <div className="rounded-xl bg-white/70 px-3 py-2" key={String(label)}>
                         <p className="font-black">{count}</p>
@@ -5506,7 +5506,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                       ["预留异常", inventoryReconciliation.reservedExceedsOnHand],
                       ["流水原因为空", inventoryReconciliation.blankMovementReasons],
                       ["负库存", inventoryReconciliation.negativeBalances],
-                      ["重复业务 ID", inventoryReconciliation.duplicateOperationKeys],
+                      ["重复操作记录", inventoryReconciliation.duplicateOperationKeys],
                       ["流水数量计算异常", inventoryReconciliation.movementDeltaMismatches],
                       ["流水前后断链", inventoryReconciliation.movementContinuityMismatches],
                       ["余额与最新流水不一致", inventoryReconciliation.balanceVsLatestMovementMismatches],
@@ -5551,7 +5551,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               </div>
 
               <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">
-                建议先用测试 SKU 验证库存调整流程，确认流水、对账和前台库存都正常后，再处理真实商品。
+                调整库存前请确认商品和数量；完成后可在这里查看库存记录与异常。
               </div>
 
               <div className="mb-5 rounded-2xl border border-stone-200 bg-stone-50/70 p-4" data-inventory-filter-panel>
@@ -6274,7 +6274,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   </div>
                 )}
                 <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-xs font-bold leading-relaxed text-amber-800">
-                  打印前请先用真实标签纸测试。第一版不做 ESC/POS 或打印机 SDK，只使用浏览器打印。
+                  打印前请核对纸张尺寸和预览效果，然后通过浏览器打开打印窗口。
                 </p>
               </div>
             ) : null}
@@ -6590,7 +6590,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
         {tab === "csv" ? (
           <section className="admin-panel">
             <h2 className="mb-1 text-lg font-black text-ink">CSV 批量导入</h2>
-            <p className="mb-4 text-xs text-stone-500">先由服务器校验整份文件，再创建可恢复的导入 Job。导入模式、库存模式和自动翻译都需要明确选择，不再隐式覆盖商品或库存。</p>
+            <p className="mb-4 text-xs text-stone-500">系统会先检查整份文件。请选择商品处理方式和库存处理方式，确认预览无误后再开始导入。</p>
 
             <div className="mb-4 grid gap-3 md:grid-cols-2">
               <label className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3">
@@ -6626,7 +6626,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black hover:bg-stone-50" onClick={downloadQuickCsvTemplate} type="button">下载快速 CSV 模板</button>
               <button className="min-h-11 rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-black hover:bg-stone-50" onClick={downloadCsvTemplate} type="button">下载完整 CSV 模板</button>
               {adminFeatures.ai_tools ? <button className="min-h-11 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-black text-violet-700 hover:bg-violet-100 disabled:opacity-50" disabled={!csvPreview || csvPreview.previewTruncated || csvSummary.needsTranslation === 0 || csvBusy !== null || csvHasPendingOperation} onClick={() => void translateCsvPreview()} type="button">{csvBusy === "translate" ? "翻译中..." : "可选：补充英/希译文"}</button> : null}
-              <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={!csvFile || !csvPreview || csvBusy !== null || csvHasPendingOperation} onClick={confirmImportCsv} type="button">{csvBusy === "submit" ? "正在创建 Job..." : "创建导入 Job"}</button>
+              <button className="min-h-11 rounded-xl bg-ink px-4 py-2.5 text-sm font-black text-white hover:bg-stone-800 disabled:opacity-50" disabled={!csvFile || !csvPreview || csvBusy !== null || csvHasPendingOperation} onClick={confirmImportCsv} type="button">{csvBusy === "submit" ? "正在开始导入..." : "开始导入"}</button>
             </div>
             <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3">
               <label className="block text-sm font-black text-ink">选择 CSV 文件</label>
@@ -6638,8 +6638,8 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
             {csvPreviewError ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-bold leading-relaxed text-red-700">{csvPreviewError}{csvFile && !csvPreview && !csvHasPendingOperation ? <button className="ml-2 underline underline-offset-4 disabled:opacity-50" disabled={csvBusy !== null} onClick={() => void previewCsvFile(csvFile)} type="button">重新预览</button> : null}</div> : null}
             {csvHasPendingOperation && !csvJobView ? (
               <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div><p className="text-sm font-black text-amber-900">存在结果待确认的 CSV 业务 ID</p><p className="mt-1 text-xs text-amber-800">请恢复原 Job；不要换文件或生成新的业务 ID。</p></div>
-                <button className="min-h-11 rounded-xl bg-amber-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50" disabled={csvBusy !== null} onClick={() => void recoverPendingCsvImport(true)} type="button">{csvBusy === "recover" ? "恢复中..." : "恢复 Job 状态"}</button>
+                <div><p className="text-sm font-black text-amber-900">上次 CSV 导入结果尚未确认</p><p className="mt-1 text-xs text-amber-800">请先恢复上次导入状态，不要更换文件或重复上传。</p></div>
+                <button className="min-h-11 rounded-xl bg-amber-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50" disabled={csvBusy !== null} onClick={() => void recoverPendingCsvImport(true)} type="button">{csvBusy === "recover" ? "恢复中..." : "恢复导入状态"}</button>
               </div>
             ) : null}
 
@@ -6659,8 +6659,7 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
               <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50/70 p-3 sm:p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="text-sm font-black text-ink">CSV Job · {csvJobStatusLabels[csvJobView.job.status]}</p>
-                    <p className="mt-1 break-all font-mono text-[11px] text-stone-500">{csvJobView.job.id}</p>
+                    <p className="text-sm font-black text-ink">CSV 导入 · {csvJobStatusLabels[csvJobView.job.status]}</p>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-center text-xs sm:min-w-72">
                     <div className="rounded-xl bg-white p-2"><strong className="block text-base text-green-700">{csvJobView.job.succeeded_rows}</strong>成功</div>
@@ -6675,9 +6674,9 @@ if (!form.image_url && !newMainFile) { setConfirm({ open: true, title: "商品�
                   <button className="min-h-11 rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-black disabled:opacity-50" disabled={csvBusy !== null} onClick={() => void processCsvJob("refresh")} type="button">刷新状态</button>
                   {csvJobView.job.failed_rows > 0 ? <button className="min-h-11 rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-black disabled:opacity-50" disabled={csvBusy !== null} onClick={() => void downloadCsvErrors()} type="button">下载失败 CSV</button> : null}
                 </div>
-                {csvJobView.job.pending_rows === 0 && csvJobView.job.failed_rows > 0 ? <button className="mt-3 text-xs font-bold text-stone-500 underline decoration-dotted underline-offset-4" onClick={finishReviewedCsvJob} type="button">已核对失败行，结束此 Job 并开始新文件</button> : null}
+                {csvJobView.job.pending_rows === 0 && csvJobView.job.failed_rows > 0 ? <button className="mt-3 text-xs font-bold text-stone-500 underline decoration-dotted underline-offset-4" onClick={finishReviewedCsvJob} type="button">已核对失败行，结束本次导入并开始新文件</button> : null}
                 <ResultTable results={csvJobResults} />
-                {csvJobView.totalRows > csvJobView.rows.length ? <p className="mt-2 text-xs text-stone-500">当前显示前 {csvJobView.rows.length} 行 Job 明细，共 {csvJobView.totalRows} 行。</p> : null}
+                {csvJobView.totalRows > csvJobView.rows.length ? <p className="mt-2 text-xs text-stone-500">当前显示前 {csvJobView.rows.length} 行导入明细，共 {csvJobView.totalRows} 行。</p> : null}
               </div>
             ) : null}
           </section>
@@ -7132,7 +7131,7 @@ function CategoriesManager({ activePassword, authHeaders, toast, confirm, dismis
 
       <div className="admin-sticky-actions">
         <button className="admin-button-primary w-full sm:w-auto" onClick={save} disabled={loading} type="button">{loading ? "保存中..." : "保存全部分类"}</button>
-        <p className="text-xs font-bold text-stone-400">新增、修改和待删除项目会在一次数据库事务中提交；任何一项失败都会全部回滚。</p>
+        <p className="text-xs font-bold text-stone-400">点击保存后会统一提交本次修改；任一内容保存失败时，本次修改都不会生效。</p>
       </div>
     </section>
   );

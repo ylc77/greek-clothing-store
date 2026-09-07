@@ -144,7 +144,7 @@ export function InventoryReceivingWorkspace({
         return;
       }
       setBusy(true);
-      setMessage("正在以一个事务完成整批到货...");
+      setMessage("正在保存本次到货...");
       operationId = ids().getOrCreate(scope, fingerprint);
       ids().markAttempt(scope, operationId);
       const result = await api("/api/admin/inventory/receipts", {
@@ -167,7 +167,7 @@ export function InventoryReceivingWorkspace({
     } catch (cause) {
       const candidate = cause as Error & { operationSafeToDiscard?: boolean };
       if (operationId && candidate.operationSafeToDiscard) ids().discardKnownNoWrite(scope, operationId);
-      setError(candidate.message || "整批到货失败。结果未知时请先查看到货历史，不要更换业务 ID 重试。");
+      setError(candidate.message || "本次到货结果暂时无法确认。请先查看到货历史，不要重复提交。");
     } finally { setBusy(false); }
   }
 
@@ -198,7 +198,7 @@ export function InventoryReceivingWorkspace({
 
   return <section className="admin-panel" data-inventory-receiving-workspace>
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">Atomic receiving</p><h2 className="mt-1 text-xl font-black text-ink">整批到货入库</h2><p className="mt-1 text-xs leading-5 text-stone-500">连续扫码加入清单；确认后库存、流水、缺失条码和到货单一次提交，任一失败全部回滚。</p></div>
+      <div><p className="text-[11px] font-black uppercase tracking-[0.18em] text-stone-400">到货清单</p><h2 className="mt-1 text-xl font-black text-ink">整批到货入库</h2><p className="mt-1 text-xs leading-5 text-stone-500">连续扫码加入商品，核对每个规格的到货数量后统一保存。保存成功即可打印本次标签。</p></div>
       <button className="admin-button-secondary" disabled={busy} type="button" onClick={() => void loadReceipts()}>到货历史 / 补打</button>
     </div>
     <form className="mt-5 flex gap-2" onSubmit={event => { event.preventDefault(); void search(); }}>

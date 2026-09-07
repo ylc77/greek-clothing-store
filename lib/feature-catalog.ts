@@ -30,7 +30,7 @@ export const featureCatalog: Record<FeatureKey, {
   storefront: { label: "希腊语 / 英语前台", desc: "首页、分类、商品详情、联系与法律页面", group: "core", alwaysOn: true },
   product_management: { label: "商品与资料管理", desc: "商品列表、拍照上新、新增编辑、图片、分类和供货商", group: "core", alwaysOn: true },
   inventory: { label: "尺码库存管理", desc: "库存快查、库存作业、调整、流水、对账和快速售出", group: "core", alwaysOn: true },
-  quick_sell: { label: "快速售出", desc: "仅 owner 使用的事务库存快速扣减工具，不创建 POS 订单或付款记录", group: "core" },
+  quick_sell: { label: "快速售出", desc: "仅店主使用的库存紧急扣减工具，不创建销售订单或付款记录", group: "core" },
   pos_checkout: { label: "POS 扫码扣库存", desc: "扫码或搜索商品，确认后扣减系统库存；不代替真实收银机", group: "store" },
   pos_orders: { label: "POS 销售记录", desc: "查看系统内扫码销售历史和详情", group: "store" },
   pos_void: { label: "POS 作废恢复库存", desc: "纠正误操作并把对应数量恢复到库存", group: "store" },

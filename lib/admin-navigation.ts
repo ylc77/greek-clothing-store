@@ -11,8 +11,8 @@ export const adminPrimaryNavigation = [
 ] as const;
 export type AdminPrimaryKey = (typeof adminPrimaryNavigation)[number]["key"];
 // Presentation only: callers must retain the original status/code and recovery metadata.
-export function adminVisibleMessage(message: string, showDiagnostics: boolean): string {
-  return !showDiagnostics && /\b(?:rpc|migration|supabase|postgrest|sqlstate)\b|feature[ _-]?flag/i.test(message)
+export function adminVisibleMessage(message: string, _showDiagnostics: boolean): string {
+  return /\b(?:rpc|migration|supabase|postgrest|sqlstate|operation id|job)\b|feature[ _-]?flag|业务 ID/i.test(message)
     ? "操作暂不可用，请联系负责人。若已提交，请先核对结果，不要重复创建操作。"
     : message;
 }

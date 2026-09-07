@@ -22,7 +22,7 @@ test("feature settings failures visibly and actually fall back to Basic", () => 
   const dashboard = source("components/admin-dashboard.tsx");
   assert.match(page, /initialFeatureSettingsConfigured=\{featureSettings\.configured\}/);
   assert.match(dashboard, /setAdminFeatures\(defaultAdminFeatures\)/);
-  assert.match(dashboard, /功能配置未完成或读取失败，当前安全使用基础版/);
+  assert.match(dashboard, /当前使用基础功能设置；如需调整，请联系维护人员/);
 });
 
 test("print copy and product snapshots are Greek or English, never internal Chinese", () => {

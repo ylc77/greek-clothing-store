@@ -352,3 +352,11 @@ Keep provider credentials customer-specific and environment-driven. A new custom
 
 Use `npm run commerce:status` to inspect configuration without exposing values, `npm run commerce:verify -- --provider viva|boxnow|all` for authentication-only provider checks, and `npm run test:online-orders-runtime` for the local application/database readiness check. Provider verification must not create payments, orders, parcels, or labels.
 
+\---
+
+\## 27. User-facing copy boundary
+
+Customer and employee interfaces must stay task-focused. Show what the user can do, what information is needed, the current result, and the next safe action.
+
+Do not expose implementation plans, phases, test or acceptance notes, architecture, database/RPC/migration terminology, provider setup commentary, internal Job or operation identifiers, or agent/development instructions in visible UI, accessibility text, metadata, or collapsed content. Keep those details in developer documentation and logs. Translate recoverable failures into plain operational guidance without weakening fail-closed behavior, idempotency, permissions, or audit records.
+
